@@ -1,0 +1,1656 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Veshop</title>
+    <link rel="icon" type="images/x-icon" href="/renol/images/favicon.ico">
+    <!-- remix icon  -->
+    <link rel="stylesheet" href="/renol/css/remixicon.css">
+    <!-- swiper -->
+    <link rel="stylesheet" href="/renol/css/swiper-bundle.min.css" />
+    <!-- bootstrap  -->
+    <link rel="stylesheet" href="/renol/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/renol/css/style.min.css">
+    <style>
+        .veshop-hero-app {
+            position: relative;
+            padding: 170px 0 90px;
+            background-image: url("/renol/images/bg-img-4.png");
+            background-size: cover;
+            background-position: center;
+            overflow: hidden;
+        }
+
+        .veshop-hero-glow {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .veshop-hero-glow::before,
+        .veshop-hero-glow::after {
+            content: "";
+            position: absolute;
+            border-radius: 999px;
+            filter: blur(70px);
+        }
+
+        .veshop-hero-glow::before {
+            width: 360px;
+            height: 360px;
+            left: -110px;
+            top: 90px;
+            background: rgba(129, 216, 111, 0.26);
+        }
+
+        .veshop-hero-glow::after {
+            width: 420px;
+            height: 420px;
+            right: -120px;
+            top: -40px;
+            background: rgba(7, 51, 65, 0.18);
+        }
+
+        .veshop-hero-wrap {
+            position: relative;
+            z-index: 1;
+        }
+
+        .veshop-hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(7, 51, 65, 0.2);
+            background: rgba(255, 255, 255, 0.88);
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #073341;
+        }
+
+        .veshop-hero-title {
+            margin-top: 18px;
+            color: #073341;
+            font-size: clamp(2rem, 3.7vw, 3.2rem);
+            font-weight: 700 !important;
+            line-height: 1.22;
+        }
+
+        .veshop-hero-subtitle {
+            margin-top: 14px;
+            max-width: 620px;
+            color: #3f566e;
+            font-size: 18px;
+            line-height: 1.65;
+        }
+
+        .veshop-hero-actions {
+            margin-top: 24px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .veshop-hero-actions .btn {
+            border-radius: 10px;
+            padding: 12px 18px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .veshop-mini-grid {
+            margin-top: 22px;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .veshop-mini-card {
+            border: 1px solid rgba(7, 51, 65, 0.16);
+            background: rgba(255, 255, 255, 0.86);
+            border-radius: 14px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .veshop-mini-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 24px rgba(7, 51, 65, 0.12);
+        }
+
+        .veshop-mini-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #073341;
+            background: rgba(129, 216, 111, 0.25);
+            font-size: 18px;
+        }
+
+        .veshop-mini-title {
+            margin-top: 10px;
+            color: #073341;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .veshop-mini-text {
+            margin-top: 4px;
+            color: #5f7388;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .veshop-ops-panel {
+            position: relative;
+            border-radius: 24px;
+            border: 1px solid rgba(129, 216, 111, 0.28);
+            background: linear-gradient(155deg, rgba(2, 29, 37, 0.95), rgba(7, 51, 65, 0.9));
+            padding: 18px;
+            box-shadow: 0 30px 70px -36px rgba(7, 51, 65, 0.9);
+            color: #f5fdff;
+        }
+
+        .veshop-ops-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .veshop-ops-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .veshop-ops-brand .icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            background: rgba(129, 216, 111, 0.2);
+            border: 1px solid rgba(129, 216, 111, 0.38);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .veshop-ops-brand .eyebrow {
+            margin: 0;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: rgba(245, 253, 255, 0.7);
+        }
+
+        .veshop-ops-brand .name {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 700;
+            color: #f5fdff;
+        }
+
+        .veshop-ops-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(129, 216, 111, 0.35);
+            background: rgba(129, 216, 111, 0.15);
+            font-size: 12px;
+            font-weight: 600;
+            color: #d4f8cc;
+        }
+
+        .veshop-ops-status .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #81d86f;
+        }
+
+        .veshop-ops-tabs {
+            margin-top: 14px;
+            display: inline-flex;
+            gap: 6px;
+            border: 1px solid rgba(245, 253, 255, 0.2);
+            background: rgba(245, 253, 255, 0.06);
+            border-radius: 12px;
+            padding: 4px;
+        }
+
+        .veshop-tab-btn {
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: rgba(245, 253, 255, 0.8);
+            font-size: 12px;
+            font-weight: 600;
+            padding: 6px 10px;
+            transition: all 0.2s ease;
+        }
+
+        .veshop-tab-btn.active {
+            background: rgba(129, 216, 111, 0.22);
+            color: #f5fdff;
+        }
+
+        .veshop-feed-shell {
+            margin-top: 12px;
+            border: 1px solid rgba(245, 253, 255, 0.18);
+            border-radius: 14px;
+            background: rgba(2, 29, 37, 0.5);
+            padding: 12px;
+        }
+
+        .veshop-feed-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: rgba(245, 253, 255, 0.68);
+        }
+
+        .veshop-feed-list {
+            margin-top: 10px;
+            display: grid;
+            gap: 8px;
+        }
+
+        .veshop-feed-item {
+            display: grid;
+            grid-template-columns: 8px 1fr;
+            gap: 10px;
+            align-items: start;
+            border: 1px solid rgba(245, 253, 255, 0.15);
+            border-radius: 10px;
+            background: rgba(245, 253, 255, 0.06);
+            padding: 8px;
+        }
+
+        .veshop-feed-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-top: 6px;
+            background: #81d86f;
+        }
+
+        .veshop-feed-title {
+            margin: 0;
+            color: #f5fdff;
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .veshop-feed-meta {
+            margin: 2px 0 0;
+            color: rgba(245, 253, 255, 0.72);
+            font-size: 12px;
+        }
+
+        .veshop-badge {
+            border-radius: 999px;
+            padding: 2px 7px;
+            font-size: 10px;
+            font-weight: 700;
+            border: 1px solid transparent;
+        }
+
+        .veshop-badge.positive {
+            color: #d4f8cc;
+            border-color: rgba(129, 216, 111, 0.3);
+            background: rgba(129, 216, 111, 0.16);
+        }
+
+        .veshop-badge.warning {
+            color: #ffe8b6;
+            border-color: rgba(255, 193, 7, 0.35);
+            background: rgba(255, 193, 7, 0.16);
+        }
+
+        .veshop-badge.neutral {
+            color: rgba(245, 253, 255, 0.85);
+            border-color: rgba(245, 253, 255, 0.3);
+            background: rgba(245, 253, 255, 0.1);
+        }
+
+        .veshop-metric-wrap {
+            margin-top: 14px;
+            position: relative;
+        }
+
+        .veshop-metric-track {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            padding-bottom: 4px;
+            scrollbar-width: none;
+        }
+
+        .veshop-metric-track::-webkit-scrollbar {
+            display: none;
+        }
+
+        .veshop-metric-card {
+            min-width: 166px;
+            border: 1px solid rgba(245, 253, 255, 0.18);
+            border-radius: 12px;
+            background: rgba(245, 253, 255, 0.08);
+            padding: 10px;
+        }
+
+        .veshop-metric-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(129, 216, 111, 0.2);
+            color: #d4f8cc;
+            font-size: 14px;
+        }
+
+        .veshop-metric-label {
+            margin: 8px 0 0;
+            color: rgba(245, 253, 255, 0.8);
+            font-size: 12px;
+        }
+
+        .veshop-metric-value {
+            margin: 3px 0 0;
+            color: #f5fdff;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .veshop-metric-note {
+            margin: 2px 0 0;
+            color: rgba(245, 253, 255, 0.68);
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .veshop-metric-arrow {
+            position: absolute;
+            top: 36%;
+            width: 28px;
+            height: 28px;
+            border: 1px solid rgba(245, 253, 255, 0.25);
+            border-radius: 50%;
+            background: rgba(2, 29, 37, 0.8);
+            color: #f5fdff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            z-index: 2;
+        }
+
+        .veshop-metric-arrow.prev {
+            left: -10px;
+        }
+
+        .veshop-metric-arrow.next {
+            right: -10px;
+        }
+
+        @media (max-width: 991px) {
+            .veshop-hero-app {
+                padding: 130px 0 60px;
+            }
+
+            .veshop-mini-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 575px) {
+            .veshop-mini-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .veshop-metric-arrow {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body data-bs-spy="scroll" data-bs-target="#navbarCollapse">
+    <div class="modal fade" id="exampleModal">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body p-0">
+                    <div class="ratio ratio-16x9">
+                        <video id="VisaChipCardVideo" class="video-box"
+                            controls>
+                            <source
+                                src="https://www.w3schools.com/html/mov_bbb.mp4"
+                                type="video/mp4">
+                        </video>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- nav-bar start  -->
+    <header>
+        <nav class="navbar navbar-expand-lg fixed-top navbar-custom navbar-light sticky sticky-light"
+            id="navbar">
+            <div class="container">
+                <div class="navbar-brand logo">
+                    <a class="navbar-caption fs-4 text-primary ls-1 fw-bold"
+                        href="#home"><i
+                            class="ri-registered-fill text-success fs-3 me-1"></i>VESHOP</a>
+                </div>
+                <button class="navbar-toggler" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#navbarCollapse"
+                    aria-controls="navbarCollapse" aria-expanded="false"
+                    aria-label="Toggle navigation">
+                    <span class="fw-bold fs-4"><i
+                            class="ri-menu-5-line"></i></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarCollapse">
+                    <ul class="navbar-nav mx-auto" id="navbar-navlist">
+                        <li class="nav-item">
+                            <a class="nav-link" href="#home">Início</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#about">Sobre</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#services">Módulos</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#price">Planos</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link"
+                                href="#testimonial">Clientes</a>
+                        </li>
+                    </ul>
+                    <ul class="navbar-nav nav-btn">
+                        <li class="nav-item">
+                            <a class="nav-link" href="/login">Entrar</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+    </header>
+    <!-- nav-bar end  -->
+    <!-- hero section start  -->
+    <section class="veshop-hero-app" id="home">
+        <div class="veshop-hero-glow" aria-hidden="true"></div>
+        <div class="container veshop-hero-wrap">
+            <div class="row g-4 align-items-center">
+                <div class="col-lg-7">
+                    <span class="veshop-hero-badge">
+                        <i class="ri-store-2-line"></i>
+                        ERP para comércio e varejo
+                    </span>
+                    <h1 class="veshop-hero-title">
+                        Gestão completa para vendas, estoque, financeiro e fiscal em uma só plataforma.
+                    </h1>
+                    <p class="veshop-hero-subtitle">
+                        O Veshop conecta operação, atendimento e gestão para lojas, mercados, distribuidores e outros nichos.
+                        Tenha visão em tempo real do que acontece no negócio e tome decisões mais rápidas.
+                    </p>
+                    <div class="veshop-hero-actions">
+                        <a href="/login" class="btn btn-primary">
+                            Entrar no painel
+                            <i class="ri-arrow-right-up-line"></i>
+                        </a>
+                        <a href="#contacts" class="btn btn-success">
+                            Agendar demonstração
+                            <i class="ri-play-circle-line"></i>
+                        </a>
+                    </div>
+
+                    <div class="veshop-mini-grid">
+                        <article class="veshop-mini-card" role="button" tabindex="0">
+                            <span class="veshop-mini-icon"><i class="ri-flow-chart"></i></span>
+                            <p class="veshop-mini-title">Fluxo visual</p>
+                            <p class="veshop-mini-text">Desenhe etapas e responsáveis da operação em minutos.</p>
+                        </article>
+                        <article class="veshop-mini-card" role="button" tabindex="0">
+                            <span class="veshop-mini-icon"><i class="ri-notification-3-line"></i></span>
+                            <p class="veshop-mini-title">Prioridades do dia</p>
+                            <p class="veshop-mini-text">Veja o que vence primeiro e evite atrasos de SLA.</p>
+                        </article>
+                        <article class="veshop-mini-card" role="button" tabindex="0">
+                            <span class="veshop-mini-icon"><i class="ri-links-line"></i></span>
+                            <p class="veshop-mini-title">Conectores nativos</p>
+                            <p class="veshop-mini-text">Integre ERP, PDV, fiscal e CRM sem retrabalho manual.</p>
+                        </article>
+                    </div>
+                </div>
+
+                <div class="col-lg-5">
+                    <div class="veshop-ops-panel">
+                        <div class="veshop-ops-head">
+                            <div class="veshop-ops-brand">
+                                <span class="icon"><i class="ri-dashboard-line"></i></span>
+                                <div>
+                                    <p class="eyebrow">Veshop Ops</p>
+                                    <p class="name">Visão por unidade</p>
+                                </div>
+                            </div>
+                            <span class="veshop-ops-status">
+                                <span class="dot"></span>
+                                Monitorando
+                            </span>
+                        </div>
+
+                        <div class="veshop-ops-tabs">
+                            <button type="button" class="veshop-tab-btn active" data-tab-btn data-tab-id="dashboard">Dashboard</button>
+                            <button type="button" class="veshop-tab-btn" data-tab-btn data-tab-id="fila">Fila</button>
+                            <button type="button" class="veshop-tab-btn" data-tab-btn data-tab-id="auditoria">Auditoria</button>
+                        </div>
+
+                        <div class="veshop-feed-shell">
+                            <div class="veshop-feed-head">
+                                <span data-feed-header>Atividades</span>
+                                <span data-feed-status>Agora</span>
+                            </div>
+                            <div class="veshop-feed-list" data-feed-list></div>
+                        </div>
+
+                        <div class="veshop-metric-wrap">
+                            <button type="button" class="veshop-metric-arrow prev" aria-label="Voltar carrossel" data-metric-prev>
+                                <i class="ri-arrow-left-s-line"></i>
+                            </button>
+                            <div class="veshop-metric-track" data-metric-carousel>
+                                <article class="veshop-metric-card" role="button" tabindex="0">
+                                    <span class="veshop-metric-icon"><i class="ri-timer-flash-line"></i></span>
+                                    <p class="veshop-metric-label">Tempo por etapa</p>
+                                    <p class="veshop-metric-value">Meta + variação</p>
+                                    <p class="veshop-metric-note">Acompanhe prazos por processo e equipe.</p>
+                                </article>
+                                <article class="veshop-metric-card" role="button" tabindex="0">
+                                    <span class="veshop-metric-icon"><i class="ri-shield-check-line"></i></span>
+                                    <p class="veshop-metric-label">Trilha operacional</p>
+                                    <p class="veshop-metric-value">Registro completo</p>
+                                    <p class="veshop-metric-note">Histórico de decisões e evidências por etapa.</p>
+                                </article>
+                                <article class="veshop-metric-card" role="button" tabindex="0">
+                                    <span class="veshop-metric-icon"><i class="ri-links-line"></i></span>
+                                    <p class="veshop-metric-label">Integrações</p>
+                                    <p class="veshop-metric-value">API + eventos</p>
+                                    <p class="veshop-metric-note">Sincronização estável entre sistemas externos.</p>
+                                </article>
+                                <article class="veshop-metric-card" role="button" tabindex="0">
+                                    <span class="veshop-metric-icon"><i class="ri-line-chart-line"></i></span>
+                                    <p class="veshop-metric-label">Indicadores gerenciais</p>
+                                    <p class="veshop-metric-value">Visão consolidada</p>
+                                    <p class="veshop-metric-note">KPIs de vendas, estoque e financeiro em tempo real.</p>
+                                </article>
+                            </div>
+                            <button type="button" class="veshop-metric-arrow next" aria-label="Avançar carrossel" data-metric-next>
+                                <i class="ri-arrow-right-s-line"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section about-section bg-light" id="about">
+        <div class="container">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-lg-6">
+                    <img src="/renol/images/about.png" alt="" class="img-fluid">
+                </div>
+                <div class="col-lg-5">
+                    <div class="title-sm">
+                        <span>Sobre o Veshop</span>
+                    </div>
+                    <div class="section-title-border mt-3 m-0"></div>
+                    <div class="about-title mt-4">
+                        <h2 class="fw-semibold text-primary lh-base">ERP pronto para comercios, varejos e operacoes multi-nicho</h2>
+                        <p>O Veshop centraliza frente de caixa, vendas, estoque, financeiro, compras e fiscal em um unico sistema. A plataforma foi pensada para rotinas reais de lojas, mercados, autopecas, distribuidores e outros segmentos que precisam de controle diario e tomada de decisao rapida.</p>
+                        <div class="about-btn mt-4">
+                            <a href="#services"
+                                class="btn btn-primary fw-semibold">Conhecer modulos <i
+                                    class="ri-arrow-right-line"></i></a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="section services-section" id="services">
+        <div class="container">
+            <div class="pb-4">
+                <div class="row align-items-center justify-content-evenly">
+                    <div class="col-lg-5">
+                        <div class="title-sm">
+                            <span>Modulos do sistema</span>
+                        </div>
+                        <div class="section-title-border mt-3 m-0"></div>
+                        <div class="service-title mt-4">
+                            <h2 class="fw-semibold text-primary lh-base">Recursos que sustentam a operacao do seu negocio</h2>
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        <p class="mt-5 text-primary">Com base nas necessidades do varejo moderno, o Veshop entrega controle comercial, fiscal e gerencial com foco em produtividade e crescimento sustentavel.</p>
+                        <a href="#services" class="text-success">Ver todos os modulos <i
+                                class="ri-arrow-right-line"></i></a>
+                    </div>
+                </div>
+            </div>
+            <div class="row align-items-center justify-content-evenly mt-4 g-4">
+                <div class="col-lg-5">
+                    <div class="services-content p-3 shadow-sm">
+                        <span class="text-success">01</span>
+                        <div class="title-sm mt-2">
+                            <span class="text-primary">Vendas, PDV e pedidos</span>
+                        </div>
+                        <p class="mt-2">Registre atendimentos, orcamentos e pedidos com rapidez. Tenha historico de clientes, acompanhamento de metas e mais eficiencia no fechamento de vendas.</p>
+                    </div>
+                </div>
+                <div class="col-lg-5">
+                    <div class="services-content p-3 shadow-sm">
+                        <span class="text-success">02</span>
+                        <div class="title-sm mt-2">
+                            <span class="text-primary">Estoque e financeiro</span>
+                        </div>
+                        <p class="mt-2">Automatize contas a pagar e receber, fluxo de caixa, conciliacao e controle de estoque para reduzir perdas e aumentar margem.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="row align-items-center justify-content-evenly mt-5 g-4">
+                <div class="col-lg-3">
+                    <div class="services-content-1 p-2 rounded-pill">
+                        <i
+                            class="ri-heart-2-line text-primary bg-success-subtle"></i>
+                        <span class="ms-4 fs-2xl">Emissao de NF-e e NFC-e</span>
+                    </div>
+                </div>
+                <div class="col-lg-3">
+                    <div class="services-content-1 p-2 rounded-pill">
+                        <i
+                            class="ri-pages-fill text-primary bg-success-subtle"></i>
+                        <span class="ms-4 fs-2xl">Orcamentos e CRM</span>
+                    </div>
+                </div>
+                <div class="col-lg-3">
+                    <div class="services-content-1 p-2 rounded-pill">
+                        <i
+                            class="ri-database-fill text-primary bg-success-subtle"></i>
+                        <span class="ms-4 fs-2xl">SPED e relatorios gerenciais</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="section why-choose-section bg-light">
+        <div class="container">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-lg-5">
+                    <div class="title-sm">
+                        <span>Por que escolher</span>
+                    </div>
+                    <div class="section-title-border mt-3 m-0"></div>
+                    <div class="why-choose-title mt-4">
+                        <h2 class="fw-semibold text-primary lh-base">ERP focado em resultado operacional</h2>
+                        <p>Padronize processos, reduza retrabalho e acompanhe indicadores em tempo real. O Veshop ajuda a equipe a operar melhor no dia a dia.</p>
+                    </div>
+                    <div class="row mt-4 g-4">
+                        <div class="col-lg-6 col-6">
+                            <div class="d-flex align-items-center">
+                                <i
+                                    class="ri-checkbox-blank-circle-fill text-success fs-4"></i>
+                                <h6 class="ms-3 m-0">Multiempresa e multiusuario</h6>
+                            </div>
+                        </div>
+                        <div class="col-lg-6 col-6">
+                            <div class="d-flex align-items-center">
+                                <i
+                                    class="ri-checkbox-blank-circle-fill text-success fs-4"></i>
+                                <h6 class="ms-3 m-0">Parametrizacao por segmento</h6>
+                            </div>
+                        </div>
+                        <div class="col-lg-6 col-6">
+                            <div class="d-flex align-items-center">
+                                <i
+                                    class="ri-checkbox-blank-circle-fill text-success fs-4"></i>
+                                <h6 class="ms-3 m-0">Controle fiscal e contabil</h6>
+                            </div>
+                        </div>
+                        <div class="col-lg-6 col-6">
+                            <div class="d-flex align-items-center">
+                                <i
+                                    class="ri-checkbox-blank-circle-fill text-success fs-4"></i>
+                                <h6 class="ms-3 m-0">Escalavel para crescimento</h6>
+                            </div>
+                        </div>
+                        <div class="main-btn mt-5 d-flex">
+                            <a href="#contacts"
+                                class="btn btn-primary fw-semibold">Falar com especialista</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <img src="/renol/images/working.jpg" alt=""
+                        class="img-fluid mt-4 shadow-sm rounded-2">
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="section work-section">
+        <div class="container">
+            <div class="row align-items-center justify-content-between">
+                <div class="col-lg-6">
+                    <img src="/renol/images/group-working.jpg" alt=""
+                        class="img-fluid shadow-sm rounded-2">
+                </div>
+                <div class="col-lg-5">
+                    <div class="title-sm">
+                        <span>Como funciona</span>
+                    </div>
+                    <div class="section-title-border mt-3 m-0"></div>
+                    <div class="why-choose-title mt-4">
+                        <h2 class="fw-semibold text-primary lh-base">Da venda ao fechamento financeiro em fluxo unico</h2>
+                        <p>Com processos integrados, sua operacao ganha velocidade e previsibilidade. Cada etapa conversa com a proxima sem depender de planilhas paralelas.</p>
+                    </div>
+                    <div class="row align-items-center justify-content-center">
+                        <div class="col-lg-6">
+                            <div class="icon-text mt-4">
+                                <div class="icon">
+                                    <i class="ri-donut-chart-fill"></i>
+                                </div>
+                                <h6 class="fw-semibold mt-3">Cadastro e precificacao
+                                </h6>
+                                <p>Configure produtos, tabelas de preco, impostos e regras comerciais por tipo de negocio.</p>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="icon-text mt-4">
+                                <div class="icon">
+                                    <i class="ri-database-line"></i>
+                                </div>
+                                <h6 class="fw-semibold mt-3">Venda e atendimento
+                                </h6>
+                                <p>Registre vendas no PDV, pedidos e orcamentos com historico completo de clientes e negociacoes.</p>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="icon-text mt-4">
+                                <div class="icon">
+                                    <i class="ri-focus-2-fill"></i>
+                                </div>
+                                <h6 class="fw-semibold mt-3">Movimento de estoque
+                                </h6>
+                                <p>Controle entradas, saidas, inventario e reposicao com visao precisa por produto e filial.</p>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="icon-text mt-4">
+                                <div class="icon">
+                                    <i class="ri-team-fill"></i>
+                                </div>
+                                <h6 class="fw-semibold mt-3">Financeiro e fiscal
+                                </h6>
+                                <p>Acompanhe caixa, contas, conciliacao e obrigacoes fiscais em relatarios claros para decisao.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="section price-section position-relative z-1" id="price">
+        <div class="container">
+            <div
+                class="row align-items-center justify-content-center text-center">
+                <div class="col-lg-7">
+                    <div class="title-sm">
+                        <span>Planos</span>
+                    </div>
+                    <div class="section-title-border mt-3"></div>
+                    <div class="price-title mt-4">
+                        <h2 class="fw-semibold text-primary">Planos flexiveis para cada fase do seu negocio</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="row mt-5 g-4">
+                <div class="col-md-6 col-lg-4">
+                    <div
+                        class="card shadow-sm h-100 border-0 border-primary border-top border-3">
+                        <div class="card-body text-center">
+                            <h5 class="fw-bold text-primary">ESSENCIAL</h5>
+                            <p>Plano mensal</p>
+                            <div class="price">
+                                <h2 class="display-6 my-4 fw-bold text-primary">
+                                    R$ 149 <span class="fs-6 text-muted">/
+                                        mes</span></h2>
+                            </div>
+                            <div class="price-info-3">
+                                <ul>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>
+                                        PDV e vendas
+                                    </li>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Estoque basico
+                                    </li>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Financeiro e caixa
+                                    </li>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Emissao de NFC-e
+                                    </li>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Suporte em horario comercial
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="card-footer border-0 bg-white">
+                            <div class="price-btn text-center">
+                                <a href="/login"
+                                    class="btn btn-primary w-100 fw-semibold">Solicitar demonstracao</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div
+                        class="card shadow h-100 border-0 border-success border-top border-3">
+                        <div class="card-body text-center">
+                            <h5 class="fw-bold text-success">PROFISSIONAL</h5>
+                            <p>Plano mensal</p>
+                            <div class="price">
+                                <h2 class="display-6 my-4 fw-bold text-success">
+                                    R$ 299 <span class="fs-6 text-muted">/
+                                        mes</span></h2>
+                            </div>
+                            <div class="price-info-3">
+                                <ul>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Tudo do Essencial
+                                    </li>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Orcamentos e pedidos
+                                    </li>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Estoque avancado
+                                    </li>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Emissao de NFC-e
+                                    </li>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Suporte em horario comercial
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="card-footer border-0 bg-white">
+                            <div class="price-btn text-center">
+                                <a href="/login"
+                                    class="btn btn-success w-100 fw-semibold">Solicitar demonstracao</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div
+                        class="card shadow-sm h-100 border-0 border-primary border-top border-3">
+                        <div class="card-body text-center">
+                            <h5 class="fw-bold text-primary">ENTERPRISE</h5>
+                            <p>Plano mensal</p>
+                            <div class="price">
+                                <h2 class="display-6 my-4 fw-bold text-primary">
+                                    R$ 549 <span class="fs-6 text-muted">/
+                                        mes</span></h2>
+                            </div>
+                            <div class="price-info-3">
+                                <ul>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Multiempresa e filiais
+                                    </li>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Fiscal avancado e SPED
+                                    </li>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Automacoes e API
+                                    </li>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Emissao de NFC-e
+                                    </li>
+                                    <li>
+                                        <i
+                                            class="ri-checkbox-circle-fill text-success me-2"></i>Suporte em horario comercial
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="card-footer border-0 bg-white">
+                            <div class="price-btn text-center">
+                                <a href="/login"
+                                    class="btn btn-primary w-100 fw-semibold">Solicitar demonstracao</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <img src="/renol/images/Wave.svg" alt="" class="img-fluid w-100 shape z-n1">
+    </section>
+    <section class="section faq-section">
+        <div class="container">
+            <div
+                class="row align-items-center justify-content-center text-center">
+                <div class="col-lg-7">
+                    <div class="title-sm">
+                        <span>FAQ</span>
+                    </div>
+                    <div class="section-title-border mt-3"></div>
+                    <div class="faq-title mt-4">
+                        <h2 class="fw-semibold text-primary">Perguntas frequentes</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="accordion" id="accordionExample1">
+                <div
+                    class="row align-items-center justify-content-between mt-5">
+                    <div class="col-lg-5">
+                        <h6 class="text-primary ms-3">Duvidas comuns :
+                        </h6>
+                        <p class="ms-3 mb-4">Reunimos as principais perguntas sobre implantacao, suporte e recursos do Veshop para facilitar sua avaliacao.</p>
+                        <!-- ...........accordion part one............... -->
+                        <div class="accordion-item  border-bottom rounded-0">
+                            <h6 class="accordion-header" id="headingOne">
+                                <button class="accordion-button collapsed py-3"
+                                    type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#collapseOne"
+                                    aria-expanded="false"
+                                    aria-controls="collapseOne">
+                                    Em quanto tempo consigo implantar o Veshop?
+                                </button>
+                            </h6>
+                            <!-- accordion collapse -->
+                            <div id="collapseOne"
+                                class="accordion-collapse collapse shadow-sm"
+                                aria-labelledby="headingOne"
+                                data-bs-parent="#accordionExample1">
+                                <div class="accordion-body">
+                                    <span class="text-muted">A configuracao inicial e guiada pelo nosso time. Em geral, os primeiros processos operacionais ja podem ser usados em poucos dias.</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- ...........accordion part two............... -->
+                        <div class="accordion-item border-bottom">
+                            <h6 class="accordion-header" id="headingTwo">
+                                <button class="accordion-button py-3"
+                                    type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#collapseTwo"
+                                    aria-expanded="true"
+                                    aria-controls="collapseTwo">
+                                    O Veshop atende mais de um tipo de negocio?
+                                </button>
+                            </h6>
+                            <!-- accordion collapse -->
+                            <div id="collapseTwo"
+                                class="accordion-collapse collapse show shadow-sm"
+                                aria-labelledby="headingTwo"
+                                data-bs-parent="#accordionExample1">
+                                <div class="accordion-body">
+                                    <span class="text-muted">Sim. O sistema permite parametrizacao por segmento e regras comerciais por empresa, filial e perfil de operacao.
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- ...........accordion part three............... -->
+                        <div class="accordion-item border-bottom">
+                            <h6 class="accordion-header" id="headingThree">
+                                <button class="accordion-button collapsed py-3"
+                                    type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#collapseThree"
+                                    aria-expanded="false"
+                                    aria-controls="collapseThree">
+                                    O sistema possui recursos fiscais e relatorios?
+                                </button>
+                            </h6>
+                            <!-- accordion collapse -->
+                            <div id="collapseThree"
+                                class="accordion-collapse collapse shadow-sm"
+                                aria-labelledby="headingThree"
+                                data-bs-parent="#accordionExample1">
+                                <div class="accordion-body">
+                                    <span class="text-muted">Sim. O Veshop apoia emissao fiscal, rotinas de apuracao e relatorios gerenciais para acompanhamento de vendas, estoque e financeiro.
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- ...........accordion part four............... -->
+                        <div class="accordion-item  rounded-0">
+                            <h6 class="accordion-header" id="headingFour">
+                                <button class="accordion-button collapsed py-3"
+                                    type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#collapseFour"
+                                    aria-expanded="false"
+                                    aria-controls="collapseFour">
+                                    Como funciona o suporte e o treinamento?
+                                </button>
+                            </h6>
+                            <!-- accordion collapse -->
+                            <div id="collapseFour"
+                                class="accordion-collapse collapse shadow-sm"
+                                aria-labelledby="headingFour"
+                                data-bs-parent="#accordionExample1">
+                                <div class="accordion-body">
+                                    <span class="text-muted">Voce conta com onboarding consultivo, base de apoio e atendimento especializado para a evolucao continua da equipe.
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="contact-box shadow-none rounded-2">
+                            <div
+                                class="row align-items-center justify-content-between">
+                                <div class="col-lg-12">
+                                    <div class="custom-form p-3">
+                                        <h5 class="pb-5 text-primary">Envie sua duvida :</h5>
+                                        <form>
+                                            <div class="row">
+                                                <div class="col-lg-6">
+                                                    <div class="mb-3">
+                                                        <input name="name"
+                                                            id="name"
+                                                            type="text"
+                                                            class="form-control"
+                                                            placeholder="Nome"
+                                                            required />
+                                                    </div>
+                                                </div>
+                                                <!-- col end -->
+                                                <div class="col-lg-6">
+                                                    <div class="mb-3">
+                                                        <input name="email"
+                                                            id="email"
+                                                            type="email"
+                                                            class="form-control"
+                                                            placeholder="E-mail"
+                                                            required />
+                                                    </div>
+                                                </div>
+                                                <!-- col end -->
+                                                <div class="col-lg-12">
+                                                    <div class="mb-3">
+                                                        <input type="text"
+                                                            class="form-control"
+                                                            id="subject"
+                                                            placeholder="Assunto"
+                                                            required />
+                                                    </div>
+                                                </div>
+                                                <!-- col end -->
+                                                <div class="col-lg-12">
+                                                    <div class="mb-3">
+                                                        <textarea
+                                                            name="comments"
+                                                            id="comments"
+                                                            rows="5"
+                                                            class="form-control"
+                                                            required
+                                                            placeholder="Mensagem"></textarea>
+                                                    </div>
+                                                </div>
+                                                <!-- col end -->
+                                            </div>
+                                            <!-- row end -->
+                                            <div class="row">
+                                                <div class="col-sm-12">
+                                                    <button type="submit"
+                                                        class="btn btn-primary fs-6">
+                                                        Enviar mensagem
+                                                    </button>
+                                                </div>
+                                                <!-- col end -->
+                                            </div>
+                                            <!-- row end -->
+                                        </form>
+                                    </div>
+                                </div>
+                                <!-- col end -->
+                            </div>
+                            <!-- row end -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="section testimonial-section bg-light" id="testimonial">
+        <div class="container">
+            <div
+                class="row align-items-center justify-content-center text-center">
+                <div class="col-lg-7">
+                    <div class="title-sm">
+                        <span>Clientes</span>
+                    </div>
+                    <div class="section-title-border mt-3"></div>
+                    <div class="client-title mt-4">
+                        <h2 class="fw-semibold text-primary">O que nossos clientes dizem</h2>
+                    </div>
+                </div>
+            </div>
+            <div
+                class="row align-items-center justify-content-center text-center g-4 mt-4">
+                <div class="col-lg-2 col-6">
+                    <a href="#!">
+                        <img src="/renol/images/logo/amazon.svg" alt=""
+                            class="img-fluid brand-logo">
+                    </a>
+                </div>
+                <div class="col-lg-2 col-6">
+                    <a href="#!">
+                        <img src="/renol/images/logo/google.svg" alt=""
+                            class="img-fluid brand-logo">
+                    </a>
+                </div>
+                <div class="col-lg-2 col-6">
+                    <a href="#!">
+                        <img src="/renol/images/logo/lenovo.svg" alt=""
+                            class="img-fluid brand-logo">
+                    </a>
+                </div>
+                <div class="col-lg-2 col-6">
+                    <a href="#!">
+                        <img src="/renol/images/logo/paypal.svg" alt=""
+                            class="img-fluid brand-logo">
+                    </a>
+                </div>
+                <div class="col-lg-2 col-6">
+                    <a href="#!">
+                        <img src="/renol/images/logo/shopify.svg" alt=""
+                            class="img-fluid brand-logo">
+                    </a>
+                </div>
+                <div class="col-lg-2 col-6">
+                    <a href="#!">
+                        <img src="/renol/images/logo/spotify.svg" alt=""
+                            class="img-fluid brand-logo">
+                    </a>
+                </div>
+            </div>
+            <div
+                class="row align-items-center justify-content-center mt-5 pt-2">
+                <!--end col-->
+                <div class="col-lg-12">
+                    <!-- Swiper -->
+                    <div class="swiper-container testi-slider pb-5">
+                        <div class="swiper-wrapper">
+                            <div class="swiper-slide">
+                                <div class="d-flex p-4 text-start shadow-sm">
+                                    <img src="/renol/images/users/avatar-1.jpg" alt=""
+                                        class="me-3 rounded-circle" width="50px"
+                                        height="50px">
+                                    <div class="icon-text-2 ms-3">
+                                        <i
+                                            class="ri-chat-check-line text-success"></i>
+                                        <p class="text-muted m-0 fs-xl">"Com o Veshop, centralizamos vendas, estoque e financeiro. A equipe ganhou velocidade e conseguimos decidir com base em dados."</p>
+                                        <ul
+                                            class="text-warning my-2 d-flex ps-0">
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                        </ul>
+                                        <h5
+                                            class="fw-semibold mb-0 mt-2 text-primary">
+                                            Mariana Souza</h5>
+                                        <small class="text-muted">Loja de moda</small>
+                                    </div>
+                                </div>
+                                <!--end testi-box-->
+                            </div>
+                            <div class="swiper-slide">
+                                <div class="d-flex p-4 text-start shadow-sm">
+                                    <img src="/renol/images/users/avatar-2.jpg" alt=""
+                                        class="me-3 rounded-circle" width="50px"
+                                        height="50px">
+                                    <div class="icon-text-2 ms-3">
+                                        <i
+                                            class="ri-chat-check-line text-success"></i>
+                                        <p class="text-muted m-0 fs-xl">"Com o Veshop, centralizamos vendas, estoque e financeiro. A equipe ganhou velocidade e conseguimos decidir com base em dados."</p>
+                                        <ul
+                                            class="text-warning my-2 d-flex ps-0">
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                        </ul>
+                                        <h5
+                                            class="fw-semibold mb-0 mt-2 text-primary">
+                                            Carlos Menezes</h5>
+                                        <small class="text-muted">Rede de mercados</small>
+                                    </div>
+                                </div>
+                                <!--end testi-box-->
+                            </div>
+                            <div class="swiper-slide">
+                                <div class="d-flex p-4 text-start shadow-sm">
+                                    <img src="/renol/images/users/avatar-3.jpg" alt=""
+                                        class="me-3 rounded-circle" width="50px"
+                                        height="50px">
+                                    <div class="icon-text-2 ms-3">
+                                        <i
+                                            class="ri-chat-check-line text-success"></i>
+                                        <p class="text-muted m-0 fs-xl">"Com o Veshop, centralizamos vendas, estoque e financeiro. A equipe ganhou velocidade e conseguimos decidir com base em dados."</p>
+                                        <ul
+                                            class="text-warning my-2 d-flex ps-0">
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                        </ul>
+                                        <h5
+                                            class="fw-semibold mb-0 mt-2 text-primary">
+                                            Rafael Lima</h5>
+                                        <small
+                                            class="text-muted">Autopecas</small>
+                                    </div>
+                                </div>
+                                <!-- end testi-box -->
+                            </div>
+                            <div class="swiper-slide">
+                                <div class="d-flex p-4 text-start shadow-sm">
+                                    <img src="/renol/images/users/avatar-5.jpg" alt=""
+                                        class="me-3 rounded-circle" width="50px"
+                                        height="50px">
+                                    <div class="icon-text-2 ms-3">
+                                        <i
+                                            class="ri-chat-check-line text-success"></i>
+                                        <p class="text-muted m-0 fs-xl">"Com o Veshop, centralizamos vendas, estoque e financeiro. A equipe ganhou velocidade e conseguimos decidir com base em dados."</p>
+                                        <ul
+                                            class="text-warning my-2 d-flex ps-0">
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                            <li><i class="ri-star-s-fill"></i>
+                                            </li>
+                                        </ul>
+                                        <h5
+                                            class="fw-semibold mb-0 mt-2 text-primary">
+                                            Juliana Costa</h5>
+                                        <small class="text-muted">Distribuidora</small>
+                                    </div>
+                                </div>
+                                <!--end testi-box-->
+                            </div>
+                        </div>
+                        <div class="swiper-pagination"></div>
+                    </div>
+                </div>
+                <!--end col-->
+            </div>
+        </div>
+    </section>
+    <section class="cta-section py-5 z-1" id="contacts">
+        <div class="container">
+            <div class="row align-items-center justify-content-center">
+                <div class="col-lg-7">
+                    <div class="cta-title text-center">
+                        <h2 class="fw-semibold text-white lh-base">Leve a gestao do seu comercio para outro nivel</h2>
+                        <p>Fale com nosso time e veja o Veshop funcionando na sua realidade.</p>
+                    </div>
+                    <div class="cta-btn text-center">
+                        <a href="/login" class="btn btn-success btn-lg">Solicitar acesso</a>
+                        <a href="#contacts" class="btn btn-primary ms-2 btn-lg">Agendar demonstracao</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <img src="/renol/images/sssplatter.svg" alt="" class="img-fluid position-absolute top-0 start-100 translate-middle z-n1">
+        <img src="/renol/images/sssplatter.svg" alt="" class="img-fluid position-absolute top-0 start-0 translate-middle z-n1">
+    </section>
+
+    <footer class="section footer-part-3 py-5 footer-part">
+        <div class="container">
+            <div class="row my-5 justify-content-between">
+                <div class="col-lg-3 align-self-start">
+                    <div class="logo">
+                        <a class="fs-4 text-light ls-1 fw-bold" href="#home"><i
+                                class="ri-registered-fill text-success fs-3 me-1"></i>VESHOP</a>
+                    </div>
+                    <div class="d-flex mt-4">
+                        <i class="ri-phone-fill text-light"></i>
+                        <a href="#!" class="text-white-50 ms-3 fs-xl"></i>-
+                            123-4567-890</a>
+                    </div>
+                    <div class="d-flex mt-3">
+                        <i class="ri-mail-send-fill text-light"></i>
+                        <a href="#!" class="text-white-50 ms-3 fs-xl"></i>-
+                            support@veshop.app</a>
+                    </div>
+                    <div class="footer-icon-3 ms-lg-auto me-lg-5">
+                        <ul class="d-flex mt-4">
+                            <li>
+                                <a href="#!" class="text-light me-2"><i
+                                        class="ri-facebook-fill p-2 border rounded-circle text-white-50"></i></a>
+                            </li>
+                            <li>
+                                <a href="#!" class="text-light mx-2"><i
+                                        class="ri-instagram-fill p-2 border rounded-circle text-white-50"></i></a>
+                            </li>
+                            <li>
+                                <a href="#!" class="text-light mx-2"><i
+                                        class="ri-twitter-fill p-2 border rounded-circle text-white-50"></i></a>
+                            </li>
+                            <li>
+                                <a href="#!" class="text-light mx-2"><i
+                                        class="ri-github-fill p-2 border rounded-circle text-white-50"></i></a>
+                            </li>
+                            <li>
+                                <a href="#!" class="text-light mx-2"><i
+                                        class="ri-google-fill p-2 border rounded-circle text-white-50"></i></a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="col-lg-2 col-md-4 col-12">
+                    <h5 class="text-light">Navegacao : </h5>
+                    <ul class="list-unstyled mt-4">
+                        <li><a href="#about" class="text-white-50">Sobre</a></li>
+                        <li><a href="#services" class="text-white-50">Modulos</a></li>
+                        <li><a href="#price" class="text-white-50">Planos</a></li>
+                        <li><a href="#testimonial" class="text-white-50">Clientes </a>
+                        </li>
+                    </ul>
+                </div>
+                <div class="col-lg-2 col-md-4 col-12">
+                    <h5 class="text-light fs-5">Institucional :</h5>
+                    <ul class="list-unstyled mt-4">
+                        <li><a href="#!" class="text-white-50">Termos de uso</a></li>
+                        <li><a href="#!" class="text-white-50">Politica de privacidade</a></li>
+                        <li><a href="#!" class="text-white-50">Base de conhecimento</a>
+                        </li>
+                        <li><a href="#!" class="text-white-50">
+                                Atualizacoes</a></li>
+                        <li><a href="#!" class="text-white-50">Central de ajuda
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+                <div class="col-lg-3">
+                    <h5 class="text-light">Receba novidades do Veshop : </h5>
+                    <div class="form-button mt-4">
+                        <form action="" class="d-flex align-items-center ">
+                            <input type="email" class="form-control"
+                                placeholder="Digite seu e-mail">
+                            <a href="#!" class="me-2"><i
+                                    class="ri-send-plane-2-line"></i></a>
+                        </form>
+                    </div>
+                    <div class="d-flex mt-4">
+                        <i class="ri-twitter-fill fs-5 me-3 text-success"></i>
+                        <p class="text-white-50">Conteudos praticos sobre ERP, gestao comercial e desempenho operacional.</p>
+                    </div>
+                    <a href="#!" class="text-light">Conhecer mais</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+    <div class="footer-copyright py-3 bg-dark">
+        <div class="copy-info text-center text-white-50">
+            <div class="copy-info text-center text-white-50">
+                &copy;
+                <script>
+                    document.write(new Date().getFullYear())
+                </script> Veshop - <a href="#"
+                    class="text-white-50 text-decoration-underline">ERP para comercio e varejo
+                </a>
+            </div>
+        </div>
+    </div>
+    <script src="/renol/js/bootstrap.bundle.min.js"></script>
+    
+    <script src="/renol/js/swiper-bundle.min.js"></script>
+    
+    <script src="/renol/js/app.js"></script>
+    <script src="/renol/js/swipar.js"></script>
+    <script>
+        (function () {
+            const section = document.querySelector('.veshop-hero-app');
+            if (!section) return;
+
+            const tabs = {
+                dashboard: {
+                    header: 'Atividades',
+                    status: ['Agora', 'Atualizado agora', 'Últimos 5 min'],
+                    feed: [
+                        { title: 'Nova venda registrada', meta: 'Pedido #4821 · Loja Centro', badge: 'Nova', tone: 'positive' },
+                        { title: 'Pagamento conciliado', meta: 'PIX · Pedido #4817', badge: 'Financeiro', tone: 'neutral' },
+                        { title: 'NF-e autorizada', meta: 'Série 2 · 14:36', badge: 'Fiscal', tone: 'positive' },
+                        { title: 'Reposição sugerida', meta: 'SKU 1192 · Estoque mínimo', badge: 'Estoque', tone: 'warning' },
+                        { title: 'Pedido separado', meta: 'Expedição · Pedido #4824', badge: 'Logística', tone: 'neutral' },
+                        { title: 'Meta diária em 84%', meta: 'Equipe Loja Sul', badge: 'Comercial', tone: 'positive' }
+                    ]
+                },
+                fila: {
+                    header: 'Fila crítica',
+                    status: ['Agora', 'Prioridade', 'Últimos 15 min'],
+                    feed: [
+                        { title: 'Produto com ruptura', meta: 'SKU 3402 · Sem saldo', badge: 'Estoque', tone: 'warning' },
+                        { title: 'Conta a pagar vence hoje', meta: 'Fornecedor Atlas · 17:00', badge: 'Financeiro', tone: 'warning' },
+                        { title: 'Pedido parado na expedição', meta: 'Pedido #4832 · 48 min', badge: 'Logística', tone: 'neutral' },
+                        { title: 'Divergência de caixa', meta: 'PDV Loja Norte', badge: 'Alerta', tone: 'warning' },
+                        { title: 'Preço sem atualização', meta: 'Tabela atacado', badge: 'Comercial', tone: 'neutral' }
+                    ]
+                },
+                auditoria: {
+                    header: 'Auditoria',
+                    status: ['Últimas 24h', 'Atualizado há 3 min', 'Últimas 2h'],
+                    feed: [
+                        { title: 'Alteração de preço', meta: 'Usuário Ana · SKU 2201', badge: 'Registro', tone: 'neutral' },
+                        { title: 'Cancelamento autorizado', meta: 'Pedido #4789 · 2 min', badge: 'Concluído', tone: 'positive' },
+                        { title: 'Ajuste de estoque', meta: 'Inventário rotativo', badge: 'Estoque', tone: 'neutral' },
+                        { title: 'Parâmetro fiscal alterado', meta: 'CFOP de saída', badge: 'Fiscal', tone: 'warning' },
+                        { title: 'Integração reprocessada', meta: 'Webhook ERP', badge: 'Integração', tone: 'positive' }
+                    ]
+                }
+            };
+
+            const tabButtons = Array.from(section.querySelectorAll('[data-tab-btn]'));
+            const feedHeader = section.querySelector('[data-feed-header]');
+            const feedStatus = section.querySelector('[data-feed-status]');
+            const feedList = section.querySelector('[data-feed-list]');
+            const carousel = section.querySelector('[data-metric-carousel]');
+            const prevBtn = section.querySelector('[data-metric-prev]');
+            const nextBtn = section.querySelector('[data-metric-next]');
+
+            const cursors = {};
+            const statusCursors = {};
+            Object.keys(tabs).forEach((key) => {
+                cursors[key] = 0;
+                statusCursors[key] = 0;
+            });
+
+            let activeTab = 'dashboard';
+            let timer = null;
+
+            const createItem = (item) => {
+                return `
+                    <article class="veshop-feed-item">
+                        <span class="veshop-feed-dot"></span>
+                        <div>
+                            <p class="veshop-feed-title">
+                                <span>${item.title}</span>
+                                <span class="veshop-badge ${item.tone}">${item.badge}</span>
+                            </p>
+                            <p class="veshop-feed-meta">${item.meta}</p>
+                        </div>
+                    </article>
+                `;
+            };
+
+            const getNextChunk = (tabId, size) => {
+                const source = tabs[tabId].feed;
+                const chunk = [];
+                for (let i = 0; i < size; i += 1) {
+                    const index = cursors[tabId] % source.length;
+                    chunk.push(source[index]);
+                    cursors[tabId] += 1;
+                }
+                return chunk;
+            };
+
+            const renderTab = (tabId, reset) => {
+                const tab = tabs[tabId];
+                if (!tab) return;
+
+                if (reset) {
+                    cursors[tabId] = 0;
+                    statusCursors[tabId] = 0;
+                }
+
+                feedHeader.textContent = tab.header;
+                feedStatus.textContent = tab.status[statusCursors[tabId] % tab.status.length];
+                statusCursors[tabId] += 1;
+
+                const items = getNextChunk(tabId, 3);
+                feedList.innerHTML = items.map(createItem).join('');
+            };
+
+            const tick = () => {
+                const tab = tabs[activeTab];
+                if (!tab) return;
+
+                const list = Array.from(feedList.querySelectorAll('.veshop-feed-item'));
+                const nextIndex = cursors[activeTab] % tab.feed.length;
+                const nextItem = tab.feed[nextIndex];
+                cursors[activeTab] += 1;
+
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = createItem(nextItem);
+                const newItem = wrapper.firstElementChild;
+
+                feedList.prepend(newItem);
+                if (list.length >= 3) {
+                    const last = feedList.querySelectorAll('.veshop-feed-item')[3];
+                    if (last) last.remove();
+                }
+
+                feedStatus.textContent = tab.status[statusCursors[activeTab] % tab.status.length];
+                statusCursors[activeTab] += 1;
+            };
+
+            tabButtons.forEach((button) => {
+                button.addEventListener('click', function () {
+                    activeTab = this.getAttribute('data-tab-id');
+
+                    tabButtons.forEach((btn) => btn.classList.remove('active'));
+                    this.classList.add('active');
+
+                    renderTab(activeTab, true);
+                });
+            });
+
+            const updateMetricButtons = () => {
+                if (!carousel || !prevBtn || !nextBtn) return;
+                const max = carousel.scrollWidth - carousel.clientWidth;
+                prevBtn.style.display = carousel.scrollLeft > 4 ? 'inline-flex' : 'none';
+                nextBtn.style.display = carousel.scrollLeft < max - 4 ? 'inline-flex' : 'none';
+            };
+
+            if (carousel) {
+                carousel.addEventListener('scroll', updateMetricButtons, { passive: true });
+                window.addEventListener('resize', updateMetricButtons);
+            }
+
+            if (prevBtn) {
+                prevBtn.addEventListener('click', () => {
+                    carousel.scrollBy({ left: -carousel.clientWidth * 0.8, behavior: 'smooth' });
+                });
+            }
+
+            if (nextBtn) {
+                nextBtn.addEventListener('click', () => {
+                    carousel.scrollBy({ left: carousel.clientWidth * 0.8, behavior: 'smooth' });
+                });
+            }
+
+            renderTab(activeTab, true);
+            updateMetricButtons();
+
+            timer = window.setInterval(tick, 4800);
+
+            window.addEventListener('beforeunload', () => {
+                if (timer) {
+                    window.clearInterval(timer);
+                    timer = null;
+                }
+            });
+        })();
+    </script>
+
+</body>
+</html>
+
+
+

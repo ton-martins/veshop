@@ -1,14 +1,13 @@
 <script setup>
-import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import BRANDING from '@/branding';
+import GuestLayout from '@/Layouts/GuestLayout.vue';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 
-defineProps({
+const props = defineProps({
     status: {
         type: String,
+        default: null,
     },
 });
 
@@ -23,46 +22,47 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Forgot Password" />
+        <Head :title="`Recuperar senha | ${BRANDING.appName}`" />
 
-        <div class="mb-4 text-sm text-gray-600">
-            Forgot your password? No problem. Just let us know your email
-            address and we will email you a password reset link that will allow
-            you to choose a new one.
+        <span class="veshop-login-pill">Recuperação de acesso</span>
+        <h1 class="veshop-login-title">Esqueci minha senha</h1>
+        <p class="veshop-login-subtitle">
+            Informe seu e-mail para receber um link seguro de redefinição.
+        </p>
+
+        <div v-if="props.status" class="alert alert-success mt-3 mb-0 py-2" role="alert">
+            {{ props.status }}
         </div>
 
-        <div
-            v-if="status"
-            class="mb-4 text-sm font-medium text-green-600"
-        >
-            {{ status }}
-        </div>
-
-        <form @submit.prevent="submit">
-            <div>
-                <InputLabel for="email" value="Email" />
-
-                <TextInput
+        <form class="mt-3" @submit.prevent="submit">
+            <div class="mb-2">
+                <label for="email" class="veshop-login-label">E-mail de acesso</label>
+                <input
                     id="email"
-                    type="email"
-                    class="mt-1 block w-full"
                     v-model="form.email"
+                    type="email"
+                    autocomplete="username"
                     required
                     autofocus
-                    autocomplete="username"
+                    class="form-control veshop-login-input"
                 />
-
-                <InputError class="mt-2" :message="form.errors.email" />
+                <InputError :message="form.errors.email" class="mt-1" />
             </div>
 
-            <div class="mt-4 flex items-center justify-end">
-                <PrimaryButton
-                    :class="{ 'opacity-25': form.processing }"
-                    :disabled="form.processing"
-                >
-                    Email Password Reset Link
-                </PrimaryButton>
-            </div>
+            <button
+                type="submit"
+                class="btn btn-primary veshop-login-submit mt-3 w-100"
+                :class="{ 'opacity-75': form.processing }"
+                :disabled="form.processing"
+            >
+                <span v-if="form.processing" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                {{ form.processing ? 'Enviando...' : 'Enviar link de recuperação' }}
+            </button>
         </form>
+
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
+            <span class="text-muted small">Você poderá redefinir sua senha em alguns minutos.</span>
+            <Link :href="route('login')" class="veshop-login-link">Voltar para login</Link>
+        </div>
     </GuestLayout>
 </template>

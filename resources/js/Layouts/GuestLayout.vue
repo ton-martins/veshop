@@ -1,22 +1,267 @@
 <script setup>
-import ApplicationLogo from '@/Components/ApplicationLogo.vue';
-import { Link } from '@inertiajs/vue3';
+import BRANDING from '@/branding';
+import { Head, Link } from '@inertiajs/vue3';
+
+const props = defineProps({
+    showAside: {
+        type: Boolean,
+        default: false,
+    },
+});
+
+const highlights = [
+    'Vendas, estoque e caixa sincronizados em tempo real.',
+    'Rotinas fiscais e financeiras com trilha de auditoria.',
+    'Experiência de app para operação diária do varejo.',
+];
+
+const currentYear = new Date().getFullYear();
 </script>
 
 <template>
-    <div
-        class="flex min-h-screen flex-col items-center bg-gray-100 pt-6 sm:justify-center sm:pt-0"
-    >
-        <div>
-            <Link href="/">
-                <ApplicationLogo class="h-20 w-20 fill-current text-gray-500" />
-            </Link>
+    <Head>
+        <meta charset="UTF-8" />
+        <link head-key="landing-remixicon" rel="stylesheet" href="/landing/css/remixicon.css" />
+        <link head-key="landing-bootstrap" rel="stylesheet" href="/landing/css/bootstrap.min.css" />
+        <link head-key="landing-style" rel="stylesheet" href="/landing/css/style.min.css" />
+    </Head>
+
+    <section class="veshop-auth-shell">
+        <div class="veshop-auth-bg" aria-hidden="true">
+            <div class="veshop-auth-gradient-base"></div>
+            <div class="veshop-auth-gradient-overlay"></div>
+            <div class="veshop-auth-orb veshop-auth-orb-left"></div>
+            <div class="veshop-auth-orb veshop-auth-orb-right"></div>
+            <div class="veshop-auth-orb veshop-auth-orb-top"></div>
         </div>
 
-        <div
-            class="mt-6 w-full overflow-hidden bg-white px-6 py-4 shadow-md sm:max-w-md sm:rounded-lg"
-        >
-            <slot />
+        <div class="position-relative container veshop-auth-content">
+            <div
+                class="row veshop-auth-row min-vh-100 align-items-center align-items-lg-stretch justify-content-center g-4 py-4"
+            >
+                <div v-if="props.showAside" class="col-lg-6 d-none d-lg-flex">
+                    <aside class="veshop-auth-aside veshop-auth-equal-height w-100 p-4 p-lg-5">
+                        <p class="mb-2 text-uppercase ls-2 fw-semibold text-success">Ecossistema {{ BRANDING.appName }}</p>
+                        <h1 class="veshop-auth-title mb-3">
+                            Gestão de varejo com a mesma identidade da landing page.
+                        </h1>
+                        <p class="veshop-auth-copy mb-0">
+                            Centralize pedidos, estoque, financeiro e fiscal em um único ambiente para decisões mais rápidas.
+                        </p>
+
+                        <div class="mt-4 d-grid gap-3">
+                            <article v-for="highlight in highlights" :key="highlight" class="veshop-auth-chip">
+                                <span class="dot" aria-hidden="true"></span>
+                                <p>{{ highlight }}</p>
+                            </article>
+                        </div>
+
+                        <p class="mb-0 mt-4 small text-light opacity-75">
+                            © {{ currentYear }} {{ BRANDING.appName }}. Todos os direitos reservados.
+                        </p>
+                    </aside>
+                </div>
+
+                <div
+                    class="d-lg-flex"
+                    :class="props.showAside ? 'col-lg-5 col-md-8' : 'col-xl-5 col-lg-6 col-md-8'"
+                >
+                    <section class="veshop-auth-card veshop-auth-equal-height w-100 p-4 p-lg-5">
+                        <Link href="/" class="d-inline-flex align-items-center gap-3 text-decoration-none">
+                            <span class="veshop-auth-logo">
+                                <i class="ri-registered-fill"></i>
+                            </span>
+                            <span>
+                                <span class="d-block fs-5 fw-bold text-primary ls-1">{{ BRANDING.appName }}</span>
+                                <span class="veshop-auth-subbrand d-block text-uppercase ls-2">ERP para comércio e varejo</span>
+                            </span>
+                        </Link>
+
+                        <div class="mt-4">
+                            <slot />
+                        </div>
+
+                        <p class="mb-0 mt-4 text-center d-lg-none small text-muted">
+                            © {{ currentYear }} {{ BRANDING.appName }}. Todos os direitos reservados.
+                        </p>
+                    </section>
+                </div>
+            </div>
         </div>
-    </div>
+    </section>
 </template>
+
+<style scoped>
+.veshop-auth-shell {
+    position: relative;
+    min-height: 100vh;
+    padding-top: 0;
+    overflow: hidden;
+}
+
+.veshop-auth-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.veshop-auth-gradient-base {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background:
+        radial-gradient(circle at top, rgba(129, 216, 111, 0.24) 0%, transparent 60%),
+        radial-gradient(120% 120% at 85% 10%, rgba(129, 216, 111, 0.2) 0%, transparent 65%),
+        linear-gradient(180deg, #f8fef9 0%, #eef9f1 55%, #e7f5eb 100%);
+}
+
+.veshop-auth-gradient-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    opacity: 0.72;
+    background:
+        radial-gradient(120% 120% at 90% 12%, rgba(129, 216, 111, 0.18), transparent),
+        radial-gradient(90% 95% at 18% 78%, rgba(7, 51, 65, 0.07), transparent 70%);
+}
+
+.veshop-auth-orb {
+    position: absolute;
+    border-radius: 999px;
+    filter: blur(58px);
+}
+
+.veshop-auth-orb-left {
+    left: -120px;
+    top: -54px;
+    z-index: 2;
+    width: 360px;
+    height: 360px;
+    background: rgba(129, 216, 111, 0.22);
+}
+
+.veshop-auth-orb-right {
+    right: -120px;
+    bottom: -130px;
+    z-index: 2;
+    width: 420px;
+    height: 420px;
+    background: rgba(129, 216, 111, 0.18);
+}
+
+.veshop-auth-orb-top {
+    right: 14%;
+    top: -120px;
+    z-index: 2;
+    width: 260px;
+    height: 260px;
+    background: rgba(7, 51, 65, 0.08);
+}
+
+.veshop-auth-content {
+    z-index: 3;
+}
+
+.veshop-auth-row {
+    padding-block: 1rem;
+}
+
+.veshop-auth-equal-height {
+    min-height: 560px;
+}
+
+.veshop-auth-aside {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    border: 1px solid rgba(129, 216, 111, 0.28);
+    border-radius: 20px;
+    background: linear-gradient(160deg, rgba(2, 29, 37, 0.9), rgba(7, 51, 65, 0.9));
+    box-shadow: 0 30px 70px -36px rgba(7, 51, 65, 0.9);
+}
+
+.veshop-auth-title {
+    color: #f5fdff;
+    font-size: clamp(1.65rem, 2.5vw, 2.1rem);
+    line-height: 1.24;
+    font-weight: 700 !important;
+}
+
+.veshop-auth-copy {
+    color: rgba(245, 253, 255, 0.8);
+    font-size: 0.92rem;
+    line-height: 1.58;
+}
+
+.veshop-auth-chip {
+    border: 1px solid rgba(129, 216, 111, 0.28);
+    border-radius: 12px;
+    background: rgba(129, 216, 111, 0.12);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+}
+
+.veshop-auth-chip .dot {
+    width: 8px;
+    height: 8px;
+    margin-top: 7px;
+    border-radius: 999px;
+    background: #81d86f;
+    flex-shrink: 0;
+}
+
+.veshop-auth-chip p {
+    margin: 0;
+    color: #f5fdff;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.veshop-auth-card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(7, 51, 65, 0.15);
+    border-radius: 20px;
+    background: rgba(245, 253, 255, 0.96);
+    box-shadow: 0 30px 70px -45px rgba(7, 51, 65, 0.7);
+}
+
+.veshop-auth-logo {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid rgba(7, 51, 65, 0.18);
+    background: linear-gradient(145deg, #073341, #0f5164);
+    color: #81d86f;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    box-shadow: 0 20px 35px -25px rgba(7, 51, 65, 0.9);
+}
+
+.veshop-auth-subbrand {
+    font-size: 10px;
+    color: #073341;
+    font-weight: 600;
+}
+
+@media (min-width: 992px) {
+    .veshop-auth-equal-height {
+        min-height: 585px;
+    }
+}
+
+@media (max-width: 991.98px) {
+    .veshop-auth-shell {
+        padding-top: 0;
+    }
+
+    .veshop-auth-equal-height {
+        min-height: auto;
+    }
+}
+</style>

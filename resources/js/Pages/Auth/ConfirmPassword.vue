@@ -1,9 +1,7 @@
 <script setup>
-import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
+import BRANDING from '@/branding';
+import GuestLayout from '@/Layouts/GuestLayout.vue';
 import { Head, useForm } from '@inertiajs/vue3';
 
 const form = useForm({
@@ -19,37 +17,38 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Confirm Password" />
+        <Head :title="`Confirmar senha | ${BRANDING.appName}`" />
 
-        <div class="mb-4 text-sm text-gray-600">
-            This is a secure area of the application. Please confirm your
-            password before continuing.
-        </div>
+        <span class="veshop-login-pill">Validação de segurança</span>
+        <h1 class="veshop-login-title">Confirmar senha</h1>
+        <p class="veshop-login-subtitle">
+            Digite sua senha para continuar.
+        </p>
 
-        <form @submit.prevent="submit">
-            <div>
-                <InputLabel for="password" value="Password" />
-                <TextInput
+        <form class="mt-3" @submit.prevent="submit">
+            <div class="mb-2">
+                <label for="password" class="veshop-login-label">Senha atual</label>
+                <input
                     id="password"
-                    type="password"
-                    class="mt-1 block w-full"
                     v-model="form.password"
-                    required
+                    type="password"
                     autocomplete="current-password"
+                    required
                     autofocus
+                    class="form-control veshop-login-input"
                 />
-                <InputError class="mt-2" :message="form.errors.password" />
+                <InputError :message="form.errors.password" class="mt-1" />
             </div>
 
-            <div class="mt-4 flex justify-end">
-                <PrimaryButton
-                    class="ms-4"
-                    :class="{ 'opacity-25': form.processing }"
-                    :disabled="form.processing"
-                >
-                    Confirm
-                </PrimaryButton>
-            </div>
+            <button
+                type="submit"
+                class="btn btn-primary veshop-login-submit mt-3 w-100"
+                :class="{ 'opacity-75': form.processing }"
+                :disabled="form.processing"
+            >
+                <span v-if="form.processing" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                {{ form.processing ? 'Validando...' : 'Confirmar e continuar' }}
+            </button>
         </form>
     </GuestLayout>
 </template>

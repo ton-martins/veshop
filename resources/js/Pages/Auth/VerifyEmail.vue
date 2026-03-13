@@ -1,61 +1,58 @@
 <script setup>
-import { computed } from 'vue';
+import BRANDING from '@/branding';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 const props = defineProps({
     status: {
         type: String,
+        default: null,
     },
 });
 
 const form = useForm({});
+const verificationLinkSent = computed(() => props.status === 'verification-link-sent');
 
 const submit = () => {
     form.post(route('verification.send'));
 };
-
-const verificationLinkSent = computed(
-    () => props.status === 'verification-link-sent',
-);
 </script>
 
 <template>
     <GuestLayout>
-        <Head title="Email Verification" />
+        <Head :title="`Verificar e-mail | ${BRANDING.appName}`" />
 
-        <div class="mb-4 text-sm text-gray-600">
-            Thanks for signing up! Before getting started, could you verify your
-            email address by clicking on the link we just emailed to you? If you
-            didn't receive the email, we will gladly send you another.
+        <span class="veshop-login-pill">Validação de conta</span>
+        <h1 class="veshop-login-title">Verificar e-mail</h1>
+        <p class="veshop-login-subtitle">
+            Confirme seu endereço de e-mail para continuar no sistema.
+        </p>
+
+        <div v-if="verificationLinkSent" class="alert alert-success mt-3 mb-0 py-2" role="alert">
+            Um novo link de verificação foi enviado com sucesso.
         </div>
 
-        <div
-            class="mb-4 text-sm font-medium text-green-600"
-            v-if="verificationLinkSent"
-        >
-            A new verification link has been sent to the email address you
-            provided during registration.
-        </div>
-
-        <form @submit.prevent="submit">
-            <div class="mt-4 flex items-center justify-between">
-                <PrimaryButton
-                    :class="{ 'opacity-25': form.processing }"
-                    :disabled="form.processing"
-                >
-                    Resend Verification Email
-                </PrimaryButton>
-
-                <Link
-                    :href="route('logout')"
-                    method="post"
-                    as="button"
-                    class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                    >Log Out</Link
-                >
-            </div>
+        <form class="mt-3" @submit.prevent="submit">
+            <button
+                type="submit"
+                class="btn btn-primary veshop-login-submit w-100"
+                :class="{ 'opacity-75': form.processing }"
+                :disabled="form.processing"
+            >
+                <span v-if="form.processing" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                {{ form.processing ? 'Enviando...' : 'Reenviar e-mail de verificação' }}
+            </button>
         </form>
+
+        <div class="veshop-login-note mt-3">
+            Se não encontrar o e-mail, verifique a caixa de spam e tente novamente.
+        </div>
+
+        <div class="mt-3 text-center">
+            <Link :href="route('logout')" method="post" as="button" class="veshop-login-link">
+                Sair da conta
+            </Link>
+        </div>
     </GuestLayout>
 </template>
