@@ -1,0 +1,230 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --veshop-primary: #112240;
+        --veshop-primary-hover: #0b1a34;
+        --veshop-accent: #0284c7;
+        --veshop-accent-soft: #e0f2fe;
+        --veshop-accent-border: #7dd3fc;
+        --veshop-accent-ink: #075985;
+        --veshop-highlight: #f59e0b;
+        --veshop-highlight-soft: #fef3c7;
+        --veshop-highlight-ink: #92400e;
+        --veshop-text-strong: #0f172a;
+        --veshop-text-muted: #475569;
+        --veshop-line: #d6e2f1;
+        --veshop-card-bg: rgba(255, 255, 255, 0.92);
+        --veshop-grid-line: rgba(30, 41, 59, 0.16);
+        --veshop-bg-gradient: radial-gradient(circle at 12% 10%, rgba(2, 132, 199, 0.24), transparent 44%),
+            radial-gradient(circle at 88% 4%, rgba(245, 158, 11, 0.2), transparent 34%),
+            linear-gradient(180deg, #f8fbff 0%, #f8fbff 40%, #eef4ff 100%);
+        --veshop-cta-gradient: linear-gradient(135deg, #112240 0%, #0e2a5b 55%, #0284c7 140%);
+    }
+
+    html {
+        scroll-behavior: smooth;
+    }
+
+    body {
+        @apply antialiased;
+        background-color: #f3f7ff;
+        color: var(--veshop-text-strong);
+    }
+}
+
+@layer components {
+    .veshop-shell {
+        background: var(--veshop-bg-gradient);
+    }
+
+    .veshop-grid {
+        background-image:
+            linear-gradient(to right, var(--veshop-grid-line) 1px, transparent 1px),
+            linear-gradient(to bottom, var(--veshop-grid-line) 1px, transparent 1px);
+        background-size: 64px 64px;
+        mask-image: linear-gradient(to bottom, rgba(15, 23, 42, 1) 15%, rgba(15, 23, 42, 0.25) 78%, transparent 100%);
+    }
+
+    .veshop-card {
+        @apply rounded-2xl backdrop-blur;
+        border: 1px solid var(--veshop-line);
+        background-color: var(--veshop-card-bg);
+        box-shadow: 0 18px 50px -30px rgba(15, 23, 42, 0.7);
+    }
+
+    .veshop-logo-badge {
+        background-color: var(--veshop-primary);
+        color: var(--veshop-highlight);
+        box-shadow: 0 10px 30px -16px rgba(17, 34, 64, 0.9);
+    }
+
+    .veshop-kicker {
+        color: var(--veshop-accent-ink);
+    }
+
+    .veshop-badge {
+        border: 1px solid var(--veshop-accent-border);
+        background-color: var(--veshop-accent-soft);
+        color: var(--veshop-accent-ink);
+    }
+
+    .veshop-btn-primary {
+        background-color: var(--veshop-primary);
+        color: #ffffff;
+    }
+
+    .veshop-btn-primary:hover {
+        background-color: var(--veshop-primary-hover);
+    }
+
+    .veshop-btn-secondary {
+        border: 1px solid var(--veshop-line);
+        background-color: rgba(255, 255, 255, 0.85);
+        color: var(--veshop-text-muted);
+    }
+
+    .veshop-btn-secondary:hover {
+        border-color: var(--veshop-accent-border);
+        color: var(--veshop-text-strong);
+    }
+
+    .veshop-chip {
+        border: 1px solid var(--veshop-line);
+        background-color: rgba(255, 255, 255, 0.88);
+        color: var(--veshop-text-muted);
+    }
+
+    .veshop-metric-primary {
+        background-color: var(--veshop-primary);
+        color: #f8fafc;
+    }
+
+    .veshop-metric-muted {
+        color: rgba(226, 232, 240, 0.84);
+    }
+
+    .veshop-metric-accent {
+        background-color: var(--veshop-highlight-soft);
+        color: var(--veshop-highlight-ink);
+    }
+
+    .veshop-metric-accent-label {
+        color: rgba(146, 64, 14, 0.9);
+    }
+
+    .veshop-inline-note {
+        color: var(--veshop-accent-ink);
+    }
+
+    .veshop-float-badge {
+        border: 1px solid var(--veshop-accent-border);
+        background-color: var(--veshop-accent-soft);
+        color: var(--veshop-accent-ink);
+    }
+
+    .veshop-cta-shell {
+        background-color: var(--veshop-primary);
+        color: #ffffff;
+    }
+
+    .veshop-cta-kicker {
+        color: #bae6fd;
+    }
+
+    .veshop-btn-highlight {
+        background-color: var(--veshop-highlight);
+        color: #0f172a;
+    }
+
+    .veshop-btn-highlight:hover {
+        background-color: #fbbf24;
+    }
+
+    .veshop-btn-dark-ghost {
+        border: 1px solid rgba(226, 232, 240, 0.34);
+        color: #e2e8f0;
+    }
+
+    .veshop-btn-dark-ghost:hover {
+        border-color: rgba(226, 232, 240, 0.58);
+        color: #ffffff;
+    }
+
+    .veshop-sim-option {
+        border: 1px solid var(--veshop-line);
+        background-color: rgba(255, 255, 255, 0.82);
+        color: var(--veshop-text-muted);
+    }
+
+    .veshop-sim-option:hover {
+        border-color: var(--veshop-accent-border);
+        color: var(--veshop-text-strong);
+    }
+
+    .veshop-sim-option-active {
+        border-color: var(--veshop-primary);
+        background-color: rgba(17, 34, 64, 0.08);
+        color: var(--veshop-primary);
+    }
+
+    .veshop-range {
+        accent-color: var(--veshop-primary);
+    }
+
+    .veshop-progress-track {
+        height: 9px;
+        border-radius: 9999px;
+        background-color: rgba(148, 163, 184, 0.25);
+        overflow: hidden;
+    }
+
+    .veshop-progress-fill {
+        height: 100%;
+        border-radius: 9999px;
+        background: linear-gradient(90deg, var(--veshop-primary) 0%, var(--veshop-accent) 100%);
+        transition: width 220ms ease-out;
+    }
+
+    .veshop-progress-fill.is-alt {
+        background: linear-gradient(90deg, var(--veshop-highlight) 0%, #f97316 100%);
+    }
+
+    .veshop-footer {
+        border-top: 1px solid var(--veshop-line);
+        color: var(--veshop-text-muted);
+    }
+
+    .reveal-up {
+        animation: reveal-up 620ms ease-out both;
+    }
+
+    .float-slow {
+        animation: float-slow 7s ease-in-out infinite;
+    }
+}
+
+@keyframes reveal-up {
+    from {
+        opacity: 0;
+        transform: translateY(18px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes float-slow {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-9px);
+    }
+}
