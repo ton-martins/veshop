@@ -69,6 +69,7 @@ class PdvController extends Controller
             ->where('contractor_id', $contractor->id)
             ->where('is_active', true)
             ->where('stock_quantity', '>', 0)
+            ->with('category:id,name')
             ->orderByDesc('is_pdv_featured')
             ->orderBy('pdv_featured_order')
             ->orderBy('name')
@@ -81,6 +82,7 @@ class PdvController extends Controller
                 'stock_quantity',
                 'unit',
                 'image_url',
+                'category_id',
                 'is_pdv_featured',
                 'pdv_featured_order',
             ])
@@ -92,6 +94,8 @@ class PdvController extends Controller
                 'stock_quantity' => (int) $product->stock_quantity,
                 'unit' => $product->unit,
                 'image_url' => $product->image_url,
+                'category_id' => $product->category_id ? (int) $product->category_id : null,
+                'category_name' => $product->category?->name ?? 'Sem categoria',
                 'is_pdv_featured' => (bool) $product->is_pdv_featured,
                 'pdv_featured_order' => $product->pdv_featured_order ? (int) $product->pdv_featured_order : null,
             ])

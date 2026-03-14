@@ -1,10 +1,10 @@
 <script setup>
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PdvLayout from '@/Layouts/PdvLayout.vue';
 import Modal from '@/Components/Modal.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, useForm } from '@inertiajs/vue3';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
     Search,
     Plus,
@@ -17,6 +17,7 @@ import {
     UserPlus,
     ChevronLeft,
     ChevronRight,
+    ChevronDown,
     ArrowUp,
     ArrowDown,
     Check,
@@ -35,15 +36,18 @@ const props = defineProps({
 });
 
 const productSearch = ref('');
-const currentProductPage = ref(1);
-const productsPerPage = 12;
+const productSearchInput = ref(null);
 
 const clientSearch = ref('');
+const clientPickerOpen = ref(false);
+const clientPickerRoot = ref(null);
+const clientPickerInput = ref(null);
 const selectedClientId = ref('');
 const selectedPaymentMethodId = ref('');
 const installments = ref('');
 const discountAmount = ref('');
 const surchargeAmount = ref('');
+const amountPaid = ref('');
 const notes = ref('');
 const cartItems = ref([]);
 
@@ -100,32 +104,90 @@ const installmentOptions = computed(() => {
     }));
 });
 
-const filteredProducts = computed(() => {
-    const query = String(productSearch.value ?? '').trim().toLowerCase();
-    if (!query) return productsSafe.value;
+const activeCategoryKey = ref('all');
+const categoryCarouselRef = ref(null);
+const currentProductPage = ref(1);
+const productsPerPage = 20;
 
-    return productsSafe.value.filter((product) =>
+const categoryBadges = computed(() => {
+    const grouped = new Map();
+
+    for (const product of productsSafe.value) {
+        const hasCategory = Number.isInteger(Number(product.category_id)) && Number(product.category_id) > 0;
+        const key = hasCategory ? `cat-${Number(product.category_id)}` : 'cat-uncategorized';
+        const label = String(product.category_name ?? '').trim() || 'Sem categoria';
+
+        if (!grouped.has(key)) {
+            grouped.set(key, { key, label, count: 0 });
+        }
+
+        grouped.get(key).count += 1;
+    }
+
+    const sortedCategories = Array.from(grouped.values()).sort((a, b) =>
+        String(a.label).localeCompare(String(b.label), 'pt-BR'),
+    );
+
+    return [
+        {
+            key: 'all',
+            label: 'Todas categorias',
+            count: productsSafe.value.length,
+        },
+        ...sortedCategories,
+    ];
+});
+
+const activeCategoryBadge = computed(() =>
+    categoryBadges.value.find((category) => category.key === activeCategoryKey.value) ?? categoryBadges.value[0] ?? null,
+);
+
+const filteredProducts = computed(() => {
+    const categoryKey = String(activeCategoryKey.value ?? 'all');
+    const query = String(productSearch.value ?? '').trim().toLowerCase();
+
+    let scopedProducts = productsSafe.value;
+
+    if (categoryKey.startsWith('cat-')) {
+        const categoryId = Number(categoryKey.replace('cat-', ''));
+        scopedProducts = scopedProducts.filter((product) => Number(product.category_id) === categoryId);
+    } else if (categoryKey === 'cat-uncategorized') {
+        scopedProducts = scopedProducts.filter((product) => !Number(product.category_id));
+    }
+
+    if (!query) return scopedProducts;
+
+    return scopedProducts.filter((product) =>
         String(product.name ?? '').toLowerCase().includes(query)
         || String(product.sku ?? '').toLowerCase().includes(query),
     );
 });
 
-const totalProductPages = computed(() => Math.max(1, Math.ceil(filteredProducts.value.length / productsPerPage)));
+const totalProductPages = computed(() =>
+    Math.max(1, Math.ceil(filteredProducts.value.length / productsPerPage)),
+);
+
+const productPageNumbers = computed(() => {
+    const total = totalProductPages.value;
+    const current = currentProductPage.value;
+
+    if (total <= 5) {
+        return Array.from({ length: total }, (_, index) => index + 1);
+    }
+
+    let start = Math.max(1, current - 2);
+    let end = Math.min(total, start + 4);
+
+    if ((end - start) < 4) {
+        start = Math.max(1, end - 4);
+    }
+
+    return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+});
 
 const paginatedProducts = computed(() => {
     const start = (currentProductPage.value - 1) * productsPerPage;
     return filteredProducts.value.slice(start, start + productsPerPage);
-});
-
-const productPageNumbers = computed(() => {
-    const pages = totalProductPages.value;
-    if (pages <= 7) return Array.from({ length: pages }).map((_, index) => index + 1);
-
-    const current = currentProductPage.value;
-    const numbers = new Set([1, pages, current - 1, current, current + 1]);
-    return Array.from(numbers)
-        .filter((page) => page >= 1 && page <= pages)
-        .sort((a, b) => a - b);
 });
 
 const filteredClients = computed(() => {
@@ -135,13 +197,11 @@ const filteredClients = computed(() => {
     return clientsSafe.value.filter((client) => String(client.name ?? '').toLowerCase().includes(query));
 });
 
-const clientOptions = computed(() => [
-    { value: '', label: 'Consumidor final' },
-    ...filteredClients.value.map((client) => ({
-        value: String(client.id),
-        label: client.name,
-    })),
-]);
+const selectedClient = computed(() =>
+    clientsSafe.value.find((client) => String(client.id) === String(selectedClientId.value)) ?? null,
+);
+
+const clientPickerLabel = computed(() => selectedClient.value?.name ?? 'Consumidor final');
 
 const subtotalAmount = computed(() =>
     cartItems.value.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.unit_price)), 0),
@@ -150,11 +210,24 @@ const subtotalAmount = computed(() =>
 const discountValue = computed(() => normalizeMoneyInput(discountAmount.value));
 const surchargeValue = computed(() => normalizeMoneyInput(surchargeAmount.value));
 const totalAmount = computed(() => Math.max(0, subtotalAmount.value - discountValue.value + surchargeValue.value));
+const isCashPayment = computed(() =>
+    String(selectedPaymentMethod.value?.code ?? '').trim().toLowerCase() === 'cash',
+);
+const paidAmount = computed(() => normalizeMoneyInput(amountPaid.value));
+const changeAmount = computed(() => {
+    if (!isCashPayment.value) return 0;
+    return Math.max(0, paidAmount.value - totalAmount.value);
+});
+const missingAmount = computed(() => {
+    if (!isCashPayment.value) return 0;
+    return Math.max(0, totalAmount.value - paidAmount.value);
+});
 
 const canFinalizeSale = computed(() =>
     hasOpenCashSession.value
     && cartItems.value.length > 0
     && Boolean(selectedPaymentMethodId.value)
+    && (!isCashPayment.value || paidAmount.value >= totalAmount.value)
     && totalAmount.value > 0,
 );
 
@@ -183,16 +256,7 @@ const selectedFeaturedProducts = computed(() =>
 );
 
 const featuredLimitReached = computed(() => featuredProductIds.value.length >= 12);
-
-watch(productSearch, () => {
-    currentProductPage.value = 1;
-});
-
-watch(filteredProducts, () => {
-    if (currentProductPage.value > totalProductPages.value) {
-        currentProductPage.value = totalProductPages.value;
-    }
-});
+const hasPendingCart = computed(() => cartItems.value.length > 0 && !saleForm.processing);
 
 watch(
     () => props.paymentMethods,
@@ -215,10 +279,13 @@ watch(
     (method) => {
         if (!method?.allows_installments) {
             installments.value = '';
-            return;
+        } else if (!installments.value) {
+            installments.value = '2';
         }
 
-        if (!installments.value) installments.value = '2';
+        if (String(method?.code ?? '').toLowerCase() !== 'cash') {
+            amountPaid.value = '';
+        }
     },
     { immediate: true },
 );
@@ -232,6 +299,138 @@ watch(
     { immediate: true },
 );
 
+watch([productSearch, activeCategoryKey], () => {
+    currentProductPage.value = 1;
+});
+
+watch(
+    totalProductPages,
+    (totalPages) => {
+        if (currentProductPage.value > totalPages) {
+            currentProductPage.value = totalPages;
+            return;
+        }
+
+        if (currentProductPage.value < 1) {
+            currentProductPage.value = 1;
+        }
+    },
+    { immediate: true },
+);
+
+watch(
+    categoryBadges,
+    (badges) => {
+        if (!badges.some((badge) => badge.key === activeCategoryKey.value)) {
+            activeCategoryKey.value = 'all';
+        }
+    },
+    { immediate: true },
+);
+
+const focusProductSearch = () => {
+    nextTick(() => {
+        productSearchInput.value?.focus?.();
+        productSearchInput.value?.select?.();
+    });
+};
+
+const isTypingField = (target) => {
+    if (!target || typeof target !== 'object') return false;
+
+    const tagName = String(target.tagName ?? '').toUpperCase();
+    if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return true;
+
+    return Boolean(target.isContentEditable);
+};
+
+const closeTopMostModal = () => {
+    if (clientPickerOpen.value) {
+        clientPickerOpen.value = false;
+        return true;
+    }
+
+    if (createClientModalOpen.value) {
+        createClientModalOpen.value = false;
+        return true;
+    }
+
+    if (featuredProductsModalOpen.value) {
+        featuredProductsModalOpen.value = false;
+        return true;
+    }
+
+    if (closeCashModalOpen.value) {
+        closeCashModalOpen.value = false;
+        return true;
+    }
+
+    if (openCashModalOpen.value) {
+        openCashModalOpen.value = false;
+        return true;
+    }
+
+    return false;
+};
+
+const handleHotkeys = (event) => {
+    const key = String(event.key ?? '').toLowerCase();
+    const typing = isTypingField(event.target);
+
+    if ((event.ctrlKey || event.metaKey) && key === 'k') {
+        event.preventDefault();
+        focusProductSearch();
+        return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && key === 'n') {
+        event.preventDefault();
+        openCreateClientModal();
+        return;
+    }
+
+    if (key === 'f9') {
+        event.preventDefault();
+        finalizeSale();
+        return;
+    }
+
+    if (key === 'f8') {
+        event.preventDefault();
+        if (hasOpenCashSession.value) {
+            openCloseCashModal();
+        } else {
+            openCashModalOpen.value = true;
+        }
+        return;
+    }
+
+    if (key !== 'escape') return;
+    event.preventDefault();
+
+    if (closeTopMostModal()) return;
+
+    if (typing) return;
+
+    if (productSearch.value) {
+        productSearch.value = '';
+        focusProductSearch();
+    }
+};
+
+const handleBeforeUnload = (event) => {
+    if (!hasPendingCart.value) return;
+
+    event.preventDefault();
+    event.returnValue = '';
+};
+
+const handleClientPickerClickOutside = (event) => {
+    if (!clientPickerOpen.value || !clientPickerRoot.value) return;
+    if (clientPickerRoot.value.contains(event.target)) return;
+    clientPickerOpen.value = false;
+};
+
 onMounted(() => {
     if (props.initialAction === 'open-cash' && !hasOpenCashSession.value) {
         openCashModalOpen.value = true;
@@ -240,6 +439,20 @@ onMounted(() => {
     if (props.initialAction === 'close-cash' && hasOpenCashSession.value) {
         openCloseCashModal();
     }
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('keydown', handleHotkeys);
+    document.addEventListener('mousedown', handleClientPickerClickOutside);
+    document.addEventListener('touchstart', handleClientPickerClickOutside, { passive: true });
+
+    focusProductSearch();
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+    document.removeEventListener('keydown', handleHotkeys);
+    document.removeEventListener('mousedown', handleClientPickerClickOutside);
+    document.removeEventListener('touchstart', handleClientPickerClickOutside);
 });
 
 function normalizeMoneyInput(value) {
@@ -262,6 +475,7 @@ function addToCart(product) {
     cartItems.value.push({
         product_id: Number(product.id),
         name: product.name,
+        image_url: product.image_url || '',
         quantity: 1,
         unit_price: Number(product.sale_price ?? 0),
         stock_quantity: Number(product.stock_quantity ?? 0),
@@ -332,14 +546,58 @@ function finalizeSale() {
             selectedClientId.value = '';
             discountAmount.value = '';
             surchargeAmount.value = '';
+            amountPaid.value = '';
             notes.value = '';
+            focusProductSearch();
         },
     });
 }
 
-function setProductPage(page) {
-    if (page < 1 || page > totalProductPages.value) return;
-    currentProductPage.value = page;
+function setActiveCategory(categoryKey) {
+    activeCategoryKey.value = String(categoryKey ?? 'all');
+}
+
+function scrollCategoryBadges(direction = 1) {
+    const element = categoryCarouselRef.value;
+    if (!element) return;
+
+    const scrollDistance = Math.max(180, Math.floor(Number(element.clientWidth ?? 0) * 0.75));
+    element.scrollBy({
+        left: direction * scrollDistance,
+        behavior: 'smooth',
+    });
+}
+
+function goToProductPage(page) {
+    const target = Number(page) || 1;
+    currentProductPage.value = Math.min(totalProductPages.value, Math.max(1, target));
+}
+
+function openClientPicker() {
+    clientPickerOpen.value = true;
+    nextTick(() => {
+        clientPickerInput.value?.focus?.();
+    });
+}
+
+function toggleClientPicker() {
+    if (clientPickerOpen.value) {
+        clientPickerOpen.value = false;
+        return;
+    }
+
+    openClientPicker();
+}
+
+function clearClientSelection() {
+    selectedClientId.value = '';
+    clientSearch.value = '';
+}
+
+function selectClientFromPicker(clientId = '') {
+    selectedClientId.value = clientId ? String(clientId) : '';
+    clientSearch.value = '';
+    clientPickerOpen.value = false;
 }
 
 function openFeaturedProductsModal() {
@@ -389,6 +647,7 @@ function saveFeaturedProducts() {
 }
 
 function openCreateClientModal() {
+    clientPickerOpen.value = false;
     createClientForm.reset();
     createClientForm.clearErrors();
     createClientModalOpen.value = true;
@@ -408,162 +667,245 @@ function submitCreateClient() {
 <template>
     <Head title="PDV" />
 
-    <AuthenticatedLayout area="admin" header-variant="compact" header-title="PDV">
-        <section class="space-y-4">
-            <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-                <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div class="flex flex-wrap items-center gap-2">
-                        <span
-                            v-if="hasOpenCashSession"
-                            class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700"
-                        >
-                            {{ props.cashSession.code }}
-                        </span>
-                        <p class="text-sm text-slate-600">
-                            {{ hasOpenCashSession ? `Aberto em ${props.cashSession.opened_at}` : 'Nenhum caixa aberto no momento.' }}
-                        </p>
-                    </div>
+    <PdvLayout title="PDV" subtitle="Operação de frente de caixa" :confirm-leave="hasPendingCart">
+        <template #status>
+            <div class="flex w-full flex-wrap items-center gap-2 md:justify-center">
+                <span
+                    v-if="hasOpenCashSession"
+                    class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700"
+                >
+                    {{ props.cashSession.code }}
+                </span>
+                <span class="text-xs font-medium text-slate-600 md:text-sm">
+                    {{ hasOpenCashSession ? `Aberto em ${props.cashSession.opened_at}` : 'Nenhum caixa aberto no momento' }}
+                </span>
+                <span class="hidden rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600 lg:inline-flex">
+                    Ctrl+K buscar
+                </span>
+                <span class="hidden rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600 lg:inline-flex">
+                    F9 finalizar
+                </span>
+            </div>
+        </template>
 
-                    <button
-                        v-if="!hasOpenCashSession"
-                        type="button"
-                        class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700"
-                        @click="openCashModalOpen = true"
-                    >
-                        <Unlock class="h-3.5 w-3.5" />
-                        Abrir caixa
-                    </button>
-                    <button
-                        v-else
-                        type="button"
-                        class="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-700"
-                        @click="openCloseCashModal"
-                    >
-                        <Lock class="h-3.5 w-3.5" />
-                        Fechar caixa
-                    </button>
-                </div>
-            </section>
+        <template #actions>
+            <button
+                v-if="!hasOpenCashSession"
+                type="button"
+                class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                @click="openCashModalOpen = true"
+            >
+                <Unlock class="h-4 w-4" />
+                Abrir caixa
+            </button>
+            <button
+                v-else
+                type="button"
+                class="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-700"
+                @click="openCloseCashModal"
+            >
+                <Lock class="h-4 w-4" />
+                Fechar caixa
+            </button>
+        </template>
 
-            <div class="grid gap-4 xl:grid-cols-[1.45fr_1fr]">
-                <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+        <section class="pdv-touch-mode space-y-4 md:flex md:h-full md:min-h-0 md:flex-col">
+
+            <div class="grid gap-4 md:h-full md:min-h-0 xl:grid-cols-[1.45fr_1fr]">
+                <section class="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm md:flex md:h-full md:min-h-0 md:flex-col md:p-4">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <h2 class="text-sm font-semibold text-slate-900">Produtos</h2>
                         <button
                             type="button"
-                            class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                            class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                             @click="openFeaturedProductsModal"
                         >
-                            <Star class="h-3.5 w-3.5" />
+                            <Star class="h-4 w-4" />
                             Top 12 do PDV
                         </button>
                     </div>
 
-                    <div class="veshop-search-shell mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div class="veshop-search-shell mt-3 flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2">
                         <Search class="h-4 w-4 text-slate-500" />
                         <input
+                            ref="productSearchInput"
                             v-model="productSearch"
                             type="text"
                             placeholder="Buscar produto por nome ou SKU"
                             class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                         >
-                    </div>
-
-                    <div class="mt-2 flex items-center justify-between text-xs text-slate-500">
-                        <span>{{ filteredProducts.length }} produto(s)</span>
-                        <span>Página {{ currentProductPage }} de {{ totalProductPages }}</span>
-                    </div>
-
-                    <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        <article
-                            v-for="product in paginatedProducts"
-                            :key="product.id"
-                            class="rounded-xl border border-slate-200 bg-slate-50/80 p-3"
+                        <button
+                            v-if="productSearch"
+                            type="button"
+                            class="rounded p-1 text-slate-500 transition hover:bg-slate-200"
+                            @click="productSearch = ''"
                         >
-                            <div class="flex items-start justify-between gap-2">
-                                <p class="truncate text-sm font-semibold text-slate-900">{{ product.name }}</p>
-                                <span
-                                    v-if="product.is_pdv_featured"
-                                    class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700"
-                                >
-                                    Top {{ product.pdv_featured_order }}
-                                </span>
-                            </div>
-                            <p class="text-xs text-slate-500">
-                                Estoque: {{ product.stock_quantity }} • {{ asCurrency(product.sale_price) }}
-                            </p>
+                            <X class="h-3.5 w-3.5" />
+                        </button>
+                    </div>
+                    <div class="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2">
+                        <div class="flex items-center gap-2">
                             <button
                                 type="button"
-                                class="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800"
-                                @click="addToCart(product)"
+                                class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-100"
+                                @click="scrollCategoryBadges(-1)"
                             >
-                                <Plus class="h-3.5 w-3.5" />
-                                Adicionar
+                                <ChevronLeft class="h-4 w-4" />
                             </button>
-                        </article>
+                            <div ref="categoryCarouselRef" class="no-scrollbar flex min-w-0 flex-1 gap-2 overflow-x-auto py-1">
+                                <button
+                                    v-for="category in categoryBadges"
+                                    :key="'pdv-category-' + category.key"
+                                    type="button"
+                                    class="inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition"
+                                    :class="activeCategoryKey === category.key
+                                        ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'"
+                                    @click="setActiveCategory(category.key)"
+                                >
+                                    <span class="truncate">{{ category.label }}</span>
+                                    <span
+                                        class="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[10px] font-bold"
+                                        :class="activeCategoryKey === category.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'"
+                                    >
+                                        {{ category.count }}
+                                    </span>
+                                </button>
+                            </div>
+                            <button
+                                type="button"
+                                class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-100"
+                                @click="scrollCategoryBadges(1)"
+                            >
+                                <ChevronRight class="h-4 w-4" />
+                            </button>
+                        </div>
                     </div>
-
-                    <div v-if="!paginatedProducts.length" class="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                    <div class="mt-2 flex items-center justify-between text-xs text-slate-500">
+                        <span>{{ filteredProducts.length }} produto(s)</span>
+                        <span>{{ activeCategoryBadge?.label || 'Todas categorias' }}</span>
+                    </div>
+                    <div v-if="!filteredProducts.length" class="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
                         Nenhum produto encontrado para o filtro aplicado.
                     </div>
-
-                    <div class="mt-4 flex flex-wrap items-center gap-2">
-                        <button
-                            type="button"
-                            class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                            :disabled="currentProductPage <= 1"
-                            @click="setProductPage(currentProductPage - 1)"
+                    <div v-else class="mt-4 md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-1">
+                        <div class="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            <button
+                                v-for="product in paginatedProducts"
+                                :key="'paged-product-' + product.id"
+                                type="button"
+                                class="group relative flex min-w-0 flex-col rounded-xl border border-slate-300 bg-white p-2 text-left shadow-sm transition hover:border-slate-400 hover:shadow-md"
+                                @click="addToCart(product)"
+                            >
+                                <div class="h-20 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 md:h-24">
+                                    <img
+                                        v-if="product.image_url"
+                                        :src="product.image_url"
+                                        :alt="product.name"
+                                        class="h-full w-full object-cover"
+                                        loading="lazy"
+                                    >
+                                    <div v-else class="flex h-full w-full items-center justify-center bg-slate-100 text-[10px] font-semibold uppercase text-slate-500">
+                                        sem foto
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <p class="line-clamp-2 text-xs font-semibold text-slate-900">{{ product.name }}</p>
+                                    <p class="mt-1 text-[11px] text-slate-500">
+                                        {{ asCurrency(product.sale_price) }} - Estoque {{ product.stock_quantity }}
+                                    </p>
+                                </div>
+                                <div
+                                    class="pointer-events-none absolute inset-0 rounded-xl bg-slate-900/0 transition duration-200 group-hover:bg-slate-900/10"
+                                />
+                                <div
+                                    class="pointer-events-none absolute inset-x-2 bottom-2 translate-y-1 opacity-100 transition duration-200 md:translate-y-3 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100"
+                                >
+                                    <span class="inline-flex w-full items-center justify-center rounded-md bg-slate-900 px-2 py-2 text-[11px] font-semibold text-white">
+                                        Clique para adicionar
+                                    </span>
+                                </div>
+                            </button>
+                        </div>
+                        <div
+                            v-if="totalProductPages > 1"
+                            class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3"
                         >
-                            <ChevronLeft class="h-3.5 w-3.5" />
-                            Anterior
-                        </button>
-
-                        <button
-                            v-for="page in productPageNumbers"
-                            :key="`pdv-page-${page}`"
-                            type="button"
-                            class="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition"
-                            :class="page === currentProductPage ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
-                            @click="setProductPage(page)"
-                        >
-                            {{ page }}
-                        </button>
-
-                        <button
-                            type="button"
-                            class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                            :disabled="currentProductPage >= totalProductPages"
-                            @click="setProductPage(currentProductPage + 1)"
-                        >
-                            Próximo
-                            <ChevronRight class="h-3.5 w-3.5" />
-                        </button>
+                            <p class="text-xs text-slate-500">
+                                Página {{ currentProductPage }} de {{ totalProductPages }}
+                            </p>
+                            <div class="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                    :disabled="currentProductPage <= 1"
+                                    @click="goToProductPage(currentProductPage - 1)"
+                                >
+                                    <ChevronLeft class="h-3.5 w-3.5" />
+                                    <span class="hidden sm:inline">Anterior</span>
+                                </button>
+                                <button
+                                    v-for="page in productPageNumbers"
+                                    :key="'pdv-page-' + page"
+                                    type="button"
+                                    class="inline-flex h-8 min-w-[2rem] items-center justify-center rounded-lg border px-2 text-xs font-semibold transition"
+                                    :class="page === currentProductPage
+                                        ? 'border-slate-900 bg-slate-900 text-white'
+                                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'"
+                                    @click="goToProductPage(page)"
+                                >
+                                    {{ page }}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                    :disabled="currentProductPage >= totalProductPages"
+                                    @click="goToProductPage(currentProductPage + 1)"
+                                >
+                                    <span class="hidden sm:inline">Próxima</span>
+                                    <ChevronRight class="h-3.5 w-3.5" />
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </section>
-
-                <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+                <section class="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm md:flex md:h-full md:min-h-0 md:flex-col md:p-4">
                     <h2 class="text-sm font-semibold text-slate-900">Carrinho</h2>
 
-                    <div class="mt-3 space-y-2">
+                    <div class="mt-3 space-y-2 md:max-h-44 md:overflow-y-auto md:pr-1">
                         <article
                             v-for="item in cartItems"
                             :key="item.product_id"
-                            class="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2"
+                            class="rounded-xl border border-slate-300 bg-slate-50/80 px-3 py-2"
                         >
                             <div class="flex items-center justify-between gap-2">
-                                <p class="truncate text-sm font-semibold text-slate-900">{{ item.name }}</p>
+                                <div class="flex min-w-0 items-center gap-2">
+                                    <div class="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                        <img
+                                            v-if="item.image_url"
+                                            :src="item.image_url"
+                                            :alt="item.name"
+                                            class="h-full w-full object-cover"
+                                            loading="lazy"
+                                        >
+                                        <div v-else class="flex h-full w-full items-center justify-center bg-slate-100 text-[10px] font-semibold uppercase text-slate-500">
+                                            sem
+                                        </div>
+                                    </div>
+                                    <p class="truncate text-sm font-semibold text-slate-900">{{ item.name }}</p>
+                                </div>
                                 <button type="button" class="rounded p-1 text-slate-500 transition hover:bg-slate-200" @click="removeFromCart(item.product_id)">
                                     <Trash2 class="h-3.5 w-3.5" />
                                 </button>
                             </div>
                             <div class="mt-2 flex items-center justify-between gap-2">
                                 <div class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
-                                    <button type="button" class="rounded p-1 transition hover:bg-slate-100" @click="decrease(item)">
-                                        <Minus class="h-3.5 w-3.5" />
+                                    <button type="button" class="rounded p-1.5 transition hover:bg-slate-100" @click="decrease(item)">
+                                        <Minus class="h-4 w-4" />
                                     </button>
                                     <span class="min-w-[2rem] text-center text-xs font-semibold">{{ item.quantity }}</span>
-                                    <button type="button" class="rounded p-1 transition hover:bg-slate-100" @click="increase(item)">
-                                        <Plus class="h-3.5 w-3.5" />
+                                    <button type="button" class="rounded p-1.5 transition hover:bg-slate-100" @click="increase(item)">
+                                        <Plus class="h-4 w-4" />
                                     </button>
                                 </div>
                                 <p class="text-sm font-semibold text-slate-900">{{ asCurrency(item.quantity * item.unit_price) }}</p>
@@ -575,33 +917,107 @@ function submitCreateClient() {
                         Adicione produtos para iniciar a venda.
                     </div>
 
-                    <div class="mt-4 space-y-3 border-t border-slate-200 pt-4">
-                        <div class="veshop-search-shell flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <Search class="h-4 w-4 text-slate-500" />
-                            <input
-                                v-model="clientSearch"
-                                type="text"
-                                placeholder="Pesquisar cliente"
-                                class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
-                            >
-                            <button
-                                v-if="clientSearch"
-                                type="button"
-                                class="rounded p-1 text-slate-500 transition hover:bg-slate-200"
-                                @click="clientSearch = ''"
-                            >
-                                <X class="h-3.5 w-3.5" />
-                            </button>
-                        </div>
+                    <div class="mt-4 space-y-3 border-t border-slate-200 pt-4 md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-1">
+                        <div class="grid grid-cols-[1fr_auto] gap-2">
+                            <div ref="clientPickerRoot" class="relative min-w-0">
+                                <button
+                                    type="button"
+                                    class="inline-flex w-full items-center justify-between gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                                    @click="toggleClientPicker"
+                                >
+                                    <span class="flex min-w-0 items-center gap-2">
+                                        <Search class="h-4 w-4 shrink-0 text-slate-500" />
+                                        <span class="truncate">{{ clientPickerLabel }}</span>
+                                    </span>
+                                    <ChevronDown class="h-4 w-4 shrink-0 text-slate-500 transition-transform" :class="clientPickerOpen ? 'rotate-180' : ''" />
+                                </button>
 
-                        <div class="grid gap-2 sm:grid-cols-[1fr_auto]">
-                            <UiSelect v-model="selectedClientId" :options="clientOptions" />
+                                <Transition
+                                    enter-active-class="transition ease-out duration-150"
+                                    enter-from-class="opacity-0 -translate-y-1"
+                                    enter-to-class="opacity-100 translate-y-0"
+                                    leave-active-class="transition ease-in duration-100"
+                                    leave-from-class="opacity-100 translate-y-0"
+                                    leave-to-class="opacity-0 -translate-y-1"
+                                >
+                                    <div
+                                        v-if="clientPickerOpen"
+                                        class="absolute left-0 top-[calc(100%+0.35rem)] z-[90] w-full min-w-[15rem] rounded-xl border border-slate-200 bg-white p-2 shadow-[0_22px_50px_-32px_rgba(15,23,42,0.95)]"
+                                    >
+                                        <div class="veshop-search-shell flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+                                            <Search class="h-4 w-4 text-slate-500" />
+                                            <input
+                                                ref="clientPickerInput"
+                                                v-model="clientSearch"
+                                                type="text"
+                                                placeholder="Pesquisar cliente"
+                                                class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
+                                            >
+                                            <button
+                                                v-if="clientSearch"
+                                                type="button"
+                                                class="rounded p-1 text-slate-500 transition hover:bg-slate-200"
+                                                @click="clientSearch = ''"
+                                            >
+                                                <X class="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+
+                                        <div class="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
+                                            <button
+                                                type="button"
+                                                class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium transition hover:bg-slate-50"
+                                                :class="!selectedClientId ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-700'"
+                                                @click="selectClientFromPicker('')"
+                                            >
+                                                <span class="truncate">Consumidor final</span>
+                                                <Check v-if="!selectedClientId" class="h-4 w-4 shrink-0 text-slate-600" />
+                                            </button>
+
+                                            <button
+                                                v-for="client in filteredClients"
+                                                :key="`pdv-client-${client.id}`"
+                                                type="button"
+                                                class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium transition hover:bg-slate-50"
+                                                :class="String(selectedClientId) === String(client.id) ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-700'"
+                                                @click="selectClientFromPicker(client.id)"
+                                            >
+                                                <span class="truncate">{{ client.name }}</span>
+                                                <Check v-if="String(selectedClientId) === String(client.id)" class="h-4 w-4 shrink-0 text-slate-600" />
+                                            </button>
+
+                                            <div v-if="!filteredClients.length" class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-500">
+                                                Nenhum cliente encontrado.
+                                            </div>
+                                        </div>
+
+                                        <div class="mt-2 flex items-center justify-between border-t border-slate-100 pt-2">
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                                                @click="clearClientSelection"
+                                            >
+                                                <X class="h-3.5 w-3.5" />
+                                                Limpar
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                                                @click="clientPickerOpen = false"
+                                            >
+                                                Fechar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </Transition>
+                            </div>
+
                             <button
                                 type="button"
-                                class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                                 @click="openCreateClientModal"
                             >
-                                <UserPlus class="h-3.5 w-3.5" />
+                                <UserPlus class="h-4 w-4" />
                                 Novo cliente
                             </button>
                         </div>
@@ -614,22 +1030,39 @@ function submitCreateClient() {
                             placeholder="Parcelamento"
                         />
 
-                        <input
-                            v-model="discountAmount"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="Desconto (R$)"
-                        >
-                        <input
-                            v-model="surchargeAmount"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="Acréscimo (R$)"
-                        >
+                        <div class="grid gap-2 sm:grid-cols-2">
+                            <input
+                                v-model="discountAmount"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                placeholder="Desconto (R$)"
+                            >
+                            <input
+                                v-model="surchargeAmount"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                placeholder="Acréscimo (R$)"
+                            >
+                        </div>
+
+                        <div v-if="isCashPayment" class="grid gap-2 sm:grid-cols-2">
+                            <input
+                                v-model="amountPaid"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                placeholder="Valor pago (R$)"
+                            >
+                            <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Troco</p>
+                                <p class="mt-1 text-base font-bold text-emerald-700">{{ asCurrency(changeAmount) }}</p>
+                            </div>
+                        </div>
                         <textarea
                             v-model="notes"
                             rows="2"
@@ -650,11 +1083,23 @@ function submitCreateClient() {
                                 <span>Acréscimo</span>
                                 <span class="font-semibold">+ {{ asCurrency(surchargeValue) }}</span>
                             </div>
+                            <div v-if="isCashPayment" class="mt-1 flex items-center justify-between">
+                                <span>Valor pago</span>
+                                <span class="font-semibold">{{ asCurrency(paidAmount) }}</span>
+                            </div>
+                            <div v-if="isCashPayment" class="mt-1 flex items-center justify-between">
+                                <span>Troco</span>
+                                <span class="font-semibold text-emerald-700">{{ asCurrency(changeAmount) }}</span>
+                            </div>
                             <div class="mt-2 flex items-center justify-between border-t border-slate-200 pt-2">
                                 <span class="font-semibold">Total</span>
                                 <span class="text-base font-bold">{{ asCurrency(totalAmount) }}</span>
                             </div>
                         </div>
+
+                        <p v-if="isCashPayment && missingAmount > 0" class="text-xs font-semibold text-rose-600">
+                            Faltam {{ asCurrency(missingAmount) }} para concluir no dinheiro.
+                        </p>
 
                         <p
                             v-if="saleForm.errors.cash_session || saleForm.errors.items || saleForm.errors.payment_method_id"
@@ -664,11 +1109,11 @@ function submitCreateClient() {
                         </p>
                         <button
                             type="button"
-                            class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                            class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-base font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                             :disabled="saleForm.processing || !canFinalizeSale"
                             @click="finalizeSale"
                         >
-                            <ReceiptText class="h-4 w-4" />
+                            <ReceiptText class="h-5 w-5" />
                             {{ saleForm.processing ? 'Finalizando...' : 'Finalizar venda' }}
                         </button>
                     </div>
@@ -779,7 +1224,7 @@ function submitCreateClient() {
                             >
                                 <div class="min-w-0">
                                     <p class="truncate text-sm font-semibold text-slate-900">{{ product.name }}</p>
-                                    <p class="text-xs text-slate-500">{{ asCurrency(product.sale_price) }} • Estoque {{ product.stock_quantity }}</p>
+                                    <p class="text-xs text-slate-500">{{ asCurrency(product.sale_price) }} - Estoque {{ product.stock_quantity }}</p>
                                 </div>
                                 <span
                                     v-if="isFeatured(product.id)"
@@ -808,7 +1253,7 @@ function submitCreateClient() {
                             >
                                 <div class="flex items-center justify-between gap-2">
                                     <div class="min-w-0">
-                                        <p class="truncate text-xs font-semibold text-slate-900">#{{ index + 1 }} • {{ product.name }}</p>
+                                        <p class="truncate text-xs font-semibold text-slate-900">#{{ index + 1 }} - {{ product.name }}</p>
                                     </div>
                                     <div class="flex items-center gap-1">
                                         <button
@@ -907,5 +1352,31 @@ function submitCreateClient() {
                 </template>
             </WizardModalFrame>
         </Modal>
-    </AuthenticatedLayout>
+    </PdvLayout>
 </template>
+
+<style scoped>
+@media (min-width: 1024px) {
+    .pdv-touch-mode :deep(button) {
+        min-height: 48px;
+    }
+
+    .pdv-touch-mode :deep(input),
+    .pdv-touch-mode :deep(select),
+    .pdv-touch-mode :deep(textarea) {
+        min-height: 46px;
+    }
+
+    .pdv-touch-mode :deep(textarea) {
+        min-height: 84px;
+    }
+}
+
+.pdv-touch-mode :deep(.no-scrollbar) {
+    scrollbar-width: none;
+}
+
+.pdv-touch-mode :deep(.no-scrollbar::-webkit-scrollbar) {
+    display: none;
+}
+</style>
