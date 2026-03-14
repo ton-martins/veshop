@@ -3,6 +3,8 @@ import { computed } from 'vue';
 
 const BRANDING = Object.freeze({
     appName: 'Veshop',
+    systemIcon: '/brand/icone-veshop.png',
+    favicon: '/brand/favicon-veshop.ico',
     locale: 'pt-BR',
     charset: 'UTF-8',
     colors: {
@@ -110,11 +112,11 @@ export const useBranding = () => {
     );
 
     const publicFaviconHref = computed(() => {
-        return branding.value.favicon_url || avatarUrl.value || logoUrl.value || '/favicon.ico';
+        return branding.value.favicon_url || avatarUrl.value || logoUrl.value || BRANDING.favicon;
     });
 
     const publicFaviconType = computed(() => {
-        const href = String(publicFaviconHref.value || '');
+        const href = String(publicFaviconHref.value || '').split('?')[0].toLowerCase();
         if (href.endsWith('.svg')) return 'image/svg+xml';
         if (href.endsWith('.ico')) return 'image/x-icon';
         return 'image/png';
@@ -128,7 +130,7 @@ export const useBranding = () => {
         '--brand-accent': secondaryColor.value,
     }));
 
-    const defaultBrandIconUrl = computed(() => logoUrl.value || '/favicon.ico');
+    const defaultBrandIconUrl = computed(() => BRANDING.systemIcon);
 
     return {
         branding,

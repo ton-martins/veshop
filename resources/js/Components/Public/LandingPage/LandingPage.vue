@@ -22,10 +22,14 @@ defineProps({
 
 <template>
     <Head>
-        <link head-key="landing-favicon" rel="icon" type="image/x-icon" href="/landing/images/favicon.ico" />
+        <link head-key="landing-favicon" rel="icon" type="image/x-icon" href="/brand/favicon-veshop.ico" />
+        <link head-key="landing-favicon-32" rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-veshop-32.png" />
+        <link head-key="landing-favicon-16" rel="icon" type="image/png" sizes="16x16" href="/brand/favicon-veshop-16.png" />
+        <link head-key="landing-remixicon-preload" rel="preload" as="style" href="/landing/css/remixicon.css" />
+        <link head-key="landing-bootstrap-preload" rel="preload" as="style" href="/landing/css/bootstrap.min.css" />
+        <link head-key="landing-style-preload" rel="preload" as="style" href="/landing/css/style.min.css" />
         <link head-key="landing-remixicon" rel="stylesheet" href="/landing/css/remixicon.css" />
         <link head-key="landing-bootstrap" rel="stylesheet" href="/landing/css/bootstrap.min.css" />
-        <link head-key="landing-swiper" rel="stylesheet" href="/landing/css/swiper-bundle.min.css" />
         <link head-key="landing-style" rel="stylesheet" href="/landing/css/style.min.css" />
     </Head>
 

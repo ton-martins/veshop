@@ -64,9 +64,7 @@ const testimonialText =
                         <img
                             :src="item.avatar"
                             :alt="item.name"
-                            class="me-3 rounded-circle"
-                            width="50"
-                            height="50"
+                            class="testimonial-avatar me-3 rounded-circle"
                         />
                         <div class="icon-text-2 ms-3">
                             <i class="ri-chat-check-line text-success"></i>
@@ -85,3 +83,14 @@ const testimonialText =
         </div>
     </section>
 </template>
+
+<style scoped>
+.testimonial-avatar {
+    width: 56px;
+    height: 56px;
+    min-width: 56px;
+    object-fit: cover;
+    object-position: center;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+}
+</style>

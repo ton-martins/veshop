@@ -7,6 +7,13 @@ import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import { Briefcase, ClipboardList, Clock3, CircleDollarSign } from 'lucide-vue-next';
 
+const props = defineProps({
+    overview: {
+        type: Object,
+        default: () => ({}),
+    },
+});
+
 const page = usePage();
 const currentContractor = computed(() => page.props.contractorContext?.current ?? null);
 const contractorName = computed(() => currentContractor.value?.brand_name || currentContractor.value?.name || 'Sua empresa');
@@ -27,18 +34,20 @@ const overviewTabs = [
     { key: 'pdv', label: 'PDV' },
 ];
 
-const serviceStats = [
-    { key: 'open_orders', label: 'OS em aberto', value: '19', icon: ClipboardList, tone: 'bg-amber-100 text-amber-700' },
-    { key: 'today', label: 'Atendimentos hoje', value: '11', icon: Clock3, tone: 'bg-blue-100 text-blue-700' },
-    { key: 'catalog', label: 'Servicos ativos', value: '44', icon: Briefcase, tone: 'bg-slate-100 text-slate-700' },
-    { key: 'revenue', label: 'Receita de servicos', value: 'R$ 42.300', icon: CircleDollarSign, tone: 'bg-emerald-100 text-emerald-700' },
-];
+const asCurrency = (value) =>
+    Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-const serviceQueue = [
-    { code: 'OS-1042', customer: 'Mercado Aurora', service: 'Manutencao de painel', status: 'Em execucao' },
-    { code: 'OS-1044', customer: 'Auto Eletrica Paulista', service: 'Diagnostico eletrico', status: 'Triagem' },
-    { code: 'OS-1047', customer: 'Bazar Bela Vista', service: 'Instalacao de sistema', status: 'Aguardando peca' },
-];
+const serviceStats = computed(() => {
+    const stats = props.overview?.services?.stats ?? {};
+    return [
+        { key: 'open_orders', label: 'OS em aberto', value: String(stats.open_orders ?? 0), icon: ClipboardList, tone: 'bg-amber-100 text-amber-700' },
+        { key: 'today', label: 'Atendimentos hoje', value: String(stats.today ?? 0), icon: Clock3, tone: 'bg-blue-100 text-blue-700' },
+        { key: 'catalog', label: 'Serviços ativos', value: String(stats.active_services ?? 0), icon: Briefcase, tone: 'bg-slate-100 text-slate-700' },
+        { key: 'revenue', label: 'Receita de serviços', value: asCurrency(stats.revenue ?? 0), icon: CircleDollarSign, tone: 'bg-emerald-100 text-emerald-700' },
+    ];
+});
+
+const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
 </script>
 
 <template>
@@ -65,8 +74,14 @@ const serviceQueue = [
                 </div>
 
                 <div class="space-y-4">
-                    <OperationsOverview v-if="activeTab === 'operations'" />
-                    <PdvOverview v-else />
+                    <OperationsOverview
+                        v-if="activeTab === 'operations'"
+                        :stats="props.overview?.commercial?.operations ?? {}"
+                    />
+                    <PdvOverview
+                        v-else
+                        :stats="props.overview?.commercial?.pdv ?? {}"
+                    />
                 </div>
             </template>
 
@@ -87,7 +102,7 @@ const serviceQueue = [
 
                 <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                     <div class="flex flex-wrap items-center justify-between gap-3">
-                        <h2 class="text-sm font-semibold text-slate-900">Fila de ordens de servico</h2>
+                        <h2 class="text-sm font-semibold text-slate-900">Fila de ordens de serviço</h2>
                         <div class="flex items-center gap-2">
                             <Link :href="route('admin.services.orders')" class="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                                 Ver OS
@@ -98,13 +113,13 @@ const serviceQueue = [
                         </div>
                     </div>
 
-                    <div class="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                    <div v-if="serviceQueue.length" class="mt-4 overflow-hidden rounded-xl border border-slate-200">
                         <table class="min-w-full divide-y divide-slate-200 text-sm">
                             <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                                 <tr>
                                     <th class="px-4 py-3">OS</th>
                                     <th class="px-4 py-3">Cliente</th>
-                                    <th class="px-4 py-3">Servico</th>
+                                    <th class="px-4 py-3">Serviço</th>
                                     <th class="px-4 py-3">Status</th>
                                 </tr>
                             </thead>
@@ -116,11 +131,11 @@ const serviceQueue = [
                                     <td class="px-4 py-3">
                                         <span
                                             class="rounded-full px-2 py-1 text-[11px] font-semibold"
-                                            :class="item.status === 'Em execucao'
+                                            :class="item.status === 'Em execução'
                                                 ? 'bg-blue-100 text-blue-700'
                                                 : item.status === 'Triagem'
-                                                  ? 'bg-amber-100 text-amber-700'
-                                                  : 'bg-slate-200 text-slate-700'"
+                                                    ? 'bg-amber-100 text-amber-700'
+                                                    : 'bg-slate-200 text-slate-700'"
                                         >
                                             {{ item.status }}
                                         </span>
@@ -128,6 +143,9 @@ const serviceQueue = [
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                    <div v-else class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                        Nenhuma ordem de serviço registrada.
                     </div>
                 </section>
             </template>

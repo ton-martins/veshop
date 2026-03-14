@@ -4,24 +4,14 @@ import { Head } from '@inertiajs/vue3';
 import { Boxes, AlertTriangle, RotateCcw, CircleDollarSign, ArrowUpDown, Search, Plus } from 'lucide-vue-next';
 
 const stats = [
-    { key: 'skus', label: 'SKUs ativos', value: '248', icon: Boxes, tone: 'bg-slate-100 text-slate-700' },
-    { key: 'critical', label: 'Estoque crítico', value: '12', icon: AlertTriangle, tone: 'bg-amber-100 text-amber-700' },
-    { key: 'turnover', label: 'Giro médio', value: '4,2x', icon: RotateCcw, tone: 'bg-blue-100 text-blue-700' },
-    { key: 'value', label: 'Valor em estoque', value: 'R$ 87.420', icon: CircleDollarSign, tone: 'bg-emerald-100 text-emerald-700' },
+    { key: 'skus', label: 'SKUs ativos', value: '0', icon: Boxes, tone: 'bg-slate-100 text-slate-700' },
+    { key: 'critical', label: 'Estoque crítico', value: '0', icon: AlertTriangle, tone: 'bg-amber-100 text-amber-700' },
+    { key: 'turnover', label: 'Giro médio', value: '0x', icon: RotateCcw, tone: 'bg-blue-100 text-blue-700' },
+    { key: 'value', label: 'Valor em estoque', value: 'R$ 0,00', icon: CircleDollarSign, tone: 'bg-emerald-100 text-emerald-700' },
 ];
 
-const movements = [
-    { date: 'Hoje 10:40', item: 'Bolo Piscina Chocolate', type: 'Saída', qty: '-2', ref: '#PED-3041' },
-    { date: 'Hoje 09:20', item: 'Chocolate premium', type: 'Entrada', qty: '+15 kg', ref: '#COMP-881' },
-    { date: 'Ontem 18:10', item: 'Embalagem box M', type: 'Saída', qty: '-34 un', ref: '#PED-3037' },
-    { date: 'Ontem 16:33', item: 'Farinha especial', type: 'Entrada', qty: '+40 kg', ref: '#COMP-879' },
-];
-
-const locations = [
-    { name: 'Loja principal', occupancy: '72%', skus: 194 },
-    { name: 'Estoque seco', occupancy: '61%', skus: 88 },
-    { name: 'Câmara fria', occupancy: '54%', skus: 26 },
-];
+const movements = [];
+const locations = [];
 </script>
 
 <template>
@@ -67,21 +57,24 @@ const locations = [
                                     <th class="px-4 py-3">Ref</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-slate-100 bg-white">
+                            <tbody v-if="movements.length" class="divide-y divide-slate-100 bg-white">
                                 <tr v-for="movement in movements" :key="`${movement.date}-${movement.ref}`">
                                     <td class="px-4 py-3 text-xs text-slate-500">{{ movement.date }}</td>
                                     <td class="px-4 py-3 font-semibold text-slate-900">{{ movement.item }}</td>
                                     <td class="px-4 py-3 text-slate-600">{{ movement.type }}</td>
-                                    <td class="px-4 py-3 font-semibold" :class="movement.type === 'Entrada' ? 'text-emerald-700' : 'text-rose-700'">{{ movement.qty }}</td>
+                                    <td class="px-4 py-3 font-semibold">{{ movement.qty }}</td>
                                     <td class="px-4 py-3 text-slate-600">{{ movement.ref }}</td>
                                 </tr>
                             </tbody>
                         </table>
+                        <div v-if="!movements.length" class="px-4 py-8 text-center text-sm text-slate-500">
+                            Nenhuma movimentação registrada.
+                        </div>
                     </div>
 
                     <aside class="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
                         <h2 class="text-sm font-semibold text-slate-900">Locais de estoque</h2>
-                        <ul class="space-y-2">
+                        <ul v-if="locations.length" class="space-y-2">
                             <li v-for="location in locations" :key="location.name" class="rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200">
                                 <div class="flex items-center justify-between">
                                     <p class="text-sm font-semibold text-slate-800">{{ location.name }}</p>
@@ -90,6 +83,9 @@ const locations = [
                                 <p class="mt-1 text-xs text-slate-500">{{ location.skus }} SKUs</p>
                             </li>
                         </ul>
+                        <div v-else class="rounded-lg bg-white px-3 py-6 text-center text-sm text-slate-500 ring-1 ring-slate-200">
+                            Nenhum local configurado.
+                        </div>
 
                         <button type="button" class="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-800">
                             <ArrowUpDown class="h-3.5 w-3.5" />

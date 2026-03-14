@@ -1,0 +1,129 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Models\Client;
+use App\Models\Contractor;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class ClientController extends Controller
+{
+    /**
+     * Display a listing of clients.
+     */
+    public function index(Request $request): Response
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $search = trim((string) $request->string('search')->toString());
+        $status = trim((string) $request->string('status')->toString());
+
+        $query = Client::query()
+            ->where('contractor_id', $contractor->id);
+
+        if ($search !== '') {
+            $query->where(function ($innerQuery) use ($search): void {
+                $innerQuery
+                    ->where('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('city', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status === 'active') {
+            $query->where('is_active', true);
+        } elseif ($status === 'inactive') {
+            $query->where('is_active', false);
+        }
+
+        $clients = $query
+            ->orderByDesc('is_active')
+            ->orderBy('name')
+            ->paginate(12)
+            ->withQueryString()
+            ->through(static function (Client $client): array {
+                return [
+                    'id' => $client->id,
+                    'name' => $client->name,
+                    'email' => $client->email,
+                    'phone' => $client->phone,
+                    'document' => $client->document,
+                    'city' => $client->city,
+                    'state' => $client->state,
+                    'is_active' => (bool) $client->is_active,
+                    'status_label' => $client->is_active ? 'Ativo' : 'Inativo',
+                    'created_at' => optional($client->created_at)?->format('d/m/Y H:i'),
+                ];
+            });
+
+        $totalClients = Client::query()
+            ->where('contractor_id', $contractor->id)
+            ->count();
+
+        $activeClients = Client::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->count();
+
+        $newClientsThisMonth = Client::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('created_at', '>=', now()->startOfMonth())
+            ->count();
+
+        $uniqueCities = Client::query()
+            ->where('contractor_id', $contractor->id)
+            ->whereNotNull('city')
+            ->distinct('city')
+            ->count('city');
+
+        return Inertia::render('Admin/Clients/Index', [
+            'clients' => $clients,
+            'filters' => [
+                'search' => $search,
+                'status' => $status,
+            ],
+            'stats' => [
+                'total' => $totalClients,
+                'active' => $activeClients,
+                'new_month' => $newClientsThisMonth,
+                'cities' => $uniqueCities,
+            ],
+        ]);
+    }
+
+    private function resolveCurrentContractor(Request $request): ?Contractor
+    {
+        $user = $request->user();
+        if (! $user) {
+            return null;
+        }
+
+        $user->loadMissing('contractors');
+        $availableContractors = $user->contractors->values();
+
+        if ($availableContractors->isEmpty()) {
+            return null;
+        }
+
+        $sessionContractorId = (int) $request->session()->get('current_contractor_id', 0);
+        if ($sessionContractorId > 0) {
+            $selected = $availableContractors->firstWhere('id', $sessionContractorId);
+            if ($selected) {
+                return $selected;
+            }
+        }
+
+        $fallback = $availableContractors->first();
+        if ($fallback) {
+            $request->session()->put('current_contractor_id', $fallback->id);
+        }
+
+        return $fallback;
+    }
+}
+

@@ -21,6 +21,9 @@ const currentYear = new Date().getFullYear();
 <template>
     <Head>
         <meta charset="UTF-8" />
+        <link head-key="landing-remixicon-preload" rel="preload" as="style" href="/landing/css/remixicon.css" />
+        <link head-key="landing-bootstrap-preload" rel="preload" as="style" href="/landing/css/bootstrap.min.css" />
+        <link head-key="landing-style-preload" rel="preload" as="style" href="/landing/css/style.min.css" />
         <link head-key="landing-remixicon" rel="stylesheet" href="/landing/css/remixicon.css" />
         <link head-key="landing-bootstrap" rel="stylesheet" href="/landing/css/bootstrap.min.css" />
         <link head-key="landing-style" rel="stylesheet" href="/landing/css/style.min.css" />
@@ -69,7 +72,11 @@ const currentYear = new Date().getFullYear();
                     <section class="veshop-auth-card veshop-auth-equal-height w-100 p-4 p-lg-5">
                         <Link href="/" class="d-inline-flex align-items-center gap-3 text-decoration-none">
                             <span class="veshop-auth-logo">
-                                <i class="ri-registered-fill"></i>
+                                <img
+                                    src="/brand/icone-veshop.png"
+                                    :alt="`${BRANDING.appName} ícone`"
+                                    class="veshop-auth-logo-img"
+                                />
                             </span>
                             <span>
                                 <span class="d-block fs-5 fw-bold text-primary ls-1">{{ BRANDING.appName }}</span>
@@ -230,17 +237,22 @@ const currentYear = new Date().getFullYear();
 }
 
 .veshop-auth-logo {
-    width: 42px;
-    height: 42px;
+    width: 46px;
+    height: 46px;
     border-radius: 12px;
-    border: 1px solid rgba(7, 51, 65, 0.18);
-    background: linear-gradient(145deg, #073341, #0f5164);
-    color: #81d86f;
+    border: 1px solid rgba(7, 51, 65, 0.72);
+    background: #073341;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     font-size: 20px;
-    box-shadow: 0 20px 35px -25px rgba(7, 51, 65, 0.9);
+    box-shadow: 0 20px 35px -24px rgba(2, 17, 22, 0.85);
+}
+
+.veshop-auth-logo-img {
+    width: 27px;
+    height: 27px;
+    object-fit: contain;
 }
 
 .veshop-auth-subbrand {

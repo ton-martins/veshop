@@ -1,260 +1,192 @@
-Veshop - Requisitos do Produto e da Plataforma
-==============================================
+# Veshop - Requisitos do Produto e da Plataforma
 
-Versao: v1.0 (base para abertura do novo projeto Laravel)
+Versão: v1.1  
+Última atualização: 14/03/2026
 
-1. Objetivo do Produto
-----------------------
-Construir um SaaS web multiempresa para gestao completa de varejos e comercios, com foco em:
-- Operacao diaria (cadastros, estoque, pedidos, vendas, financeiro).
-- Controle de caixa e faturamento.
-- Catalogo online da loja.
-- Conversao via WhatsApp.
+## 1. Visão do produto
 
-2. Perfil de Cliente (ICP)
---------------------------
-Segmentos alvo iniciais:
-- Loja de roupas
-- Bazar
-- Mercado de bairro
-- Auto-eletrica
-- Outros pequenos e medios comercios
+O Veshop é um SaaS multiempresa para operação de contratantes, com foco em gestão prática e execução diária.
 
-Faixa de porte:
-- 1 a 10 lojas por empresa
-- 2 a 50 usuarios internos
+Objetivos principais:
+- Centralizar operação comercial/serviços em uma única plataforma.
+- Reduzir retrabalho entre vendas, estoque, financeiro e atendimento.
+- Permitir branding por contratante.
+- Entregar experiência simples para uso diário em desktop, tablet e celular.
 
-Perfil de usuario final:
-- Faixa etaria principal entre 20 e 50 anos.
-- Diferentes niveis de familiaridade com tecnologia.
-- Necessidade de fluxo simples, objetivo e com baixa curva de aprendizado.
+## 2. Papéis e acessos (escopo atual)
 
-3. Proposta de Valor
---------------------
-- Sistema unico para operacao e financeiro.
-- Implantacao rapida por nicho (templates).
-- Catalogo online pronto para vender.
-- Integracao com WhatsApp para gerar pedidos e atendimento.
+Papéis ativos no sistema:
+- `master`: dono do produto (gestão da plataforma).
+- `admin`: usuário do contratante.
 
-4. Escopo Funcional
--------------------
-4.1 Fundacao (obrigatorio)
-- Cadastro de empresa (tenant) e plano.
-- Cadastro de nicho no onboarding.
-- Usuarios, papeis e permissoes.
-- Configuracoes da empresa (logo, endereco, moeda, fuso, impostos base).
-- Autenticacao de dois fatores (app autenticador) obrigatoria para acesso ao sistema.
+Não há cadastro público de contratantes/usuários.  
+O `master` é responsável por cadastrar e manter contratantes e planos.
 
-Perfis iniciais (v1):
-- `master` (suporte): acesso total.
-- `admin` do contratante: administrador da empresa cadastrada.
+## 3. Modelo organizacional (contractor-first)
 
-Politica de cadastro:
-- Cadastro publico de novos usuarios/empresas desativado.
-- Apenas usuario `master` cadastra novos clientes/contratantes no sistema.
+Padrões definidos:
+- O sistema usa o termo **contractor** (não usar “tenant” na modelagem funcional).
+- Usuário pode estar vinculado a múltiplos contratantes (relação N:N em `contractor_user`).
+- Cada contratante possui:
+  - branding própria (nome, cor primária, logo, avatar),
+  - plano ativo,
+  - nicho de negócio único.
 
-4.2 Cadastros
-- Clientes.
-- Fornecedores.
-- Produtos e servicos.
-- Categorias, marcas e unidades.
-- Variacoes (tamanho, cor, voltagem, etc).
+Regra de negócio:
+- O nicho do contratante é definido administrativamente e **não é editável pelo admin do contratante**.
 
-4.3 Estoque
-- Estoque por produto e por loja.
-- Movimentacoes (entrada, saida, ajuste, transferencia).
-- Custo medio.
-- Alerta de estoque minimo.
+## 4. Nichos e segmentação de módulos
 
-4.4 Vendas e Pedidos
-- Orcamento e pedido.
-- Conversao de orcamento em venda.
-- Status do pedido (aberto, pago parcial, pago, cancelado, entregue).
-- Desconto, frete e observacoes.
-- Impressao e envio de comprovante.
+Nichos ativos:
+- `commercial` (Comércio)
+- `services` (Serviços)
 
-4.5 Financeiro
-- Contas a receber (parcelas, vencimento, recebimento parcial, juros/multa).
-- Contas a pagar.
-- Fluxo de caixa diario.
-- Centro de custo (fase 2, opcional no MVP).
-- DRE simplificada (receita, custo, despesa, margem).
+Regra central:
+- O sistema deve exibir apenas módulos compatíveis com o nicho do contratante ativo.
 
-4.6 Faturamento
-- Emissao e controle de faturamento da venda.
-- Status fiscal por documento.
-- Preparado para integracao fiscal futura (NFC-e/NF-e por adaptador).
+### 4.1 Módulos do nicho Comércio
 
-4.7 Catalogo Online
-- Vitrine publica por loja com URL amigavel.
-- Exibicao de produtos, preco, estoque disponivel e destaque.
-- Busca por nome e categoria.
-- Carrinho leve (fase 2) ou pedido simplificado (MVP).
+- Início (Visão Geral)
+- Produtos
+- Categorias
+- Clientes
+- Fornecedores
+- Pedidos
+- Estoque
+- Financeiro:
+  - Contas a pagar
+  - Contas a receber
+- Relatórios
+- PDV (camada visual em construção dentro da visão geral)
 
-4.8 Integracao WhatsApp
-- Botao "Comprar no WhatsApp" no catalogo.
-- Link `wa.me` com mensagem pre-preenchida contendo itens e total.
-- Registro da origem (catalogo, campanha, produto) para analise de conversao.
-- Evolucao fase 2: API oficial para templates e mensagens automatizadas.
+### 4.2 Módulos do nicho Serviços
 
-4.9 Relatorios e Dashboard
-- Vendas por periodo.
-- Ticket medio.
-- Produtos mais vendidos.
-- Inadimplencia.
-- Fluxo de caixa previsto x realizado.
+- Início (Visão Geral)
+- Catálogo de serviços
+- Categorias de serviços
+- Ordens de serviço
+- Agenda
 
-4.10 Administracao SaaS
-- Gestao de planos e limites (usuarios, lojas, produtos, pedidos/mes).
-- Assinatura e status de cobranca.
-- Auditoria de operacoes criticas.
+## 5. Navegação e padrões de layout consolidados
 
-5. Regras de Negocio Principais
--------------------------------
-- Todo dado de negocio pertence a um tenant (`tenant_id` obrigatorio).
-- Cada usuario acessa apenas tenants autorizados.
-- Venda aprovada baixa estoque automaticamente.
-- Cancelamento de venda estorna estoque e ajusta financeiro.
-- Pedido com pagamento parcial permanece em aberto ate quitacao.
-- Registros financeiros nao podem ser excluidos fisicamente; usar cancelamento/estorno.
-- Acoes sensiveis devem gerar evento de auditoria.
+### 5.1 Sidebar
 
-6. Requisitos Nao Funcionais
-----------------------------
-- Seguranca:
-  - RBAC por papel.
-  - Logs de auditoria.
-  - Criptografia de segredos e dados sensiveis.
-  - Boas praticas LGPD (base legal, minimizacao, exclusao sob solicitacao).
-  - O desenvolvimento deve seguir o principio "secure by default" em backend, frontend e infraestrutura.
-  - Toda nova feature deve passar por validacao de autenticacao, autorizacao, validacao de entrada e auditoria quando aplicavel.
-- Performance:
-  - Listagens paginadas.
-  - Consultas indexadas por tenant e datas.
-  - Filas para tarefas pesadas (notificacao, integracoes, relatorios).
-- Confiabilidade:
-  - Backups diarios.
-  - Jobs com retry e dead-letter logico.
-  - Monitoramento de filas e erros.
-- Escalabilidade:
-  - Arquitetura modular com monolito bem organizado.
-  - Eventos de dominio para desacoplar modulos.
-- Responsividade e usabilidade:
-  - A aplicacao deve ser 100% responsiva para desktop, tablet e celular.
-  - Todas as telas criticas devem funcionar em orientacao retrato e paisagem.
-  - A navegacao deve ser otimizada para toque (alvos minimos de 44x44 px).
-  - Tabelas e listagens devem possuir comportamento mobile-first (cards, colunas colapsadas ou scroll controlado).
-  - Nao depender de hover para acoes essenciais em dispositivos moveis.
-  - Fluxos principais devem ser operaveis com no maximo 3 interacoes para tarefas comuns.
-  - Textos e labels devem ser claros para publico de 20 a 50 anos, evitando termos tecnicos desnecessarios.
-- Experiencia visual (UI diferenciada):
-  - Manter identidade visual consistente do Veshop em todas as areas.
-  - Definir padroes de layout por contexto (dashboard, cadastros, operacao e configuracao).
-  - Aplicar hierarquia visual clara: prioridade para dados, acoes e alertas.
-  - Evitar poluicao visual em telas transacionais com excesso de elementos decorativos.
-- Padrao de idioma e codificacao:
-  - Textos da plataforma (UI, emails, mensagens de validacao e documentacao funcional) devem ser em portugues do Brasil (`pt-BR`).
-  - Arquivos de codigo e conteudo textual devem usar codificacao UTF-8.
+- Bloco superior fixo do sistema: **Veshop**.
+- Ícone do sistema:
+  - usar ícone Veshop quando existir,
+  - fallback para iniciais `VS` quando não houver ícone.
+- Abaixo do nome do sistema: exibir **badge do nicho ativo**.
+- No bloco do contratante: exibir **badge do plano ativo**.
+- Menu com grupos de navegação.
+- Modo colapsado funcionando sem quebrar rodapé.
 
-7. Stack Tecnologica Recomendada
---------------------------------
-Decisao:
-- Sim, seguir com Laravel + Vue + Inertia.
+### 5.2 Header de páginas internas
 
-Stack base:
-- Backend: Laravel 12 + PHP 8.4.
-- Frontend: Vue 3 + Inertia v2 + TypeScript.
-- UI: Tailwind CSS.
-- Banco: PostgreSQL 16 (ou MySQL 8.4 se preferencia operacional atual for MySQL).
-- Cache/fila: Redis + Laravel Horizon.
-- Realtime (quando necessario): Laravel Reverb.
-- Armazenamento de arquivos: S3 compativel (ou disco local no inicio).
-- Testes: PHPUnit/Pest + testes de feature por modulo.
+Padrão atual:
+- Header simplificado: apenas título da página (sem ícones e sem fundo decorativo).
+- Rotas internas em inglês, labels de menu em pt-BR.
 
-Por que essa stack:
-- Alta produtividade para MVP com uma unica base de codigo.
-- Menor custo de manutencao no inicio vs separar API + SPA.
-- Escala gradual sem reescrever arquitetura.
+### 5.3 Mobile
 
-8. Arquitetura de Dominio (modulos)
------------------------------------
-- Core SaaS: tenant, usuarios, papeis, planos, assinatura.
-- Catalogo: produtos, categorias, variacoes, preco.
-- Estoque: saldos, movimentos, inventario.
-- Comercial: orcamentos, pedidos, vendas.
-- Financeiro: contas a pagar/receber, caixa, conciliacao.
-- Omnichannel: vitrine online, WhatsApp, campanhas.
-- Analytics: dashboard e relatorios.
+- Topo mobile com ações essenciais.
+- Bottom navigation em estilo app.
+- Primeiro item do menu bottom: `Menu`.
 
-Segmentacao por nicho do contratante (fase atual):
-- Cada contratante deve estar vinculado a um unico nicho de operacao.
-- O nicho ativo direciona os modulos, menu e rotas internas do sistema.
-- Nichos disponiveis no momento:
-  - `commercial`: operacao de comercio (PDV, produtos, categorias, pedidos, estoque e financeiro).
-  - `services`: operacao de servicos (catalogo de servicos, ordens de servico e agenda tecnica).
-- Escopo de desenvolvimento atual:
-  - Desenvolver apenas os nichos `commercial` e `services`.
+### 5.4 Notificações
 
-9. Modelagem Inicial (entidades)
---------------------------------
-Entidades obrigatorias da v1:
-- tenants
-- tenant_users
-- roles
-- permissions
-- customers
-- suppliers
-- stores
-- products
-- product_variants
-- stock_items
-- stock_movements
-- quotes
-- orders
-- order_items
-- receivables
-- payable_accounts
-- cash_entries
-- invoices
-- catalog_pages
-- whatsapp_leads
-- audit_logs
+- Botão de notificações flutuante global no canto inferior direito.
+- Estilo do botão: fundo slate escuro (alinhado ao ícone/menu do Veshop).
 
-Indices minimos:
-- (`tenant_id`, `created_at`) para tabelas transacionais.
-- (`tenant_id`, `status`) para pedidos e financeiro.
-- (`tenant_id`, `sku`) unico quando sku existir.
+## 6. Padrões de Auth
 
-10. Roadmap de Entrega
-----------------------
-Fase 0 - Fundacao (2 semanas)
-- Setup projeto Laravel novo (`veshop`), auth, tenant base, RBAC, layout base.
+- Login e páginas Auth padronizadas visualmente.
+- Botões das páginas Auth devem seguir o mesmo padrão do botão principal da tela de login.
+- Card “Ecossistema Veshop” aparece **somente** na tela de login.
 
-Fase 1 - MVP Comercial + Financeiro (6 a 8 semanas)
-- Cadastros, estoque, pedidos, contas a receber/pagar, dashboard base.
+## 7. Landing page (estado consolidado)
 
-Fase 2 - Catalogo + WhatsApp (3 a 4 semanas)
-- Vitrine publica, `wa.me`, tracking de lead e origem.
+- Conteúdo em pt-BR e UTF-8.
+- FAQ com capitalização natural (apenas primeira letra maiúscula, sem “capitalize” artificial).
+- Cards com `cursor: pointer` devem abrir modal explicativo.
+- Card Veshop Ops:
+  - interatividade interna estável,
+  - cards inferiores clicáveis em estilo carrossel,
+  - abertura de modal explicativo por card.
+- Ajustes de carregamento para reduzir efeito de tela desformatada durante bootstrap dos assets.
 
-Fase 3 - Escala e Diferenciais (4 semanas)
-- Realtime, relatorios avancados, automacoes e inicio de integracao fiscal.
+## 8. Home / Visão Geral
 
-11. Criterios de Pronto para Lancamento (MVP)
----------------------------------------------
-- Onboarding completo de tenant em menos de 10 minutos.
-- Venda completa com impacto em estoque e financeiro sem inconsistencias.
-- Fluxo de contas a pagar/receber com baixa parcial e total.
-- Catalogo publico funcional com CTA para WhatsApp.
-- Dashboard com KPIs minimos validos.
-- Suite de testes para fluxos criticos e sem falhas.
-- Telas principais validadas em mobile e tablet (sem quebra de layout ou perda de funcionalidade).
+Definições consolidadas:
+- Nome de rota: `home` (inglês), label de menu: **Início**.
+- Título da página: **Visão Geral**.
+- Saudação: `Olá {nome}, acompanhe sua empresa`.
+- Sessão “Seu Catálogo Público” com visual clean/profissional.
+- Botão “Ver catálogo” seguindo cor/branding do contratante ativo.
 
-12. Pendencias de Decisao (antes de codar)
-------------------------------------------
-- Banco padrao: PostgreSQL ou MySQL.
-- Gateway de pagamento para assinatura SaaS.
-- Provedor fiscal para fase 3.
-- Politica de precificacao (por usuario, por loja, por volume, hibrido).
-- Escolha final da identidade de marca:
-  - Nome principal: Veshop.
-  - Subtitulo recomendado: "Veshop Gestao" ou "Veshop ERP".
+## 9. Branding do contratante
+
+- Tela de branding no padrão visual aprovado.
+- Botão “Salvar alterações” no padrão de botão global do sistema.
+- Contratante pode ajustar identidade visual, mas não altera nicho.
+
+## 10. Seeders e dados de desenvolvimento
+
+Contratantes definidos:
+- Veshop Mix (nicho: comércio, perfil bazar)
+- Veshop Store (nicho: comércio, perfil roupas)
+- Veshop Services (nicho: serviços)
+
+Usuários:
+- Usuário `master` (já existente no projeto).
+- Usuário `admin` Everton vinculado aos 3 contratantes.
+
+Base de dados de desenvolvimento:
+- Comércio: clientes, fornecedores, categorias e produtos por contratante.
+- Serviços: categorias e catálogo de serviços.
+
+## 11. Requisitos não funcionais
+
+- Aplicação 100% responsiva (desktop, tablet e celular).
+- Fluxos com boa usabilidade para público de 20 a 50 anos.
+- Linguagem clara, direta, com baixa curva de aprendizado.
+- UI diferenciada, mas sem poluição visual em fluxos transacionais.
+- Padrão de idioma da plataforma: pt-BR.
+- Codificação textual: UTF-8.
+
+## 12. Diretrizes técnicas e organização
+
+Backend:
+- Estrutura modular por domínio e por nicho.
+- Autorização por role e por módulo habilitado do contratante.
+- Validações centralizadas com Form Requests.
+- Controllers enxutos e regras em serviços quando necessário.
+
+Frontend:
+- Páginas por contexto de role (`Admin`, `Master`, `Auth`, `Public`).
+- Componentes reutilizáveis para header, cards, tabelas, ações e feedback.
+- Mesma linguagem visual entre módulos para reduzir curva de aprendizado.
+
+## 13. Estratégia de execução (próximo passo)
+
+Decisão vigente:
+- O frontend foi priorizado para validação de UX.
+- Próxima fase: desenvolvimento completo do backend, iniciando por **Comércio**.
+
+Ordem sugerida para backend (Comércio):
+1. Produtos e Categorias (CRUD + validações + políticas).
+2. Clientes e Fornecedores.
+3. Pedidos e itens de pedido.
+4. Estoque e movimentações.
+5. Financeiro (contas a pagar/receber).
+6. Consolidação dos indicadores da Visão Geral.
+
+## 14. Checklist de contexto para retomada em outra conta
+
+Ao retomar o projeto, considerar como verdade:
+- Sistema com dois papéis: `master` e `admin`.
+- Segmentação por nicho é mandatória.
+- Contratante vê apenas módulos do seu nicho.
+- Layout padrão já definido (sidebar, header simples, botão flutuante de notificação, mobile app-like).
+- Home principal é “Início / Visão Geral”.
+- Landing e Auth já possuem padrão visual validado e interações de modal nos cards.
+- Próxima macrofase é backend de Comércio, sem regressão de UX já aprovada.

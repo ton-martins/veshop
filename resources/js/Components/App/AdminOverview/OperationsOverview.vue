@@ -12,6 +12,16 @@ import {
     Users2,
 } from 'lucide-vue-next';
 
+const props = defineProps({
+    stats: {
+        type: Object,
+        default: () => ({}),
+    },
+});
+
+const asCurrency = (value) =>
+    Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
 const currentMonthLabel = computed(() =>
     new Intl.DateTimeFormat('pt-BR', {
         month: 'long',
@@ -23,7 +33,7 @@ const statCards = computed(() => [
     {
         key: 'orders_today',
         title: 'Pedidos Hoje',
-        value: '0',
+        value: String(props.stats?.orders_today ?? 0),
         subtitle: 'Para entrega',
         icon: CalendarDays,
         iconClass: 'bg-rose-100 text-rose-600',
@@ -31,7 +41,7 @@ const statCards = computed(() => [
     {
         key: 'in_production',
         title: 'Em Produção',
-        value: '0',
+        value: String(props.stats?.in_production ?? 0),
         subtitle: 'Em andamento',
         icon: Package,
         iconClass: 'bg-amber-100 text-amber-600',
@@ -39,7 +49,7 @@ const statCards = computed(() => [
     {
         key: 'monthly_revenue',
         title: 'Faturamento Mensal',
-        value: 'R$ 0,00',
+        value: asCurrency(props.stats?.monthly_revenue ?? 0),
         subtitle: currentMonthLabel.value,
         icon: DollarSign,
         iconClass: 'bg-emerald-100 text-emerald-600',
@@ -47,27 +57,16 @@ const statCards = computed(() => [
     {
         key: 'clients',
         title: 'Clientes',
-        value: '2',
+        value: String(props.stats?.clients ?? 0),
         subtitle: 'Cadastrados',
         icon: Users2,
         iconClass: 'bg-blue-100 text-blue-600',
     },
 ]);
 
-const recentOrders = computed(() => [
-    {
-        id: '#3',
-        customer: 'Cristina Nascimento',
-        description: '1x Bolo Piscina',
-        amount: 'R$ 35,00',
-    },
-    {
-        id: '#2',
-        customer: 'Cakeflow',
-        description: 'Bolo de 22cm • Massa Branca Tradicional',
-        amount: 'R$ 150,00',
-    },
-]);
+const pendingQuotes = computed(() => Number(props.stats?.pending_quotes ?? 0));
+const recentOrders = computed(() => props.stats?.recent_orders ?? []);
+const deliveriesToday = computed(() => Number(props.stats?.deliveries_today ?? 0));
 </script>
 
 <template>
@@ -90,7 +89,12 @@ const recentOrders = computed(() => [
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p class="inline-flex items-center gap-2 text-sm font-semibold text-amber-800">
                 <AlertCircle class="h-4 w-4" />
-                Você tem 2 orçamento(s) aguardando aprovação
+                <template v-if="pendingQuotes > 0">
+                    Você tem {{ pendingQuotes }} orçamento(s) aguardando aprovação
+                </template>
+                <template v-else>
+                    Nenhum orçamento aguardando aprovação
+                </template>
             </p>
 
             <Link :href="route('admin.orders.index')" class="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 hover:text-amber-900">
@@ -110,7 +114,7 @@ const recentOrders = computed(() => [
                 </Link>
             </header>
 
-            <ul class="space-y-3">
+            <ul v-if="recentOrders.length" class="space-y-3">
                 <li
                     v-for="order in recentOrders"
                     :key="order.id"
@@ -127,6 +131,9 @@ const recentOrders = computed(() => [
                     </div>
                 </li>
             </ul>
+            <div v-else class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                Nenhum pedido registrado.
+            </div>
         </section>
 
         <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
@@ -139,7 +146,14 @@ const recentOrders = computed(() => [
                 <span class="inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                     <CheckCircle2 class="h-6 w-6" />
                 </span>
-                <p class="mt-4 text-sm font-semibold text-slate-700">Nenhuma entrega para hoje</p>
+                <p class="mt-4 text-sm font-semibold text-slate-700">
+                    <template v-if="deliveriesToday > 0">
+                        {{ deliveriesToday }} entrega(s) prevista(s) para hoje
+                    </template>
+                    <template v-else>
+                        Nenhuma entrega para hoje
+                    </template>
+                </p>
             </div>
         </section>
     </div>

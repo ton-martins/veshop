@@ -4,18 +4,13 @@ import { Head } from '@inertiajs/vue3';
 import { CalendarClock, AlertTriangle, CheckCircle2, WalletCards, Search, Filter, Plus } from 'lucide-vue-next';
 
 const stats = [
-    { key: 'next_7', label: 'A vencer (7 dias)', value: 'R$ 18.430', icon: CalendarClock, tone: 'bg-blue-100 text-blue-700' },
-    { key: 'late', label: 'Vencido', value: 'R$ 3.120', icon: AlertTriangle, tone: 'bg-amber-100 text-amber-700' },
-    { key: 'paid', label: 'Pago no mês', value: 'R$ 42.800', icon: CheckCircle2, tone: 'bg-emerald-100 text-emerald-700' },
-    { key: 'projection', label: 'Saída projetada', value: 'R$ 67.500', icon: WalletCards, tone: 'bg-slate-100 text-slate-700' },
+    { key: 'next_7', label: 'A vencer (7 dias)', value: 'R$ 0,00', icon: CalendarClock, tone: 'bg-blue-100 text-blue-700' },
+    { key: 'late', label: 'Vencido', value: 'R$ 0,00', icon: AlertTriangle, tone: 'bg-amber-100 text-amber-700' },
+    { key: 'paid', label: 'Pago no mês', value: 'R$ 0,00', icon: CheckCircle2, tone: 'bg-emerald-100 text-emerald-700' },
+    { key: 'projection', label: 'Saída projetada', value: 'R$ 0,00', icon: WalletCards, tone: 'bg-slate-100 text-slate-700' },
 ];
 
-const payables = [
-    { supplier: 'Distribuidora Bahia Sul', document: 'NF 8812', due: '18/03/2026', value: 'R$ 8.420,00', status: 'A vencer' },
-    { supplier: 'Embalagens Prime', document: 'NF 1921', due: '16/03/2026', value: 'R$ 1.180,00', status: 'Hoje' },
-    { supplier: 'Atacado Vitória', document: 'NF 7340', due: '10/03/2026', value: 'R$ 2.920,00', status: 'Vencido' },
-    { supplier: 'Laticínios Central', document: 'NF 2930', due: '21/03/2026', value: 'R$ 3.600,00', status: 'A vencer' },
-];
+const payables = [];
 </script>
 
 <template>
@@ -66,20 +61,19 @@ const payables = [
                                 <th class="px-4 py-3">Status</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100 bg-white">
+                        <tbody v-if="payables.length" class="divide-y divide-slate-100 bg-white">
                             <tr v-for="item in payables" :key="`${item.document}-${item.supplier}`">
                                 <td class="px-4 py-3 font-semibold text-slate-900">{{ item.supplier }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ item.document }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ item.due }}</td>
                                 <td class="px-4 py-3 font-semibold text-slate-800">{{ item.value }}</td>
-                                <td class="px-4 py-3">
-                                    <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="item.status === 'Vencido' ? 'bg-amber-100 text-amber-700' : item.status === 'Hoje' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'">
-                                        {{ item.status }}
-                                    </span>
-                                </td>
+                                <td class="px-4 py-3">{{ item.status }}</td>
                             </tr>
                         </tbody>
                     </table>
+                    <div v-if="!payables.length" class="px-4 py-8 text-center text-sm text-slate-500">
+                        Nenhum título a pagar cadastrado.
+                    </div>
                 </div>
             </section>
         </section>

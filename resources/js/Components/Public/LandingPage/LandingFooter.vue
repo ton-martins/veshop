@@ -9,7 +9,14 @@ const year = new Date().getFullYear();
                 <div class="col-lg-3 align-self-start">
                     <div class="logo">
                         <a class="fs-4 text-light ls-1 fw-bold" href="#home">
-                            <i class="ri-registered-fill text-success fs-3 me-1"></i>VESHOP
+                            <span class="veshop-system-logo-wrap me-2">
+                                <img
+                                    src="/brand/icone-veshop.png"
+                                    alt="Ícone Veshop"
+                                    class="veshop-system-logo"
+                                />
+                            </span>
+                            VESHOP
                         </a>
                     </div>
                     <div class="d-flex mt-4">
@@ -98,3 +105,25 @@ const year = new Date().getFullYear();
         </div>
     </div>
 </template>
+
+<style scoped>
+.veshop-system-logo {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+    vertical-align: middle;
+}
+
+.veshop-system-logo-wrap {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #073341;
+    border: 1px solid rgba(7, 51, 65, 0.72);
+    box-shadow: 0 14px 26px -20px rgba(2, 17, 22, 0.82);
+    vertical-align: middle;
+}
+</style>

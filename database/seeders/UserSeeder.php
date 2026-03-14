@@ -14,8 +14,12 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
-        $contractorIds = Contractor::query()
-            ->whereIn('slug', ['veshop-mix', 'veshop-store'])
+        $masterContractorIds = Contractor::query()
+            ->pluck('id')
+            ->values()
+            ->all();
+
+        $adminContractorIds = Contractor::query()
             ->pluck('id')
             ->values()
             ->all();
@@ -32,8 +36,8 @@ class UserSeeder extends Seeder
             ]
         );
 
-        if ($contractorIds !== []) {
-            $masterUser->contractors()->sync($contractorIds);
+        if ($masterContractorIds !== []) {
+            $masterUser->contractors()->sync($masterContractorIds);
         }
 
         $adminUser = User::updateOrCreate(
@@ -48,8 +52,8 @@ class UserSeeder extends Seeder
             ]
         );
 
-        if ($contractorIds !== []) {
-            $adminUser->contractors()->sync($contractorIds);
+        if ($adminContractorIds !== []) {
+            $adminUser->contractors()->sync($adminContractorIds);
         }
     }
 }

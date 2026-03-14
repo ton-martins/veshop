@@ -4,18 +4,13 @@ import { Head } from '@inertiajs/vue3';
 import { CalendarClock, AlertTriangle, CheckCircle2, Banknote, Search, Filter, Plus } from 'lucide-vue-next';
 
 const stats = [
-    { key: 'next_7', label: 'A receber (7 dias)', value: 'R$ 24.980', icon: CalendarClock, tone: 'bg-blue-100 text-blue-700' },
-    { key: 'late', label: 'Atrasado', value: 'R$ 4.510', icon: AlertTriangle, tone: 'bg-amber-100 text-amber-700' },
-    { key: 'received', label: 'Recebido no mês', value: 'R$ 56.300', icon: CheckCircle2, tone: 'bg-emerald-100 text-emerald-700' },
-    { key: 'default', label: 'Inadimplência', value: '7,2%', icon: Banknote, tone: 'bg-slate-100 text-slate-700' },
+    { key: 'next_7', label: 'A receber (7 dias)', value: 'R$ 0,00', icon: CalendarClock, tone: 'bg-blue-100 text-blue-700' },
+    { key: 'late', label: 'Atrasado', value: 'R$ 0,00', icon: AlertTriangle, tone: 'bg-amber-100 text-amber-700' },
+    { key: 'received', label: 'Recebido no mês', value: 'R$ 0,00', icon: CheckCircle2, tone: 'bg-emerald-100 text-emerald-700' },
+    { key: 'default', label: 'Inadimplência', value: '0%', icon: Banknote, tone: 'bg-slate-100 text-slate-700' },
 ];
 
-const receivables = [
-    { client: 'Cakeflow Eventos', document: 'PED-3040', due: '17/03/2026', value: 'R$ 320,00', status: 'A vencer' },
-    { client: 'Cristina Nascimento', document: 'PED-3041', due: '16/03/2026', value: 'R$ 89,90', status: 'Hoje' },
-    { client: 'Buffet Estrela', document: 'PED-3001', due: '08/03/2026', value: 'R$ 1.420,00', status: 'Atrasado' },
-    { client: 'João Martins', document: 'PED-3029', due: '19/03/2026', value: 'R$ 210,00', status: 'A vencer' },
-];
+const receivables = [];
 </script>
 
 <template>
@@ -66,20 +61,19 @@ const receivables = [
                                 <th class="px-4 py-3">Status</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100 bg-white">
+                        <tbody v-if="receivables.length" class="divide-y divide-slate-100 bg-white">
                             <tr v-for="item in receivables" :key="`${item.document}-${item.client}`">
                                 <td class="px-4 py-3 font-semibold text-slate-900">{{ item.client }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ item.document }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ item.due }}</td>
                                 <td class="px-4 py-3 font-semibold text-slate-800">{{ item.value }}</td>
-                                <td class="px-4 py-3">
-                                    <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="item.status === 'Atrasado' ? 'bg-amber-100 text-amber-700' : item.status === 'Hoje' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'">
-                                        {{ item.status }}
-                                    </span>
-                                </td>
+                                <td class="px-4 py-3">{{ item.status }}</td>
                             </tr>
                         </tbody>
                     </table>
+                    <div v-if="!receivables.length" class="px-4 py-8 text-center text-sm text-slate-500">
+                        Nenhum título a receber cadastrado.
+                    </div>
                 </div>
             </section>
         </section>

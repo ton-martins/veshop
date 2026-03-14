@@ -4,24 +4,19 @@ import { Head } from '@inertiajs/vue3';
 import { ShoppingBag, Boxes, CircleDollarSign, AlertTriangle, Search, Filter, Plus } from 'lucide-vue-next';
 
 const stats = [
-    { key: 'new', label: 'Novos pedidos', value: '14', icon: ShoppingBag, tone: 'bg-slate-100 text-slate-700' },
-    { key: 'picking', label: 'Em separação', value: '9', icon: Boxes, tone: 'bg-blue-100 text-blue-700' },
-    { key: 'invoiced', label: 'Faturados hoje', value: '11', icon: CircleDollarSign, tone: 'bg-emerald-100 text-emerald-700' },
-    { key: 'late', label: 'Atrasados', value: '2', icon: AlertTriangle, tone: 'bg-amber-100 text-amber-700' },
+    { key: 'new', label: 'Novos pedidos', value: '0', icon: ShoppingBag, tone: 'bg-slate-100 text-slate-700' },
+    { key: 'picking', label: 'Em separação', value: '0', icon: Boxes, tone: 'bg-blue-100 text-blue-700' },
+    { key: 'invoiced', label: 'Faturados hoje', value: '0', icon: CircleDollarSign, tone: 'bg-emerald-100 text-emerald-700' },
+    { key: 'late', label: 'Atrasados', value: '0', icon: AlertTriangle, tone: 'bg-amber-100 text-amber-700' },
 ];
 
-const orders = [
-    { code: '#PED-3041', client: 'Cristina Nascimento', channel: 'PDV', total: 'R$ 89,90', status: 'Separação' },
-    { code: '#PED-3040', client: 'Cakeflow Eventos', channel: 'Online', total: 'R$ 320,00', status: 'Faturado' },
-    { code: '#PED-3039', client: 'João Martins', channel: 'WhatsApp', total: 'R$ 52,00', status: 'Novo' },
-    { code: '#PED-3038', client: 'Buffet Estrela', channel: 'PDV', total: 'R$ 640,00', status: 'Atrasado' },
-];
+const orders = [];
 
 const kanban = [
-    { name: 'Novo', qty: 14, tone: 'bg-slate-100 text-slate-700' },
-    { name: 'Separação', qty: 9, tone: 'bg-blue-100 text-blue-700' },
-    { name: 'Entrega', qty: 7, tone: 'bg-amber-100 text-amber-700' },
-    { name: 'Concluído', qty: 34, tone: 'bg-emerald-100 text-emerald-700' },
+    { name: 'Novo', qty: 0, tone: 'bg-slate-100 text-slate-700' },
+    { name: 'Separação', qty: 0, tone: 'bg-blue-100 text-blue-700' },
+    { name: 'Entrega', qty: 0, tone: 'bg-amber-100 text-amber-700' },
+    { name: 'Concluído', qty: 0, tone: 'bg-emerald-100 text-emerald-700' },
 ];
 </script>
 
@@ -73,7 +68,7 @@ const kanban = [
                                     <th class="px-4 py-3">Status</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-slate-100 bg-white">
+                            <tbody v-if="orders.length" class="divide-y divide-slate-100 bg-white">
                                 <tr v-for="order in orders" :key="order.code">
                                     <td class="px-4 py-3">
                                         <p class="font-semibold text-slate-900">{{ order.code }}</p>
@@ -81,14 +76,13 @@ const kanban = [
                                     </td>
                                     <td class="px-4 py-3 text-slate-600">{{ order.channel }}</td>
                                     <td class="px-4 py-3 font-semibold text-slate-800">{{ order.total }}</td>
-                                    <td class="px-4 py-3">
-                                        <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="order.status === 'Faturado' ? 'bg-emerald-100 text-emerald-700' : order.status === 'Atrasado' ? 'bg-amber-100 text-amber-700' : order.status === 'Separação' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'">
-                                            {{ order.status }}
-                                        </span>
-                                    </td>
+                                    <td class="px-4 py-3">{{ order.status }}</td>
                                 </tr>
                             </tbody>
                         </table>
+                        <div v-if="!orders.length" class="px-4 py-8 text-center text-sm text-slate-500">
+                            Nenhum pedido registrado para este contratante.
+                        </div>
                     </div>
 
                     <aside class="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4">

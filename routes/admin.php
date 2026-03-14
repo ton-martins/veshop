@@ -1,7 +1,12 @@
-﻿<?php
+<?php
 
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\ContractorBrandingController;
+use App\Http\Controllers\Admin\CategoryController;
+use App\Http\Controllers\Admin\ClientController;
+use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\ServiceCatalogController;
+use App\Http\Controllers\Admin\SupplierController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -17,21 +22,15 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
         Route::put('/branding', [ContractorBrandingController::class, 'update'])->name('branding.update');
 
         Route::middleware('contractor.module:commercial')->group(function (): void {
-            Route::get('/products', function () {
-                return Inertia::render('Admin/Products/Index');
-            })->name('products.index');
+            Route::resource('products', ProductController::class)
+                ->except(['show', 'create', 'edit']);
 
-            Route::get('/categories', function () {
-                return Inertia::render('Admin/Categories/Index');
-            })->name('categories.index');
+            Route::resource('categories', CategoryController::class)
+                ->except(['show', 'create', 'edit']);
 
-            Route::get('/clients', function () {
-                return Inertia::render('Admin/Clients/Index');
-            })->name('clients.index');
+            Route::get('/clients', [ClientController::class, 'index'])->name('clients.index');
 
-            Route::get('/suppliers', function () {
-                return Inertia::render('Admin/Suppliers/Index');
-            })->name('suppliers.index');
+            Route::get('/suppliers', [SupplierController::class, 'index'])->name('suppliers.index');
 
             Route::get('/orders', function () {
                 return Inertia::render('Admin/Orders/Index');
@@ -59,9 +58,7 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
                 return Inertia::render('Admin/Services/Index');
             })->name('index');
 
-            Route::get('/catalog', function () {
-                return Inertia::render('Admin/Services/Catalog');
-            })->name('catalog');
+            Route::get('/catalog', [ServiceCatalogController::class, 'index'])->name('catalog');
 
             Route::get('/orders', function () {
                 return Inertia::render('Admin/Services/Orders');

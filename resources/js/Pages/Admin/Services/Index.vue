@@ -1,33 +1,29 @@
-<script setup>
+﻿<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { Briefcase, ClipboardList, Clock3, CircleDollarSign, ChevronRight } from 'lucide-vue-next';
 
 const stats = [
-    { key: 'services', label: 'Servicos cadastrados', value: '48', icon: Briefcase, tone: 'bg-slate-100 text-slate-700' },
-    { key: 'open', label: 'OS em aberto', value: '19', icon: ClipboardList, tone: 'bg-amber-100 text-amber-700' },
-    { key: 'today', label: 'Atendimentos hoje', value: '11', icon: Clock3, tone: 'bg-blue-100 text-blue-700' },
-    { key: 'revenue', label: 'Receita do mes', value: 'R$ 42.300', icon: CircleDollarSign, tone: 'bg-emerald-100 text-emerald-700' },
+    { key: 'services', label: 'Serviços cadastrados', value: '0', icon: Briefcase, tone: 'bg-slate-100 text-slate-700' },
+    { key: 'open', label: 'OS em aberto', value: '0', icon: ClipboardList, tone: 'bg-amber-100 text-amber-700' },
+    { key: 'today', label: 'Atendimentos hoje', value: '0', icon: Clock3, tone: 'bg-blue-100 text-blue-700' },
+    { key: 'revenue', label: 'Receita do mês', value: 'R$ 0,00', icon: CircleDollarSign, tone: 'bg-emerald-100 text-emerald-700' },
 ];
 
 const pipelines = [
-    { key: 'triagem', label: 'Triagem', qty: 5 },
-    { key: 'execucao', label: 'Em execucao', qty: 8 },
-    { key: 'aguardo', label: 'Aguardando peca', qty: 4 },
-    { key: 'finalizacao', label: 'Finalizacao', qty: 2 },
+    { key: 'triagem', label: 'Triagem', qty: 0 },
+    { key: 'execucao', label: 'Em execução', qty: 0 },
+    { key: 'aguardo', label: 'Aguardando peça', qty: 0 },
+    { key: 'finalizacao', label: 'Finalização', qty: 0 },
 ];
 
-const todayAppointments = [
-    { id: 'OS-1042', customer: 'Mercado Aurora', service: 'Manutencao de painel', time: '09:30', technician: 'Carlos Lima' },
-    { id: 'OS-1044', customer: 'Auto Eletrica Paulista', service: 'Diagnostico eletrico', time: '11:00', technician: 'Bruna Castro' },
-    { id: 'OS-1047', customer: 'Bazar Bela Vista', service: 'Instalacao de sistema', time: '14:20', technician: 'Joao Paulo' },
-];
+const todayAppointments = [];
 </script>
 
 <template>
-    <Head title="Servicos" />
+    <Head title="Serviços" />
 
-    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Servicos">
+    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Serviços">
         <section class="space-y-4">
             <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <article v-for="stat in stats" :key="stat.key" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -68,15 +64,15 @@ const todayAppointments = [
 
                     <div class="mt-4 space-y-2">
                         <Link :href="route('admin.services.catalog')" class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-                            Catalogo de servicos
+                            Catálogo de serviços
                             <ChevronRight class="h-4 w-4" />
                         </Link>
                         <Link :href="route('admin.services.orders')" class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-                            Ordens de servico
+                            Ordens de serviço
                             <ChevronRight class="h-4 w-4" />
                         </Link>
                         <Link :href="route('admin.services.schedule')" class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-                            Agenda tecnica
+                            Agenda técnica
                             <ChevronRight class="h-4 w-4" />
                         </Link>
                     </div>
@@ -91,12 +87,12 @@ const todayAppointments = [
                             <tr>
                                 <th class="px-4 py-3">OS</th>
                                 <th class="px-4 py-3">Cliente</th>
-                                <th class="px-4 py-3">Servico</th>
-                                <th class="px-4 py-3">Horario</th>
-                                <th class="px-4 py-3">Tecnico</th>
+                                <th class="px-4 py-3">Serviço</th>
+                                <th class="px-4 py-3">Horário</th>
+                                <th class="px-4 py-3">Técnico</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100 bg-white">
+                        <tbody v-if="todayAppointments.length" class="divide-y divide-slate-100 bg-white">
                             <tr v-for="appointment in todayAppointments" :key="appointment.id">
                                 <td class="px-4 py-3 font-semibold text-slate-900">{{ appointment.id }}</td>
                                 <td class="px-4 py-3 text-slate-700">{{ appointment.customer }}</td>
@@ -106,9 +102,11 @@ const todayAppointments = [
                             </tr>
                         </tbody>
                     </table>
+                    <div v-if="!todayAppointments.length" class="px-4 py-8 text-center text-sm text-slate-500">
+                        Nenhum atendimento agendado para hoje.
+                    </div>
                 </div>
             </section>
         </section>
     </AuthenticatedLayout>
 </template>
-

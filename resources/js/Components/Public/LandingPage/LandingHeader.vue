@@ -47,7 +47,14 @@ onBeforeUnmount(() => {
             <div class="container landing-navbar-shell">
                 <div class="navbar-brand logo">
                     <a class="navbar-caption fs-4 text-primary ls-1 fw-bold" href="#home">
-                        <i class="ri-registered-fill text-success fs-3 me-1"></i>VESHOP
+                        <span class="veshop-system-logo-wrap me-2">
+                            <img
+                                src="/brand/icone-veshop.png"
+                                alt="Ícone Veshop"
+                                class="veshop-system-logo"
+                            />
+                        </span>
+                        VESHOP
                     </a>
                 </div>
 
@@ -56,7 +63,7 @@ onBeforeUnmount(() => {
                     type="button"
                     aria-controls="navbarCollapseMobile"
                     :aria-expanded="isMenuOpen"
-                    aria-label="Alternar navegaÃ§Ã£o"
+                    aria-label="Alternar navegação"
                     @click="isMenuOpen = !isMenuOpen"
                 >
                     <span class="fw-bold fs-4"><i class="ri-menu-5-line"></i></span>
@@ -65,13 +72,13 @@ onBeforeUnmount(() => {
                 <div id="navbarCollapseDesktop" class="landing-navbar-desktop d-none d-lg-flex">
                     <ul class="navbar-nav mx-auto" id="navbar-navlist">
                         <li class="nav-item">
-                            <a class="nav-link" href="#home">InÃ­cio</a>
+                            <a class="nav-link" href="#home">Início</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="#about">Sobre</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#services">MÃ³dulos</a>
+                            <a class="nav-link" href="#services">Módulos</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="#price">Planos</a>
@@ -98,13 +105,13 @@ onBeforeUnmount(() => {
                 <div class="container">
                     <ul class="navbar-nav" id="navbar-navlist-mobile">
                         <li class="nav-item">
-                            <a class="nav-link" href="#home" @click="closeMenu">InÃ­cio</a>
+                            <a class="nav-link" href="#home" @click="closeMenu">Início</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="#about" @click="closeMenu">Sobre</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#services" @click="closeMenu">MÃ³dulos</a>
+                            <a class="nav-link" href="#services" @click="closeMenu">Módulos</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="#price" @click="closeMenu">Planos</a>
@@ -133,6 +140,26 @@ onBeforeUnmount(() => {
 <style scoped>
 #navbar {
     z-index: 1200;
+}
+
+.veshop-system-logo {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+    vertical-align: middle;
+}
+
+.veshop-system-logo-wrap {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #073341;
+    border: 1px solid rgba(7, 51, 65, 0.72);
+    box-shadow: 0 14px 26px -20px rgba(2, 17, 22, 0.82);
+    vertical-align: middle;
 }
 
 .landing-navbar-shell {

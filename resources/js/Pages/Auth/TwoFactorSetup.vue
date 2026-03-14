@@ -183,9 +183,14 @@ watch(
                     <section class="space-y-4">
                         <div class="flex items-center gap-3">
                             <div class="veshop-twofa-brand-icon">
-                                <i class="ri-registered-fill"></i>
+                                <img
+                                    src="/brand/icone-veshop.png"
+                                    :alt="`${BRANDING.appName} ícone`"
+                                    class="veshop-twofa-brand-icon-img"
+                                />
                             </div>
                             <div>
+                                <p class="veshop-twofa-brand-name mb-1">{{ BRANDING.appName }}</p>
                                 <p class="veshop-login-pill mb-0">Segurança do acesso</p>
                                 <h1 class="veshop-login-title mt-1">{{ heading }}</h1>
                             </div>
@@ -394,17 +399,31 @@ watch(
 }
 
 .veshop-twofa-brand-icon {
-    width: 42px;
-    height: 42px;
+    width: 46px;
+    height: 46px;
     border-radius: 12px;
-    border: 1px solid rgba(7, 51, 65, 0.18);
-    background: linear-gradient(145deg, #073341, #0f5164);
-    color: #81d86f;
+    border: 1px solid rgba(7, 51, 65, 0.72);
+    background: #073341;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     font-size: 20px;
-    box-shadow: 0 20px 35px -25px rgba(7, 51, 65, 0.9);
+    box-shadow: 0 20px 35px -24px rgba(2, 17, 22, 0.85);
+}
+
+.veshop-twofa-brand-icon-img {
+    width: 27px;
+    height: 27px;
+    object-fit: contain;
+}
+
+.veshop-twofa-brand-name {
+    margin: 0;
+    color: #073341;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
 }
 
 .veshop-twofa-bg-base {
@@ -477,39 +496,20 @@ watch(
     border: 1px solid transparent;
 }
 
-.veshop-twofa-btn-primary {
+.veshop-twofa-btn-primary,
+.veshop-twofa-btn-secondary,
+.veshop-twofa-btn-danger {
     background-color: #073341;
     border-color: #073341;
     color: #ffffff;
 }
 
-.veshop-twofa-btn-primary:hover {
+.veshop-twofa-btn-primary:hover,
+.veshop-twofa-btn-secondary:hover,
+.veshop-twofa-btn-danger:hover {
     background-color: #0a4255;
     border-color: #0a4255;
     color: #ffffff;
-}
-
-.veshop-twofa-btn-secondary {
-    border: 1px solid #d4dce4;
-    background: #ffffff;
-    color: #5f7388;
-}
-
-.veshop-twofa-btn-secondary:hover {
-    border-color: #81d86f;
-    color: #073341;
-    background: #f8fef9;
-}
-
-.veshop-twofa-btn-danger {
-    border: 1px solid #fecdd3;
-    background: #fff1f2;
-    color: #be123c;
-}
-
-.veshop-twofa-btn-danger:hover {
-    border-color: #fda4af;
-    background: #ffe4e6;
 }
 
 .attention-pulse {

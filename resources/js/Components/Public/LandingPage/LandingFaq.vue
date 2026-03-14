@@ -62,7 +62,10 @@ const toggleFaq = (faqId) => {
                             v-for="faq in faqs"
                             :key="faq.id"
                             class="accordion-item border-bottom"
-                            :class="{ 'rounded-0': faq.id === 'faq-implantacao' || faq.id === 'faq-suporte' }"
+                            :class="{
+                                'rounded-0': faq.id === 'faq-implantacao' || faq.id === 'faq-suporte',
+                                'is-open': openedFaqId === faq.id,
+                            }"
                         >
                             <h6 class="accordion-header">
                                 <button
@@ -70,12 +73,13 @@ const toggleFaq = (faqId) => {
                                     class="accordion-button py-3"
                                     :class="{ collapsed: openedFaqId !== faq.id }"
                                     :aria-expanded="openedFaqId === faq.id"
-                                    @click="toggleFaq(faq.id)"
+                                    @click.prevent="toggleFaq(faq.id)"
                                 >
                                     {{ faq.question }}
                                 </button>
                             </h6>
-                            <div v-if="openedFaqId === faq.id" class="accordion-collapse collapse show shadow-sm">
+
+                            <div v-show="openedFaqId === faq.id" class="faq-answer shadow-sm">
                                 <div class="accordion-body">
                                     <span class="text-muted">{{ faq.answer }}</span>
                                 </div>
@@ -136,3 +140,13 @@ const toggleFaq = (faqId) => {
         </div>
     </section>
 </template>
+
+<style scoped>
+.faq-section .accordion-button {
+    text-transform: none;
+}
+
+.faq-answer {
+    display: block;
+}
+</style>

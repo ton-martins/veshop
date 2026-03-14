@@ -4,10 +4,10 @@ import { Head } from '@inertiajs/vue3';
 import { ChartNoAxesCombined, CircleDollarSign, Boxes, ShoppingCart, Download, FileText, BarChart3, PieChart } from 'lucide-vue-next';
 
 const stats = [
-    { key: 'revenue', label: 'Faturamento (mês)', value: 'R$ 86.430', icon: CircleDollarSign, tone: 'bg-emerald-100 text-emerald-700' },
-    { key: 'orders', label: 'Pedidos faturados', value: '214', icon: ShoppingCart, tone: 'bg-blue-100 text-blue-700' },
-    { key: 'stock_turn', label: 'Giro de estoque', value: '4,2x', icon: Boxes, tone: 'bg-amber-100 text-amber-700' },
-    { key: 'margin', label: 'Margem bruta', value: '32,4%', icon: ChartNoAxesCombined, tone: 'bg-slate-100 text-slate-700' },
+    { key: 'revenue', label: 'Faturamento (mês)', value: 'R$ 0,00', icon: CircleDollarSign, tone: 'bg-emerald-100 text-emerald-700' },
+    { key: 'orders', label: 'Pedidos faturados', value: '0', icon: ShoppingCart, tone: 'bg-blue-100 text-blue-700' },
+    { key: 'stock_turn', label: 'Giro de estoque', value: '0x', icon: Boxes, tone: 'bg-amber-100 text-amber-700' },
+    { key: 'margin', label: 'Margem bruta', value: '0%', icon: ChartNoAxesCombined, tone: 'bg-slate-100 text-slate-700' },
 ];
 
 const reportCards = [
@@ -16,11 +16,7 @@ const reportCards = [
     { title: 'DRE simplificado', description: 'Receita, custos e margem.', icon: FileText },
 ];
 
-const exportsHistory = [
-    { file: 'vendas-marco-2026.xlsx', by: 'Everton Martins', when: 'Hoje 10:12' },
-    { file: 'dre-fevereiro-2026.pdf', by: 'Everton Martins', when: 'Ontem 17:30' },
-    { file: 'estoque-critico.csv', by: 'Sistema', when: 'Ontem 08:05' },
-];
+const exportsHistory = [];
 </script>
 
 <template>
@@ -65,12 +61,15 @@ const exportsHistory = [
 
                 <aside class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                     <h2 class="text-sm font-semibold text-slate-900">Exportações recentes</h2>
-                    <ul class="mt-4 space-y-2">
+                    <ul v-if="exportsHistory.length" class="mt-4 space-y-2">
                         <li v-for="item in exportsHistory" :key="item.file" class="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
                             <p class="text-sm font-semibold text-slate-800">{{ item.file }}</p>
                             <p class="text-xs text-slate-500">{{ item.by }} • {{ item.when }}</p>
                         </li>
                     </ul>
+                    <div v-else class="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">
+                        Nenhuma exportação realizada.
+                    </div>
                 </aside>
             </div>
         </section>

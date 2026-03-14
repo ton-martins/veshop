@@ -11,41 +11,52 @@ import {
     ShoppingCart,
     Wallet,
 } from 'lucide-vue-next';
+import { computed } from 'vue';
 
-const pdvStats = [
+const props = defineProps({
+    stats: {
+        type: Object,
+        default: () => ({}),
+    },
+});
+
+const asCurrency = (value) =>
+    Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const pdvStats = computed(() => [
     {
         key: 'sales_today',
         title: 'Vendas Hoje',
-        value: 'R$ 0,00',
-        subtitle: '0 vendas concluídas',
+        value: asCurrency(props.stats?.sales_today ?? 0),
+        subtitle: `${Number(props.stats?.sales_count ?? 0)} venda(s) concluída(s)`,
         icon: ShoppingCart,
         iconClass: 'bg-slate-100 text-slate-700',
     },
     {
         key: 'avg_ticket',
         title: 'Ticket Médio',
-        value: 'R$ 0,00',
-        subtitle: 'Meta: R$ 85,00',
+        value: asCurrency(props.stats?.avg_ticket ?? 0),
+        subtitle: 'Com base nas vendas do dia',
         icon: DollarSign,
         iconClass: 'bg-emerald-100 text-emerald-600',
     },
     {
         key: 'cash_status',
         title: 'Status do Caixa',
-        value: 'Fechado',
-        subtitle: 'Abra o caixa para iniciar',
+        value: props.stats?.cash_open ? 'Aberto' : 'Fechado',
+        subtitle: props.stats?.cash_open ? 'Pronto para operação' : 'Abra o caixa para iniciar',
         icon: Wallet,
         iconClass: 'bg-amber-100 text-amber-700',
     },
     {
         key: 'pending',
         title: 'Orçamentos PDV',
-        value: '2',
+        value: String(props.stats?.pending_quotes ?? 0),
         subtitle: 'Aguardando finalização',
         icon: ClipboardList,
         iconClass: 'bg-blue-100 text-blue-700',
     },
-];
+]);
 
 const pdvShortcuts = [
     {
@@ -74,35 +85,17 @@ const pdvShortcuts = [
     },
 ];
 
-const pdvRecentSales = [
-    {
-        id: 'PDV-1045',
-        customer: 'Cliente balcão',
-        payment: 'Pix',
-        amount: 'R$ 89,90',
-        time: '10:42',
-    },
-    {
-        id: 'PDV-1044',
-        customer: 'Walk-in',
-        payment: 'Cartão crédito',
-        amount: 'R$ 52,00',
-        time: '10:18',
-    },
-    {
-        id: 'PDV-1043',
-        customer: 'Cliente recorrente',
-        payment: 'Dinheiro',
-        amount: 'R$ 120,00',
-        time: '09:57',
-    },
-];
+const pdvRecentSales = computed(() => props.stats?.recent_sales ?? []);
+const cashOpen = computed(() => Boolean(props.stats?.cash_open));
 
-const pdvPaymentSummary = [
-    { key: 'pix', label: 'Pix', value: 'R$ 0,00', icon: QrCode },
-    { key: 'credit', label: 'Cartão', value: 'R$ 0,00', icon: CreditCard },
-    { key: 'cash', label: 'Dinheiro', value: 'R$ 0,00', icon: Wallet },
-];
+const pdvPaymentSummary = computed(() => {
+    const summary = props.stats?.payment_summary ?? {};
+    return [
+        { key: 'pix', label: 'Pix', value: asCurrency(summary.pix ?? 0), icon: QrCode },
+        { key: 'credit', label: 'Cartão', value: asCurrency(summary.credit ?? 0), icon: CreditCard },
+        { key: 'cash', label: 'Dinheiro', value: asCurrency(summary.cash ?? 0), icon: Wallet },
+    ];
+});
 </script>
 
 <template>
@@ -159,7 +152,7 @@ const pdvPaymentSummary = [
                 </button>
             </header>
 
-            <ul class="space-y-3">
+            <ul v-if="pdvRecentSales.length" class="space-y-3">
                 <li
                     v-for="sale in pdvRecentSales"
                     :key="sale.id"
@@ -176,6 +169,9 @@ const pdvPaymentSummary = [
                     </div>
                 </li>
             </ul>
+            <div v-else class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                Nenhuma venda registrada hoje.
+            </div>
         </section>
 
         <section class="space-y-4">
@@ -198,11 +194,13 @@ const pdvPaymentSummary = [
 
             <article class="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 shadow-sm md:p-5">
                 <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Caixa</p>
-                <p class="mt-2 text-lg font-semibold text-emerald-900">Pronto para iniciar</p>
+                <p class="mt-2 text-lg font-semibold text-emerald-900">
+                    {{ cashOpen ? 'Caixa aberto' : 'Pronto para iniciar' }}
+                </p>
                 <p class="mt-1 text-xs text-emerald-800/80">Abra o caixa para liberar vendas instantâneas no PDV.</p>
                 <button type="button" class="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700">
                     <Wallet class="h-3.5 w-3.5" />
-                    Abrir caixa
+                    {{ cashOpen ? 'Fechar caixa' : 'Abrir caixa' }}
                 </button>
             </article>
         </section>
