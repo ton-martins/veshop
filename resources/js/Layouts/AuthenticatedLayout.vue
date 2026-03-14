@@ -28,6 +28,7 @@ import {
     UserCircle2,
     History,
     WalletCards,
+    CreditCard,
     CircleDollarSign,
     Banknote,
     PieChart,
@@ -82,6 +83,7 @@ const iconMap = {
     UserCircle2,
     History,
     WalletCards,
+    CreditCard,
     CircleDollarSign,
     Banknote,
     PieChart,
@@ -799,10 +801,35 @@ const openNotifications = () => {
                             </template>
 
                             <template v-else-if="showDefaultHeader">
-                                <h1 v-if="resolvedHeaderTitle" :class="defaultHeaderTitleClass">{{ resolvedHeaderTitle }}</h1>
+                                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <h1 v-if="resolvedHeaderTitle" :class="defaultHeaderTitleClass">{{ resolvedHeaderTitle }}</h1>
+
+                                    <div v-if="hasAdaptiveTables" class="flex justify-end">
+                                        <div class="veshop-table-view-toggle">
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
+                                                :class="tableViewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'"
+                                                @click="tableViewMode = 'list'"
+                                            >
+                                                <List class="h-3.5 w-3.5" />
+                                                Lista
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
+                                                :class="tableViewMode === 'cards' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'"
+                                                @click="tableViewMode = 'cards'"
+                                            >
+                                                <LayoutGrid class="h-3.5 w-3.5" />
+                                                Cards
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </template>
 
-                            <div v-if="hasAdaptiveTables" class="mt-4 flex justify-end">
+                            <div v-if="hasAdaptiveTables && !showDefaultHeader" class="mt-4 flex justify-end">
                                 <div class="veshop-table-view-toggle">
                                     <button
                                         type="button"

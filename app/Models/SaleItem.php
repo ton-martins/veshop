@@ -8,30 +8,24 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class Product extends Model
+class SaleItem extends Model
 {
     use HasFactory, SoftDeletes;
 
     /**
      * @var list<string>
      */
-    public const UNITS = ['un', 'kg', 'lts'];
-
-    /**
-     * @var list<string>
-     */
     protected $fillable = [
         'contractor_id',
-        'category_id',
-        'name',
-        'sku',
+        'sale_id',
+        'product_id',
         'description',
-        'cost_price',
-        'sale_price',
-        'stock_quantity',
-        'unit',
-        'image_url',
-        'is_active',
+        'sku',
+        'quantity',
+        'unit_price',
+        'discount_amount',
+        'total_amount',
+        'metadata',
     ];
 
     /**
@@ -40,10 +34,11 @@ class Product extends Model
     protected function casts(): array
     {
         return [
-            'cost_price' => 'decimal:2',
-            'sale_price' => 'decimal:2',
-            'stock_quantity' => 'integer',
-            'is_active' => 'boolean',
+            'quantity' => 'integer',
+            'unit_price' => 'decimal:2',
+            'discount_amount' => 'decimal:2',
+            'total_amount' => 'decimal:2',
+            'metadata' => 'array',
         ];
     }
 
@@ -52,14 +47,14 @@ class Product extends Model
         return $this->belongsTo(Contractor::class);
     }
 
-    public function category(): BelongsTo
+    public function sale(): BelongsTo
     {
-        return $this->belongsTo(Category::class);
+        return $this->belongsTo(Sale::class);
     }
 
-    public function saleItems(): HasMany
+    public function product(): BelongsTo
     {
-        return $this->hasMany(SaleItem::class);
+        return $this->belongsTo(Product::class);
     }
 
     public function inventoryMovements(): HasMany
@@ -67,3 +62,4 @@ class Product extends Model
         return $this->hasMany(InventoryMovement::class);
     }
 }
+

@@ -1,13 +1,15 @@
 <?php
 
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\FinanceController;
+use App\Http\Controllers\Admin\PaymentGatewayController;
+use App\Http\Controllers\Admin\PaymentMethodController;
 use App\Http\Controllers\Admin\ContractorBrandingController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\ClientController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ServiceCatalogController;
 use App\Http\Controllers\Admin\SupplierController;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -43,19 +45,17 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
                 return Inertia::render('Admin/Inventory/Index');
             })->name('inventory.index');
 
-            Route::get('/finance', function (Request $request) {
-                $tab = $request->query('tab');
-                if (!in_array($tab, ['payables', 'receivables'], true)) {
-                    $tab = 'payables';
-                }
-
-                return Inertia::render('Admin/Finance/Index', [
-                    'initialTab' => $tab,
-                ]);
-            })->name('finance.index');
+            Route::get('/finance', [FinanceController::class, 'index'])->name('finance.index');
 
             Route::redirect('/finance/payables', '/app/finance?tab=payables')->name('finance.payables');
             Route::redirect('/finance/receivables', '/app/finance?tab=receivables')->name('finance.receivables');
+            Route::redirect('/finance/payments', '/app/finance?tab=payments')->name('finance.payments');
+            Route::post('/finance/gateways', [PaymentGatewayController::class, 'store'])->name('finance.gateways.store');
+            Route::put('/finance/gateways/{paymentGateway}', [PaymentGatewayController::class, 'update'])->name('finance.gateways.update');
+            Route::delete('/finance/gateways/{paymentGateway}', [PaymentGatewayController::class, 'destroy'])->name('finance.gateways.destroy');
+            Route::post('/finance/methods', [PaymentMethodController::class, 'store'])->name('finance.methods.store');
+            Route::put('/finance/methods/{paymentMethod}', [PaymentMethodController::class, 'update'])->name('finance.methods.update');
+            Route::delete('/finance/methods/{paymentMethod}', [PaymentMethodController::class, 'destroy'])->name('finance.methods.destroy');
 
             Route::get('/reports', function () {
                 return Inertia::render('Admin/Reports/Index');

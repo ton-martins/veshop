@@ -1,6 +1,6 @@
 ﻿# Veshop - Requisitos do Produto e da Plataforma
 
-Versão: v1.3  
+Versão: v1.4  
 Última atualização: 14/03/2026
 
 ## 1. Visão do produto
@@ -76,13 +76,16 @@ Suporte adicional:
 Implementado:
 - CRUDs com paginação (10 por página): Produtos, Categorias, Clientes, Fornecedores.
 - CRUD de usuários (master), contratantes (master) e planos (master).
+- CRUD admin de configuração de pagamentos por contratante:
+  - gateways (`payment_gateways`),
+  - formas de pagamento (`payment_methods`).
 - Segmentação por nicho e bloqueio de módulos por contratante ativo.
 - Relacionamento de usuários com múltiplos contratantes.
 - Soft deletes nas entidades principais do domínio.
 - Upload de avatar de usuário com validação (`png`, `jpg`, `jpeg`) e substituição do avatar anterior.
 
 Parcial/visual (sem fluxo completo de negócio):
-- PDV (aba na visão geral comercial)
+- PDV (aba na visão geral comercial com métricas reais e ações ainda em evolução)
 - Pedidos
 - Estoque
 - Contas (pagar/receber)
@@ -162,6 +165,10 @@ Resposta objetiva:
   - orçamento pendente e conversão em venda.
 - Integrar atalhos e cards do painel PDV com endpoints reais.
 - Registrar histórico de vendas recentes com dados reais do contratante.
+- Evoluir a configuração de pagamentos já criada:
+  - incluir credenciais seguras por gateway,
+  - validar conexão e health-check do provedor,
+  - concluir fluxo online (autorização/captura/estorno) por integração.
 
 ### 7.3 Prioridade P2: fechar ciclo comercial (após PDV MVP)
 
@@ -187,12 +194,18 @@ Resposta objetiva:
   - domínio canônico e redirecionamentos.
 - Estruturar integrações para cenário em que a loja virtual externa permanece como vitrine e o Veshop atua na gestão.
 
-### 7.6 Prioridade P5: segurança e governança
+### 7.6 Prioridade P7: módulo de integrações
+
+- Implementar módulo de integrações para conectores externos.
+- Incluir integração de pagamentos (gateways) como trilha formal do produto.
+- Incluir integração com loja virtual existente do contratante para sincronização operacional (pedidos, estoque e financeiro).
+
+### 7.7 Prioridade P5: segurança e governança
 
 - Endurecer isolamento tenant-first em escopo/policies globais para reduzir risco de vazamento por erro de controller.
 - Consolidar auditoria de ações críticas (criação, edição, exclusão, troca de status).
 
-### 7.7 Prioridade P6: escalabilidade operacional
+### 7.8 Prioridade P6: escalabilidade operacional
 
 Não será feito agora, mas está mapeado:
 - Migrar `session`, `cache` e `queue` para Redis (hoje estão em `database` no ambiente local).

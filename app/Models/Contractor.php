@@ -94,6 +94,46 @@ class Contractor extends Model
         return $this->hasMany(ServiceCatalog::class);
     }
 
+    public function paymentGateways(): HasMany
+    {
+        return $this->hasMany(PaymentGateway::class);
+    }
+
+    public function paymentMethods(): HasMany
+    {
+        return $this->hasMany(PaymentMethod::class);
+    }
+
+    public function cashSessions(): HasMany
+    {
+        return $this->hasMany(CashSession::class);
+    }
+
+    public function cashMovements(): HasMany
+    {
+        return $this->hasMany(CashMovement::class);
+    }
+
+    public function sales(): HasMany
+    {
+        return $this->hasMany(Sale::class);
+    }
+
+    public function saleItems(): HasMany
+    {
+        return $this->hasMany(SaleItem::class);
+    }
+
+    public function salePayments(): HasMany
+    {
+        return $this->hasMany(SalePayment::class);
+    }
+
+    public function inventoryMovements(): HasMany
+    {
+        return $this->hasMany(InventoryMovement::class);
+    }
+
     /**
      * @return list<string>
      */

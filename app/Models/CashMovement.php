@@ -5,10 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class Client extends Model
+class CashMovement extends Model
 {
     use HasFactory, SoftDeletes;
 
@@ -17,13 +16,16 @@ class Client extends Model
      */
     protected $fillable = [
         'contractor_id',
-        'name',
-        'email',
-        'phone',
-        'document',
-        'city',
-        'state',
-        'is_active',
+        'cash_session_id',
+        'user_id',
+        'type',
+        'direction',
+        'amount',
+        'description',
+        'reference_type',
+        'reference_id',
+        'occurred_at',
+        'metadata',
     ];
 
     /**
@@ -32,7 +34,9 @@ class Client extends Model
     protected function casts(): array
     {
         return [
-            'is_active' => 'boolean',
+            'amount' => 'decimal:2',
+            'occurred_at' => 'datetime',
+            'metadata' => 'array',
         ];
     }
 
@@ -41,8 +45,14 @@ class Client extends Model
         return $this->belongsTo(Contractor::class);
     }
 
-    public function sales(): HasMany
+    public function cashSession(): BelongsTo
     {
-        return $this->hasMany(Sale::class);
+        return $this->belongsTo(CashSession::class);
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 }
+

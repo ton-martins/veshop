@@ -6,6 +6,7 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -84,6 +85,31 @@ class User extends Authenticatable
     public function contractors(): BelongsToMany
     {
         return $this->belongsToMany(Contractor::class)->withTimestamps();
+    }
+
+    public function openedCashSessions(): HasMany
+    {
+        return $this->hasMany(CashSession::class, 'opened_by_user_id');
+    }
+
+    public function closedCashSessions(): HasMany
+    {
+        return $this->hasMany(CashSession::class, 'closed_by_user_id');
+    }
+
+    public function cashMovements(): HasMany
+    {
+        return $this->hasMany(CashMovement::class);
+    }
+
+    public function sales(): HasMany
+    {
+        return $this->hasMany(Sale::class);
+    }
+
+    public function inventoryMovements(): HasMany
+    {
+        return $this->hasMany(InventoryMovement::class);
     }
 
     public function defaultContractor(): ?Contractor
