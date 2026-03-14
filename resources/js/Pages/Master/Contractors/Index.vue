@@ -70,6 +70,12 @@ const applyFilters = () => {
     );
 };
 
+const clearSearch = () => {
+    if (!String(filterForm.search ?? '').trim()) return;
+    filterForm.search = '';
+    applyFilters();
+};
+
 const clearFilters = () => {
     filterForm.search = '';
     filterForm.niche = '';
@@ -286,8 +292,25 @@ const formatMoney = (value) => {
                             class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                             @keydown.enter.prevent="applyFilters"
                         />
+                        <button
+                            v-if="filterForm.search"
+                            type="button"
+                            class="inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+                            aria-label="Limpar pesquisa"
+                            @click="clearSearch"
+                        >
+                            x
+                        </button>
                     </div>
                     <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="applyFilters"
+                        >
+                            <Search class="h-3.5 w-3.5" />
+                            Buscar
+                        </button>
                         <UiSelect
                             v-model="filterForm.niche"
                             :options="nicheFilterOptions"

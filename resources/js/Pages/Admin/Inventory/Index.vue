@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import { Boxes, AlertTriangle, RotateCcw, CircleDollarSign, ArrowUpDown, Search, Plus } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
 
 const stats = [
     { key: 'skus', label: 'SKUs ativos', value: '0', icon: Boxes, tone: 'bg-slate-100 text-slate-700' },
@@ -12,6 +13,23 @@ const stats = [
 
 const movements = [];
 const locations = [];
+const movementSearch = ref('');
+
+const filteredMovements = computed(() => {
+    const query = String(movementSearch.value ?? '').trim().toLowerCase();
+    if (!query) return movements;
+
+    return movements.filter((movement) => {
+        const item = String(movement?.item ?? '').toLowerCase();
+        const type = String(movement?.type ?? '').toLowerCase();
+        const ref = String(movement?.ref ?? '').toLowerCase();
+        return item.includes(query) || type.includes(query) || ref.includes(query);
+    });
+});
+
+const clearSearch = () => {
+    movementSearch.value = '';
+};
 </script>
 
 <template>
@@ -37,7 +55,16 @@ const locations = [];
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div class="veshop-search-shell flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                         <Search class="veshop-search-icon h-4 w-4 text-slate-500" />
-                        <input type="text" placeholder="Buscar item no estoque" class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none" />
+                        <input v-model="movementSearch" type="text" placeholder="Buscar item no estoque" class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none" />
+                        <button
+                            v-if="movementSearch"
+                            type="button"
+                            class="inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+                            aria-label="Limpar pesquisa"
+                            @click="clearSearch"
+                        >
+                            x
+                        </button>
                     </div>
                     <button type="button" class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800">
                         <Plus class="h-3.5 w-3.5" />
@@ -57,8 +84,8 @@ const locations = [];
                                     <th class="px-4 py-3">Ref</th>
                                 </tr>
                             </thead>
-                            <tbody v-if="movements.length" class="divide-y divide-slate-100 bg-white">
-                                <tr v-for="movement in movements" :key="`${movement.date}-${movement.ref}`">
+                            <tbody v-if="filteredMovements.length" class="divide-y divide-slate-100 bg-white">
+                                <tr v-for="movement in filteredMovements" :key="`${movement.date}-${movement.ref}`">
                                     <td class="px-4 py-3 text-xs text-slate-500">{{ movement.date }}</td>
                                     <td class="px-4 py-3 font-semibold text-slate-900">{{ movement.item }}</td>
                                     <td class="px-4 py-3 text-slate-600">{{ movement.type }}</td>
@@ -67,7 +94,7 @@ const locations = [];
                                 </tr>
                             </tbody>
                         </table>
-                        <div v-if="!movements.length" class="px-4 py-8 text-center text-sm text-slate-500">
+                        <div v-if="!filteredMovements.length" class="px-4 py-8 text-center text-sm text-slate-500">
                             Nenhuma movimentação registrada.
                         </div>
                     </div>

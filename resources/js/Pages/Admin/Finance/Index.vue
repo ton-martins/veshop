@@ -54,9 +54,22 @@ const receivablesStats = [
 
 const payables = [];
 const receivables = [];
+const searchQuery = ref('');
 
 const activeStats = computed(() => (activeTab.value === 'receivables' ? receivablesStats : payablesStats));
-const activeRows = computed(() => (activeTab.value === 'receivables' ? receivables : payables));
+const activeRows = computed(() => {
+    const rows = activeTab.value === 'receivables' ? receivables : payables;
+    const query = String(searchQuery.value ?? '').trim().toLowerCase();
+
+    if (!query) return rows;
+
+    return rows.filter((item) => {
+        const primary = String(item?.primary ?? '').toLowerCase();
+        const reference = String(item?.reference ?? '').toLowerCase();
+        const status = String(item?.status ?? '').toLowerCase();
+        return primary.includes(query) || reference.includes(query) || status.includes(query);
+    });
+});
 
 const searchPlaceholder = computed(() =>
     activeTab.value === 'receivables'
@@ -93,6 +106,10 @@ const emptyStateLabel = computed(() =>
         ? 'Nenhum título a receber cadastrado.'
         : 'Nenhum título a pagar cadastrado.'
 );
+
+const clearSearch = () => {
+    searchQuery.value = '';
+};
 </script>
 
 <template>
@@ -144,10 +161,20 @@ const emptyStateLabel = computed(() =>
                     <div class="veshop-search-shell flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                         <Search class="veshop-search-icon h-4 w-4 text-slate-500" />
                         <input
+                            v-model="searchQuery"
                             type="text"
                             :placeholder="searchPlaceholder"
                             class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                         />
+                        <button
+                            v-if="searchQuery"
+                            type="button"
+                            class="inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+                            aria-label="Limpar pesquisa"
+                            @click="clearSearch"
+                        >
+                            x
+                        </button>
                     </div>
 
                     <div class="veshop-toolbar-actions lg:justify-end">

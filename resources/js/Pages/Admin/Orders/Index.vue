@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import { ShoppingBag, Boxes, CircleDollarSign, AlertTriangle, Search, Filter, Plus } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
 
 const stats = [
     { key: 'new', label: 'Novos pedidos', value: '0', icon: ShoppingBag, tone: 'bg-slate-100 text-slate-700' },
@@ -11,6 +12,22 @@ const stats = [
 ];
 
 const orders = [];
+const orderSearch = ref('');
+
+const filteredOrders = computed(() => {
+    const query = String(orderSearch.value ?? '').trim().toLowerCase();
+    if (!query) return orders;
+
+    return orders.filter((order) => {
+        const code = String(order?.code ?? '').toLowerCase();
+        const client = String(order?.client ?? '').toLowerCase();
+        return code.includes(query) || client.includes(query);
+    });
+});
+
+const clearSearch = () => {
+    orderSearch.value = '';
+};
 
 const kanban = [
     { name: 'Novo', qty: 0, tone: 'bg-slate-100 text-slate-700' },
@@ -43,7 +60,16 @@ const kanban = [
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div class="veshop-search-shell flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                         <Search class="veshop-search-icon h-4 w-4 text-slate-500" />
-                        <input type="text" placeholder="Buscar pedido por código ou cliente" class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none" />
+                        <input v-model="orderSearch" type="text" placeholder="Buscar pedido por código ou cliente" class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none" />
+                        <button
+                            v-if="orderSearch"
+                            type="button"
+                            class="inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+                            aria-label="Limpar pesquisa"
+                            @click="clearSearch"
+                        >
+                            x
+                        </button>
                     </div>
                     <div class="veshop-toolbar-actions lg:justify-end">
                         <button type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
@@ -68,8 +94,8 @@ const kanban = [
                                     <th class="px-4 py-3">Status</th>
                                 </tr>
                             </thead>
-                            <tbody v-if="orders.length" class="divide-y divide-slate-100 bg-white">
-                                <tr v-for="order in orders" :key="order.code">
+                            <tbody v-if="filteredOrders.length" class="divide-y divide-slate-100 bg-white">
+                                <tr v-for="order in filteredOrders" :key="order.code">
                                     <td class="px-4 py-3">
                                         <p class="font-semibold text-slate-900">{{ order.code }}</p>
                                         <p class="text-xs text-slate-500">{{ order.client }}</p>
@@ -80,7 +106,7 @@ const kanban = [
                                 </tr>
                             </tbody>
                         </table>
-                        <div v-if="!orders.length" class="px-4 py-8 text-center text-sm text-slate-500">
+                        <div v-if="!filteredOrders.length" class="px-4 py-8 text-center text-sm text-slate-500">
                             Nenhum pedido registrado para este contratante.
                         </div>
                     </div>

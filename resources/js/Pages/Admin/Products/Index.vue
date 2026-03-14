@@ -102,6 +102,12 @@ const applyFilters = () => {
     );
 };
 
+const clearSearch = () => {
+    if (!String(filterForm.search ?? '').trim()) return;
+    filterForm.search = '';
+    applyFilters();
+};
+
 const resetFilters = () => {
     filterForm.search = '';
     filterForm.status = '';
@@ -247,8 +253,25 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                             class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                             @keyup.enter="applyFilters"
                         >
+                        <button
+                            v-if="filterForm.search"
+                            type="button"
+                            class="inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+                            aria-label="Limpar pesquisa"
+                            @click="clearSearch"
+                        >
+                            x
+                        </button>
                     </div>
                     <div class="veshop-toolbar-actions lg:justify-end">
+                        <button
+                            type="button"
+                            class="inline-flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto"
+                            @click="applyFilters"
+                        >
+                            <Search class="h-3.5 w-3.5" />
+                            Buscar
+                        </button>
                         <UiSelect
                             v-model="filterForm.category_id"
                             :options="categoryFilterOptions"
