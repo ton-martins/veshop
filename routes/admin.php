@@ -46,6 +46,8 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
             Route::post('/pdv/cash/open', [PdvController::class, 'openCashSession'])->name('pdv.cash.open');
             Route::post('/pdv/cash/close', [PdvController::class, 'closeCashSession'])->name('pdv.cash.close');
             Route::post('/pdv/sales', [PdvController::class, 'storeSale'])->name('pdv.sales.store');
+            Route::put('/pdv/products/featured', [PdvController::class, 'updateFeaturedProducts'])->name('pdv.products.featured.update');
+            Route::post('/pdv/clients', [PdvController::class, 'storeClient'])->name('pdv.clients.store');
 
             Route::get('/inventory', function () {
                 return Inertia::render('Admin/Inventory/Index');

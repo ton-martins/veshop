@@ -3,6 +3,7 @@
 namespace Tests\Feature\Admin;
 
 use App\Models\Contractor;
+use App\Models\Client;
 use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\User;
@@ -197,6 +198,102 @@ class PdvFlowTest extends TestCase
         $this->assertDatabaseCount('sales', 0);
     }
 
+    public function test_admin_can_define_featured_products_for_pdv(): void
+    {
+        $contractor = $this->createContractor('pdv-featured-products');
+        $user = $this->createAdminUser([$contractor]);
+
+        $first = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Produto A',
+            'sku' => 'PDV-A',
+            'sale_price' => 10,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $second = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Produto B',
+            'sku' => 'PDV-B',
+            'sale_price' => 20,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $third = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Produto C',
+            'sku' => 'PDV-C',
+            'sale_price' => 30,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $response = $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->put(route('admin.pdv.products.featured.update'), [
+                'product_ids' => [$second->id, $first->id],
+            ]);
+
+        $response->assertRedirect();
+
+        $this->assertDatabaseHas('products', [
+            'id' => $second->id,
+            'is_pdv_featured' => 1,
+            'pdv_featured_order' => 1,
+        ]);
+        $this->assertDatabaseHas('products', [
+            'id' => $first->id,
+            'is_pdv_featured' => 1,
+            'pdv_featured_order' => 2,
+        ]);
+        $this->assertDatabaseHas('products', [
+            'id' => $third->id,
+            'is_pdv_featured' => 0,
+            'pdv_featured_order' => null,
+        ]);
+    }
+
+    public function test_admin_can_create_client_from_pdv(): void
+    {
+        $contractor = $this->createContractor('pdv-quick-client');
+        $user = $this->createAdminUser([$contractor]);
+
+        $response = $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->post(route('admin.pdv.clients.store'), [
+                'name' => 'Cliente PDV',
+                'email' => 'cliente-pdv@example.com',
+                'phone' => '71999990000',
+                'city' => 'Salvador',
+                'state' => 'ba',
+            ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('pdv_new_client_id');
+
+        $this->assertDatabaseHas('clients', [
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente PDV',
+            'email' => 'cliente-pdv@example.com',
+            'state' => 'BA',
+            'is_active' => 1,
+        ]);
+        $this->assertSame(1, Client::query()->where('contractor_id', $contractor->id)->count());
+    }
+
     /**
      * @param array<int, Contractor> $contractors
      */
@@ -234,4 +331,3 @@ class PdvFlowTest extends TestCase
         ]);
     }
 }
-

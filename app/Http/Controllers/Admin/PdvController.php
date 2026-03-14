@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\CloseCashSessionRequest;
 use App\Http\Requests\Admin\OpenCashSessionRequest;
+use App\Http\Requests\Admin\StorePdvClientRequest;
 use App\Http\Requests\Admin\StorePdvSaleRequest;
+use App\Http\Requests\Admin\UpdatePdvFeaturedProductsRequest;
 use App\Models\CashMovement;
 use App\Models\CashSession;
 use App\Models\Client;
@@ -29,7 +31,7 @@ class PdvController extends Controller
     public function index(Request $request): Response
     {
         $contractor = $this->resolveCurrentContractor($request);
-        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+        abort_unless($contractor, 404, 'Contratante ativo nÃ£o encontrado.');
 
         $openCashSession = CashSession::query()
             ->where('contractor_id', $contractor->id)
@@ -67,9 +69,21 @@ class PdvController extends Controller
             ->where('contractor_id', $contractor->id)
             ->where('is_active', true)
             ->where('stock_quantity', '>', 0)
+            ->orderByDesc('is_pdv_featured')
+            ->orderBy('pdv_featured_order')
             ->orderBy('name')
-            ->limit(150)
-            ->get(['id', 'name', 'sku', 'sale_price', 'stock_quantity', 'unit', 'image_url'])
+            ->limit(250)
+            ->get([
+                'id',
+                'name',
+                'sku',
+                'sale_price',
+                'stock_quantity',
+                'unit',
+                'image_url',
+                'is_pdv_featured',
+                'pdv_featured_order',
+            ])
             ->map(static fn (Product $product): array => [
                 'id' => $product->id,
                 'name' => $product->name,
@@ -78,6 +92,8 @@ class PdvController extends Controller
                 'stock_quantity' => (int) $product->stock_quantity,
                 'unit' => $product->unit,
                 'image_url' => $product->image_url,
+                'is_pdv_featured' => (bool) $product->is_pdv_featured,
+                'pdv_featured_order' => $product->pdv_featured_order ? (int) $product->pdv_featured_order : null,
             ])
             ->values()
             ->all();
@@ -86,7 +102,7 @@ class PdvController extends Controller
             ->where('contractor_id', $contractor->id)
             ->where('is_active', true)
             ->orderBy('name')
-            ->limit(150)
+            ->limit(250)
             ->get(['id', 'name'])
             ->map(static fn (Client $client): array => [
                 'id' => $client->id,
@@ -140,7 +156,7 @@ class PdvController extends Controller
                     'code' => $sale->code,
                     'customer' => $sale->client?->name ?? 'Consumidor final',
                     'total_amount' => (float) $sale->total_amount,
-                    'payment_label' => $paymentNames->isNotEmpty() ? $paymentNames->implode(' + ') : 'Não informado',
+                    'payment_label' => $paymentNames->isNotEmpty() ? $paymentNames->implode(' + ') : 'NÃ£o informado',
                     'completed_at' => optional($sale->completed_at)->format('d/m/Y H:i'),
                 ];
             })
@@ -150,6 +166,14 @@ class PdvController extends Controller
         $initialAction = trim((string) $request->string('action')->toString());
         if (! in_array($initialAction, ['open-cash', 'close-cash'], true)) {
             $initialAction = null;
+        }
+
+        $initialClientId = (int) $request->session()->pull('pdv_new_client_id', 0);
+        if ($initialClientId > 0) {
+            $clientIds = collect($clients)->pluck('id')->map(static fn (mixed $id): int => (int) $id);
+            if (! $clientIds->contains($initialClientId)) {
+                $initialClientId = 0;
+            }
         }
 
         return Inertia::render('Admin/Pdv/Index', [
@@ -167,13 +191,14 @@ class PdvController extends Controller
             'paymentMethods' => $paymentMethods,
             'recentSales' => $recentSales,
             'initialAction' => $initialAction,
+            'initialClientId' => $initialClientId > 0 ? $initialClientId : null,
         ]);
     }
 
     public function openCashSession(OpenCashSessionRequest $request): RedirectResponse
     {
         $contractor = $this->resolveCurrentContractor($request);
-        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+        abort_unless($contractor, 404, 'Contratante ativo nÃ£o encontrado.');
 
         $alreadyOpen = CashSession::query()
             ->where('contractor_id', $contractor->id)
@@ -182,7 +207,7 @@ class PdvController extends Controller
 
         if ($alreadyOpen) {
             throw ValidationException::withMessages([
-                'cash_session' => 'Já existe um caixa aberto para este contratante.',
+                'cash_session' => 'JÃ¡ existe um caixa aberto para este contratante.',
             ]);
         }
 
@@ -223,7 +248,7 @@ class PdvController extends Controller
     public function closeCashSession(CloseCashSessionRequest $request): RedirectResponse
     {
         $contractor = $this->resolveCurrentContractor($request);
-        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+        abort_unless($contractor, 404, 'Contratante ativo nÃ£o encontrado.');
 
         $cashSession = CashSession::query()
             ->where('contractor_id', $contractor->id)
@@ -265,7 +290,7 @@ class PdvController extends Controller
     public function storeSale(StorePdvSaleRequest $request): RedirectResponse
     {
         $contractor = $this->resolveCurrentContractor($request);
-        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+        abort_unless($contractor, 404, 'Contratante ativo nÃ£o encontrado.');
 
         $cashSession = CashSession::query()
             ->where('contractor_id', $contractor->id)
@@ -290,7 +315,7 @@ class PdvController extends Controller
 
             if (! $clientExists) {
                 throw ValidationException::withMessages([
-                    'client_id' => 'Cliente inválido para o contratante ativo.',
+                    'client_id' => 'Cliente invÃ¡lido para o contratante ativo.',
                 ]);
             }
         }
@@ -303,7 +328,7 @@ class PdvController extends Controller
 
         if (! $paymentMethod) {
             throw ValidationException::withMessages([
-                'payment_method_id' => 'Forma de pagamento inválida para o contratante ativo.',
+                'payment_method_id' => 'Forma de pagamento invÃ¡lida para o contratante ativo.',
             ]);
         }
 
@@ -320,7 +345,7 @@ class PdvController extends Controller
             $maxInstallments = (int) ($paymentMethod->max_installments ?? 0);
             if ($maxInstallments > 0 && $installments > $maxInstallments) {
                 throw ValidationException::withMessages([
-                    'installments' => "Esta forma permite no máximo {$maxInstallments} parcelas.",
+                    'installments' => "Esta forma permite no mÃ¡ximo {$maxInstallments} parcelas.",
                 ]);
             }
         }
@@ -350,7 +375,7 @@ class PdvController extends Controller
 
             if ($products->count() !== $productIds->count()) {
                 throw ValidationException::withMessages([
-                    'items' => 'Um ou mais produtos são inválidos para o contratante ativo.',
+                    'items' => 'Um ou mais produtos sÃ£o invÃ¡lidos para o contratante ativo.',
                 ]);
             }
 
@@ -365,13 +390,13 @@ class PdvController extends Controller
 
                 if (! $product) {
                     throw ValidationException::withMessages([
-                        'items' => 'Produto não encontrado para o carrinho.',
+                        'items' => 'Produto nÃ£o encontrado para o carrinho.',
                     ]);
                 }
 
                 if ($safeQuantity <= 0) {
                     throw ValidationException::withMessages([
-                        'items' => "Quantidade inválida para o produto {$product->name}.",
+                        'items' => "Quantidade invÃ¡lida para o produto {$product->name}.",
                     ]);
                 }
 
@@ -492,7 +517,67 @@ class PdvController extends Controller
             }
         });
 
-        return back()->with('status', 'Venda concluída com sucesso.');
+        return back()->with('status', 'Venda concluÃ­da com sucesso.');
+    }
+
+    public function updateFeaturedProducts(UpdatePdvFeaturedProductsRequest $request): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo nao encontrado.');
+
+        $productIds = collect($request->validated('product_ids', []))
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->values();
+
+        if ($productIds->isNotEmpty()) {
+            $ownedCount = Product::query()
+                ->where('contractor_id', $contractor->id)
+                ->whereIn('id', $productIds->all())
+                ->count();
+
+            if ($ownedCount !== $productIds->count()) {
+                throw ValidationException::withMessages([
+                    'product_ids' => 'A selecao possui produtos invalidos para o contratante ativo.',
+                ]);
+            }
+        }
+
+        DB::transaction(function () use ($contractor, $productIds): void {
+            Product::query()
+                ->where('contractor_id', $contractor->id)
+                ->update([
+                    'is_pdv_featured' => false,
+                    'pdv_featured_order' => null,
+                ]);
+
+            $productIds->each(function (int $productId, int $index) use ($contractor): void {
+                Product::query()
+                    ->where('contractor_id', $contractor->id)
+                    ->where('id', $productId)
+                    ->update([
+                        'is_pdv_featured' => true,
+                        'pdv_featured_order' => $index + 1,
+                    ]);
+            });
+        });
+
+        return back()->with('status', 'Produtos prioritarios do PDV atualizados com sucesso.');
+    }
+
+    public function storeClient(StorePdvClientRequest $request): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo nao encontrado.');
+
+        $client = Client::query()->create([
+            ...$request->validated(),
+            'contractor_id' => $contractor->id,
+            'is_active' => true,
+        ]);
+
+        return back()
+            ->with('status', 'Cliente criado com sucesso no PDV.')
+            ->with('pdv_new_client_id', $client->id);
     }
 
     private function resolveCurrentContractor(Request $request): ?Contractor
@@ -553,3 +638,4 @@ class PdvController extends Controller
         return $code;
     }
 }
+
