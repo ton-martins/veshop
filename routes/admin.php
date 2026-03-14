@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FinanceController;
 use App\Http\Controllers\Admin\PaymentGatewayController;
 use App\Http\Controllers\Admin\PaymentMethodController;
+use App\Http\Controllers\Admin\PdvController;
 use App\Http\Controllers\Admin\ContractorBrandingController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\ClientController;
@@ -40,6 +41,11 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
             Route::get('/orders', function () {
                 return Inertia::render('Admin/Orders/Index');
             })->name('orders.index');
+
+            Route::get('/pdv', [PdvController::class, 'index'])->name('pdv.index');
+            Route::post('/pdv/cash/open', [PdvController::class, 'openCashSession'])->name('pdv.cash.open');
+            Route::post('/pdv/cash/close', [PdvController::class, 'closeCashSession'])->name('pdv.cash.close');
+            Route::post('/pdv/sales', [PdvController::class, 'storeSale'])->name('pdv.sales.store');
 
             Route::get('/inventory', function () {
                 return Inertia::render('Admin/Inventory/Index');

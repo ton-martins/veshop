@@ -56,6 +56,13 @@
         module: 'commercial',
         links: [
             {
+                key: 'admin-pdv',
+                label: 'PDV',
+                route: 'admin.pdv.index',
+                match: ['admin.pdv.*'],
+                icon: 'ReceiptText',
+            },
+            {
                 key: 'admin-orders',
                 label: 'Pedidos',
                 route: 'admin.orders.index',
