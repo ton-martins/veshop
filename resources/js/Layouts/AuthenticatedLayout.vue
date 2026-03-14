@@ -434,32 +434,32 @@ const openNotifications = () => {
 
         <template v-else>
             <div class="flex min-h-screen">
-                <aside class="relative hidden md:flex md:sticky md:top-0 md:h-screen flex-col border-r border-slate-800 bg-slate-900 shadow-2xl transition-all duration-300" :class="sidebarCollapsed ? 'w-20' : 'w-72'">
-                    <button type="button" class="absolute -right-3 top-6 hidden h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-200 shadow transition hover:bg-slate-700 md:flex" :title="sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'" @click="toggleSidebarCollapsed">
+                <aside class="relative hidden md:flex md:sticky md:top-0 md:h-screen flex-col border-r border-slate-200 bg-white shadow-lg transition-all duration-300" :class="sidebarCollapsed ? 'w-20' : 'w-72'">
+                    <button type="button" class="absolute -right-3 top-6 hidden h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow transition hover:bg-slate-100 md:flex" :title="sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'" @click="toggleSidebarCollapsed">
                         <component :is="sidebarCollapsed ? ChevronRight : ChevronLeft" class="h-4 w-4" />
                     </button>
 
-                    <div class="border-b border-slate-800 px-4 py-5">
+                    <div class="border-b border-slate-200 px-4 py-5">
                         <Link :href="safeRoute('home', '/home')" class="flex w-full items-center gap-3" :class="sidebarCollapsed ? 'justify-center' : ''">
-                            <div class="flex h-10 w-10 items-center justify-center rounded-md bg-slate-800 text-base font-semibold text-white ring-1 ring-slate-700">
+                            <div class="flex h-10 w-10 items-center justify-center rounded-md bg-slate-900 text-base font-semibold text-white">
                                 <img :src="systemIconUrl" :alt="systemBrandName" class="h-6 w-6 object-contain" />
                             </div>
                             <div v-if="!sidebarCollapsed" class="flex flex-col leading-tight">
-                                <span class="text-sm font-semibold text-slate-100">{{ systemBrandName }}</span>
-                                <span class="mt-1 inline-flex w-fit items-center rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-200 ring-1 ring-slate-700">
+                                <span class="text-sm font-semibold text-slate-900">{{ systemBrandName }}</span>
+                                <span class="mt-1 inline-flex w-fit items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200">
                                     {{ systemContextLabel }}
                                 </span>
                             </div>
                         </Link>
 
-                        <div v-if="currentContractor" class="mt-4 rounded-xl border border-slate-700 bg-slate-800/60" :class="sidebarCollapsed ? 'px-2 py-2' : 'px-3 py-2'">
+                        <div v-if="currentContractor" class="mt-4 rounded-xl border border-slate-200 bg-slate-50/70" :class="sidebarCollapsed ? 'px-2 py-2' : 'px-3 py-2'">
                             <div class="flex items-center gap-3" :class="sidebarCollapsed ? 'justify-center' : ''">
                                 <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70" :style="contractorLogoUrl ? null : { background: 'var(--contractor-primary)' }">
                                     <img v-if="contractorLogoUrl" :src="contractorLogoUrl" :alt="contractorName" class="h-full w-full rounded-lg object-cover" />
                                     <span v-else class="text-xs font-semibold text-white">{{ contractorInitials }}</span>
                                 </div>
                                 <div v-if="!sidebarCollapsed" class="min-w-0">
-                                    <p class="truncate text-xs font-semibold text-slate-100">{{ contractorName }}</p>
+                                    <p class="truncate text-xs font-semibold text-slate-900">{{ contractorName }}</p>
                                     <span class="mt-1 inline-flex w-fit items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
                                         {{ contractorPlanName }}
                                     </span>
@@ -467,7 +467,7 @@ const openNotifications = () => {
 
                                 <Dropdown v-if="canSwitchContractor && !sidebarCollapsed" align="right" width="48" content-classes="py-2 bg-white" class="ml-auto">
                                     <template #trigger>
-                                        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-slate-200 shadow-sm transition hover:bg-slate-700" title="Trocar contratante" aria-label="Trocar contratante">
+                                        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50" title="Trocar contratante" aria-label="Trocar contratante">
                                             <ChevronDown class="h-4 w-4" />
                                         </button>
                                     </template>
@@ -492,23 +492,23 @@ const openNotifications = () => {
                     <div class="flex-1 overflow-y-auto">
                         <nav :class="sidebarCollapsed ? 'flex flex-col items-center gap-3 p-3' : 'space-y-3 p-4'">
                             <template v-if="sidebarCollapsed">
-                                <Link v-for="link in collapsedLinks" :key="link.key" :href="safeRoute(link.route, '#')" class="flex h-10 w-10 items-center justify-center rounded-xl text-slate-300 transition" :class="isLinkActive(link) ? 'text-white shadow-inner shadow-black/10' : 'hover:bg-slate-800 hover:text-slate-100'" :style="isLinkActive(link) ? { background: contractorActiveGradient } : null" :title="link.label" :aria-label="link.label">
+                                <Link v-for="link in collapsedLinks" :key="link.key" :href="safeRoute(link.route, '#')" class="flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition" :class="isLinkActive(link) ? 'text-white shadow-inner shadow-black/10' : 'hover:bg-slate-100 hover:text-slate-900'" :style="isLinkActive(link) ? { background: contractorActiveGradient } : null" :title="link.label" :aria-label="link.label">
                                     <component :is="link.iconComponent" class="h-4 w-4 opacity-90" />
                                 </Link>
                             </template>
                             <template v-else>
                                 <div v-for="group in menuGroups" :key="group.key" class="relative">
-                                    <button type="button" class="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-800" @click="toggleGroup(group.key)">
+                                    <button type="button" class="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-100" @click="toggleGroup(group.key)">
                                         <span class="flex items-center gap-3">
-                                            <component :is="group.iconComponent" class="h-4 w-4 text-slate-300" />
+                                            <component :is="group.iconComponent" class="h-4 w-4 text-slate-600" />
                                             {{ group.label }}
                                         </span>
-                                        <ChevronDown class="h-4 w-4 text-slate-400 transition" :class="isGroupExpanded(group.key) ? 'rotate-180' : ''" />
+                                        <ChevronDown class="h-4 w-4 text-slate-500 transition" :class="isGroupExpanded(group.key) ? 'rotate-180' : ''" />
                                     </button>
                                     <transition name="fade">
                                         <ul v-show="isGroupExpanded(group.key)" class="mt-2 space-y-1 pl-2">
                                             <li v-for="link in group.links" :key="link.key">
-                                                <Link :href="safeRoute(link.route, '#')" class="group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition" :class="isLinkActive(link) ? 'text-white shadow-inner shadow-black/10' : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'" :style="isLinkActive(link) ? { background: contractorActiveGradient } : null">
+                                                <Link :href="safeRoute(link.route, '#')" class="group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition" :class="isLinkActive(link) ? 'text-white shadow-inner shadow-black/10' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'" :style="isLinkActive(link) ? { background: contractorActiveGradient } : null">
                                                     <component :is="link.iconComponent" class="h-4 w-4 opacity-90" />
                                                     <span class="text-sm">{{ link.label }}</span>
                                                 </Link>
@@ -520,23 +520,23 @@ const openNotifications = () => {
                         </nav>
                     </div>
 
-                    <div class="border-t border-slate-800" :class="sidebarCollapsed ? 'p-3' : 'p-4'">
-                        <div class="rounded-2xl border border-slate-700 bg-slate-800 p-3 shadow-sm" :class="sidebarCollapsed ? 'flex flex-col items-center gap-3' : ''">
+                    <div class="border-t border-slate-200" :class="sidebarCollapsed ? 'p-3' : 'p-4'">
+                        <div class="rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm" :class="sidebarCollapsed ? 'flex flex-col items-center gap-3' : ''">
                             <div class="flex items-center gap-3" :class="sidebarCollapsed ? 'justify-center' : ''">
-                                <div class="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-slate-700 text-slate-100 ring-1 ring-slate-600">
+                                <div class="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-700 ring-1 ring-slate-200">
                                     <img v-if="userAvatarUrl" :src="userAvatarUrl" :alt="user?.name ?? 'Avatar'" class="h-full w-full object-cover" />
-                                    <span v-else class="text-sm font-semibold text-slate-100">{{ userInitial }}</span>
-                                    <span class="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-800 bg-emerald-500" />
+                                    <span v-else class="text-sm font-semibold text-slate-700">{{ userInitial }}</span>
+                                    <span class="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
                                 </div>
                                 <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
-                                    <p class="truncate text-sm font-semibold text-slate-100">{{ user?.name ?? 'Usuário' }}</p>
-                                    <p class="truncate text-xs text-slate-300">{{ user?.email ?? '' }}</p>
+                                    <p class="truncate text-sm font-semibold text-slate-900">{{ user?.name ?? 'Usuário' }}</p>
+                                    <p class="truncate text-xs text-slate-600">{{ user?.email ?? '' }}</p>
                                 </div>
                             </div>
 
                             <template v-if="!sidebarCollapsed">
                                 <div class="mt-3 grid gap-2">
-                                    <Link :href="safeRoute('profile.edit', '/profile')" class="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-700 px-2.5 py-1.5 text-xs font-medium text-slate-100 ring-1 ring-slate-600 transition hover:bg-slate-600">
+                                    <Link :href="safeRoute('profile.edit', '/profile')" class="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200/80 transition hover:bg-slate-100">
                                         <UserCircle2 class="h-4 w-4" />
                                         Perfil
                                     </Link>
@@ -548,7 +548,7 @@ const openNotifications = () => {
                             </template>
                             <template v-else>
                                 <div class="flex flex-col items-center gap-2">
-                                    <Link :href="safeRoute('profile.edit', '/profile')" class="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-700 text-slate-100 ring-1 ring-slate-600 transition hover:bg-slate-600" title="Perfil" aria-label="Perfil">
+                                    <Link :href="safeRoute('profile.edit', '/profile')" class="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-700 ring-1 ring-slate-200/80 transition hover:bg-slate-100" title="Perfil" aria-label="Perfil">
                                         <UserCircle2 class="h-4 w-4" />
                                     </Link>
                                     <button type="button" @click="doLogout" class="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-700 ring-1 ring-rose-200/80 transition hover:bg-rose-100" title="Sair" aria-label="Sair">
@@ -589,11 +589,11 @@ const openNotifications = () => {
                         </div>
                     </main>
 
-                    <nav class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-800 bg-slate-900/95 px-2 pt-2 pb-[max(env(safe-area-inset-bottom),0.45rem)] shadow-[0_-10px_30px_-20px_rgba(15,23,42,0.6)] backdrop-blur md:hidden">
+                    <nav class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-2 pt-2 pb-[max(env(safe-area-inset-bottom),0.45rem)] shadow-[0_-10px_30px_-20px_rgba(15,23,42,0.2)] backdrop-blur md:hidden">
                         <div class="mx-auto flex max-w-lg items-end gap-1">
                             <button
                                 type="button"
-                                class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-slate-100"
+                                class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
                                 @click="sidebarOpen = true"
                             >
                                 <Menu class="h-4 w-4" />
@@ -605,7 +605,7 @@ const openNotifications = () => {
                                 :key="`mobile-${link.key}`"
                                 :href="safeRoute(link.route, '#')"
                                 class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold transition"
-                                :class="isLinkActive(link) ? 'text-white shadow-inner shadow-black/10' : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'"
+                                :class="isLinkActive(link) ? 'text-white shadow-inner shadow-black/10' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
                                 :style="isLinkActive(link) ? { background: contractorActiveGradient } : null"
                             >
                                 <component :is="link.iconComponent" class="h-4 w-4" />
@@ -617,21 +617,21 @@ const openNotifications = () => {
 
                 <transition name="fade">
                     <div v-if="sidebarOpen" class="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm md:hidden" @click.self="closeSidebar">
-                        <div class="absolute left-0 top-0 flex h-full w-72 flex-col bg-slate-900 shadow-xl">
-                            <div class="border-b border-slate-800 px-4 py-4">
+                        <div class="absolute left-0 top-0 flex h-full w-72 flex-col bg-white shadow-xl">
+                            <div class="border-b border-slate-200 px-4 py-4">
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="flex items-center gap-3">
                                         <div class="flex h-9 w-9 items-center justify-center rounded-md bg-slate-900 text-xs font-semibold text-white">
                                             <img :src="systemIconUrl" :alt="systemBrandName" class="h-5 w-5 object-contain" />
                                         </div>
                                         <div class="flex flex-col leading-tight">
-                                            <span class="text-sm font-semibold text-slate-100">{{ systemBrandName }}</span>
-                                            <span class="mt-1 inline-flex w-fit items-center rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-200 ring-1 ring-slate-700">
+                                            <span class="text-sm font-semibold text-slate-900">{{ systemBrandName }}</span>
+                                            <span class="mt-1 inline-flex w-fit items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200">
                                                 {{ systemContextLabel }}
                                             </span>
                                         </div>
                                     </div>
-                                    <button type="button" class="rounded-full bg-slate-800 p-2 text-slate-200" @click="closeSidebar" title="Fechar">
+                                    <button type="button" class="rounded-full bg-slate-100 p-2 text-slate-700" @click="closeSidebar" title="Fechar">
                                         <X class="h-4 w-4" />
                                     </button>
                                 </div>
@@ -639,7 +639,7 @@ const openNotifications = () => {
                             <div class="flex-1 overflow-y-auto p-4">
                                 <div
                                     v-if="currentContractor"
-                                    class="mb-4 rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2"
+                                    class="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2"
                                 >
                                     <div class="flex items-center gap-3">
                                         <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70" :style="contractorLogoUrl ? null : { background: 'var(--contractor-primary)' }">
@@ -647,25 +647,25 @@ const openNotifications = () => {
                                             <span v-else class="text-xs font-semibold text-white">{{ contractorInitials }}</span>
                                         </div>
                                         <div class="min-w-0">
-                                            <p class="truncate text-xs font-semibold text-slate-100">{{ contractorName }}</p>
+                                            <p class="truncate text-xs font-semibold text-slate-900">{{ contractorName }}</p>
                                             <span class="mt-1 inline-flex w-fit items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
                                                 {{ contractorPlanName }}
                                             </span>
                                         </div>
                                     </div>
                                 </div>
-                                <div v-for="group in menuGroups" :key="group.key" class="mb-3 space-y-2 border-b border-slate-800 pb-3 last:mb-0 last:border-b-0 last:pb-0">
-                                    <button type="button" class="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-800" @click="toggleGroup(group.key)">
+                                <div v-for="group in menuGroups" :key="group.key" class="mb-3 space-y-2 border-b border-slate-100 pb-3 last:mb-0 last:border-b-0 last:pb-0">
+                                    <button type="button" class="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-100" @click="toggleGroup(group.key)">
                                         <span class="flex items-center gap-3">
-                                            <component :is="group.iconComponent" class="h-4 w-4 text-slate-300" />
+                                            <component :is="group.iconComponent" class="h-4 w-4 text-slate-600" />
                                             {{ group.label }}
                                         </span>
-                                        <ChevronDown class="h-4 w-4 text-slate-400 transition" :class="isGroupExpanded(group.key) ? 'rotate-180' : ''" />
+                                        <ChevronDown class="h-4 w-4 text-slate-500 transition" :class="isGroupExpanded(group.key) ? 'rotate-180' : ''" />
                                     </button>
                                     <transition name="fade">
                                         <ul v-show="isGroupExpanded(group.key)" class="mt-2 space-y-1 pl-3">
                                             <li v-for="link in group.links" :key="link.key">
-                                                <Link :href="safeRoute(link.route, '#')" class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition" :class="isLinkActive(link) ? 'text-white shadow-inner shadow-black/10' : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'" :style="isLinkActive(link) ? { background: contractorActiveGradient } : null" @click="closeSidebar">
+                                                <Link :href="safeRoute(link.route, '#')" class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition" :class="isLinkActive(link) ? 'text-white shadow-inner shadow-black/10' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'" :style="isLinkActive(link) ? { background: contractorActiveGradient } : null" @click="closeSidebar">
                                                     <component :is="link.iconComponent" class="h-4 w-4 opacity-90" />
                                                     {{ link.label }}
                                                 </Link>

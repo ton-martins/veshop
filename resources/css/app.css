@@ -24,6 +24,9 @@
             radial-gradient(circle at 88% 4%, rgba(245, 158, 11, 0.2), transparent 34%),
             linear-gradient(180deg, #f8fbff 0%, #f8fbff 40%, #eef4ff 100%);
         --veshop-cta-gradient: linear-gradient(135deg, #112240 0%, #0e2a5b 55%, #0284c7 140%);
+        --veshop-input-focus-border: #81d86f;
+        --veshop-input-focus-ring: rgba(129, 216, 111, 0.22);
+        --veshop-input-focus-ring-size: 0.12rem;
     }
 
     html {
@@ -34,6 +37,20 @@
         @apply antialiased;
         background-color: #f3f7ff;
         color: var(--veshop-text-strong);
+    }
+
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']):focus,
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']):focus-visible,
+    select:focus,
+    select:focus-visible,
+    textarea:focus,
+    textarea:focus-visible,
+    .form-control:focus,
+    .form-control:focus-visible {
+        border-color: var(--veshop-input-focus-border) !important;
+        box-shadow: 0 0 0 var(--veshop-input-focus-ring-size) var(--veshop-input-focus-ring) !important;
+        outline: none !important;
+        --tw-ring-color: var(--veshop-input-focus-ring);
     }
 }
 
@@ -861,8 +878,9 @@
     }
 
     .auth-text-input:focus {
-        border-color: #0ea5e9;
-        --tw-ring-color: rgba(14, 165, 233, 0.3);
+        border-color: var(--veshop-input-focus-border);
+        box-shadow: 0 0 0 var(--veshop-input-focus-ring-size) var(--veshop-input-focus-ring);
+        --tw-ring-color: var(--veshop-input-focus-ring);
     }
 
     .auth-action {
@@ -949,8 +967,8 @@
     }
 
     .veshop-login-input:focus {
-        border-color: #81d86f;
-        box-shadow: 0 0 0 0.15rem rgba(129, 216, 111, 0.28);
+        border-color: var(--veshop-input-focus-border);
+        box-shadow: 0 0 0 var(--veshop-input-focus-ring-size) var(--veshop-input-focus-ring);
     }
 
     .veshop-login-input-icon {
