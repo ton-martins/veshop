@@ -4,12 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Contractor extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     public const NICHE_COMMERCIAL = 'commercial';
 
@@ -29,6 +31,7 @@ class Contractor extends Model
         'phone',
         'cnpj',
         'slug',
+        'plan_id',
         'timezone',
         'address',
         'brand_name',
@@ -36,6 +39,7 @@ class Contractor extends Model
         'brand_logo_url',
         'brand_avatar_url',
         'settings',
+        'is_active',
     ];
 
     /**
@@ -46,7 +50,13 @@ class Contractor extends Model
         return [
             'address' => 'array',
             'settings' => 'array',
+            'is_active' => 'boolean',
         ];
+    }
+
+    public function plan(): BelongsTo
+    {
+        return $this->belongsTo(Plan::class);
     }
 
     public function users(): BelongsToMany
@@ -110,6 +120,10 @@ class Contractor extends Model
 
     public function activePlanName(): string
     {
+        if ($this->relationLoaded('plan') && $this->plan) {
+            return $this->plan->name;
+        }
+
         $settings = is_array($this->settings) ? $this->settings : [];
         $rawPlan = trim((string) ($settings['active_plan_name'] ?? ''));
 

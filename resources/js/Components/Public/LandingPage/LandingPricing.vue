@@ -1,90 +1,320 @@
 <script setup>
-const plans = [
+import { computed, ref, watch } from 'vue';
+
+const props = defineProps({
+    planSections: {
+        type: Array,
+        default: () => [],
+    },
+});
+
+const fallbackSections = [
     {
-        name: 'ESSENCIAL',
-        price: 'R$ 149',
-        buttonClass: 'btn btn-primary w-100 fw-semibold',
-        cardClass: 'card shadow-sm h-100 border-0 border-primary border-top border-3',
-        titleClass: 'fw-bold text-primary',
-        priceClass: 'display-6 my-4 fw-bold text-primary',
-        features: [
-            'PDV e vendas',
-            'Estoque básico',
-            'Financeiro e caixa',
-            'Emissão de NFC-e',
-            'Suporte em horário comercial',
+        value: 'commercial',
+        label: 'Comércio',
+        title: 'Planos para Comércio',
+        description: 'Estruturas para lojas com foco em vendas, estoque e operação diária.',
+        plans: [
+            {
+                id: 'commercial-start',
+                name: 'Start',
+                badge: '',
+                subtitle: 'Comércio em fase inicial',
+                summary: 'Plano de entrada para lojas com operação enxuta.',
+                price_monthly: 199,
+                user_limit: 2,
+                is_featured: false,
+                features: [
+                    { label: 'Catálogo', value: 'Produtos e categorias' },
+                    { label: 'Vendas', value: 'Fluxo de caixa e pedidos' },
+                    { label: 'Relatórios', value: 'Essenciais' },
+                ],
+            },
+            {
+                id: 'commercial-pro',
+                name: 'Pro',
+                badge: 'Mais escolhido',
+                subtitle: 'Comércio em crescimento',
+                summary: 'Plano para operação comercial com maior escala.',
+                price_monthly: 399,
+                user_limit: 8,
+                is_featured: true,
+                features: [
+                    { label: 'Estoque', value: 'Controle avançado' },
+                    { label: 'Financeiro', value: 'Contas a pagar e receber' },
+                    { label: 'Relatórios', value: 'Indicadores operacionais' },
+                ],
+            },
+            {
+                id: 'commercial-business',
+                name: 'Business',
+                badge: 'Escala',
+                subtitle: 'Comércio consolidado',
+                summary: 'Plano para operações com alta demanda no varejo.',
+                price_monthly: 799,
+                user_limit: null,
+                is_featured: false,
+                features: [
+                    { label: 'Usuários', value: 'Ilimitados' },
+                    { label: 'Multiunidade', value: 'Operação em expansão' },
+                    { label: 'Suporte', value: 'Prioritário' },
+                ],
+            },
         ],
     },
     {
-        name: 'PROFISSIONAL',
-        price: 'R$ 299',
-        buttonClass: 'btn btn-success w-100 fw-semibold',
-        cardClass: 'card shadow h-100 border-0 border-success border-top border-3',
-        titleClass: 'fw-bold text-success',
-        priceClass: 'display-6 my-4 fw-bold text-success',
-        features: [
-            'Tudo do Essencial',
-            'Orçamentos e pedidos',
-            'Estoque avançado',
-            'Emissão de NF-e',
-            'Suporte em horário comercial',
-        ],
-    },
-    {
-        name: 'ENTERPRISE',
-        price: 'R$ 549',
-        buttonClass: 'btn btn-primary w-100 fw-semibold',
-        cardClass: 'card shadow-sm h-100 border-0 border-primary border-top border-3',
-        titleClass: 'fw-bold text-primary',
-        priceClass: 'display-6 my-4 fw-bold text-primary',
-        features: [
-            'Multiempresa e filiais',
-            'Fiscal avançado e SPED',
-            'Automações e API',
-            'Emissão de NFC-e',
-            'Suporte em horário comercial',
+        value: 'services',
+        label: 'Serviços',
+        title: 'Planos para Serviços',
+        description: 'Estruturas para equipes com agenda, ordens e atendimento consultivo.',
+        plans: [
+            {
+                id: 'services-start',
+                name: 'Start',
+                badge: '',
+                subtitle: 'Serviços em fase inicial',
+                summary: 'Plano de entrada para equipes com operação enxuta.',
+                price_monthly: 179,
+                user_limit: 2,
+                is_featured: false,
+                features: [
+                    { label: 'Catálogo', value: 'Serviços e categorias' },
+                    { label: 'Agenda', value: 'Básica' },
+                    { label: 'Ordens', value: 'Fluxo principal' },
+                ],
+            },
+            {
+                id: 'services-pro',
+                name: 'Pro',
+                badge: 'Mais vendido',
+                subtitle: 'Serviços em crescimento',
+                summary: 'Plano para operação de serviços com maior volume.',
+                price_monthly: 349,
+                user_limit: 8,
+                is_featured: true,
+                features: [
+                    { label: 'Agenda', value: 'Completa com visão diária' },
+                    { label: 'Ordens', value: 'Status e acompanhamento' },
+                    { label: 'Relatórios', value: 'Produtividade da equipe' },
+                ],
+            },
+            {
+                id: 'services-business',
+                name: 'Business',
+                badge: 'Escala',
+                subtitle: 'Operação de serviços consolidada',
+                summary: 'Plano para empresas com alta demanda de atendimento.',
+                price_monthly: 699,
+                user_limit: null,
+                is_featured: false,
+                features: [
+                    { label: 'Usuários', value: 'Ilimitados' },
+                    { label: 'SLA', value: 'Monitoramento consultivo' },
+                    { label: 'Governança', value: 'Retenção ampliada de auditoria' },
+                ],
+            },
         ],
     },
 ];
+
+const iconBySection = (value) => {
+    return value === 'services' ? 'ri-briefcase-4-line' : 'ri-store-2-line';
+};
+
+const sanitizeSection = (section, index) => {
+    const fallback = fallbackSections[index] ?? fallbackSections[0];
+    const plans = Array.isArray(section?.plans) ? section.plans : [];
+
+    return {
+        value: String(section?.value ?? fallback.value),
+        label: String(section?.label ?? fallback.label),
+        title: String(section?.title ?? fallback.title),
+        description: String(section?.description ?? fallback.description),
+        plans: plans.map((plan, planIndex) => ({
+            id: plan?.id ?? `${fallback.value}-${planIndex}`,
+            name: String(plan?.name ?? ''),
+            badge: String(plan?.badge ?? ''),
+            subtitle: String(plan?.subtitle ?? ''),
+            summary: String(plan?.summary ?? ''),
+            footer_message: String(plan?.footer_message ?? ''),
+            price_monthly: plan?.price_monthly ?? null,
+            user_limit: plan?.user_limit ?? null,
+            is_featured: Boolean(plan?.is_featured),
+            features: Array.isArray(plan?.features) ? plan.features : [],
+        })),
+    };
+};
+
+const sections = computed(() => {
+    const source = Array.isArray(props.planSections) && props.planSections.length
+        ? props.planSections
+        : fallbackSections;
+
+    return source.map((section, index) => sanitizeSection(section, index));
+});
+
+const activeTab = ref('');
+
+watch(
+    sections,
+    (items) => {
+        if (!items.length) {
+            activeTab.value = '';
+            return;
+        }
+
+        const exists = items.some((item) => item.value === activeTab.value);
+        if (!exists) {
+            activeTab.value = items[0].value;
+        }
+    },
+    { immediate: true, deep: true },
+);
+
+const currentSection = computed(() => {
+    if (!sections.value.length) return null;
+
+    const found = sections.value.find((section) => section.value === activeTab.value);
+    return found ?? sections.value[0];
+});
+
+const formatMoney = (value) => {
+    if (value === null || value === undefined || value === '') return 'Sob consulta';
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 'Sob consulta';
+
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parsed);
+};
+
+const limitText = (plan) => {
+    if (plan?.user_limit === null || plan?.user_limit === undefined || plan?.user_limit === '') {
+        return 'Usuários ilimitados';
+    }
+
+    return `${plan.user_limit} usuário(s)`;
+};
+
+const featureLine = (feature) => {
+    const label = String(feature?.label ?? '').trim();
+    const value = String(feature?.value ?? '').trim();
+
+    if (!label) return value;
+    if (!value) return label;
+
+    return `${label}: ${value}`;
+};
+
+const topFeatures = (plan) => {
+    return (Array.isArray(plan?.features) ? plan.features : [])
+        .map(featureLine)
+        .filter(Boolean)
+        .slice(0, 5);
+};
 </script>
 
 <template>
     <section class="section price-section position-relative z-1" id="price">
         <div class="container">
             <div class="row align-items-center justify-content-center text-center">
-                <div class="col-lg-7">
+                <div class="col-lg-8">
                     <div class="title-sm">
                         <span>Planos</span>
                     </div>
                     <div class="section-title-border mt-3"></div>
                     <div class="price-title mt-4">
-                        <h2 class="fw-semibold text-primary">Planos flexíveis para cada fase do seu negócio</h2>
+                        <h2 class="fw-semibold text-primary">Planos segmentados por nicho</h2>
+                        <p class="mt-3 text-muted mb-0">
+                            Selecione o nicho para visualizar apenas os planos correspondentes.
+                        </p>
                     </div>
                 </div>
             </div>
 
-            <div class="row mt-5 g-4">
-                <div v-for="plan in plans" :key="plan.name" class="col-md-6 col-lg-4">
-                    <div :class="plan.cardClass">
-                        <div class="card-body text-center">
-                            <h5 :class="plan.titleClass">{{ plan.name }}</h5>
-                            <p>Plano mensal</p>
-                            <div class="price">
-                                <h2 :class="plan.priceClass">
-                                    {{ plan.price }} <span class="fs-6 text-muted">/ mês</span>
-                                </h2>
-                            </div>
-                            <div class="price-info-3">
-                                <ul>
-                                    <li v-for="feature in plan.features" :key="feature">
-                                        <i class="ri-checkbox-circle-fill text-success me-2"></i>{{ feature }}
-                                    </li>
-                                </ul>
+            <div class="row mt-5 g-3 justify-content-center">
+                <div v-for="section in sections" :key="`plan-tab-${section.value}`" class="col-md-6 col-lg-4">
+                    <button
+                        type="button"
+                        class="card plan-tab-card h-100 w-100 border-0 text-start"
+                        :class="activeTab === section.value ? 'is-active' : ''"
+                        @click="activeTab = section.value"
+                    >
+                        <div class="card-body d-flex align-items-center gap-3">
+                            <span class="plan-tab-icon">
+                                <i :class="iconBySection(section.value)"></i>
+                            </span>
+                            <div>
+                                <p class="mb-1 fw-bold text-dark">{{ section.label }}</p>
+                                <p class="mb-0 text-muted small">Clique para exibir os planos deste nicho</p>
                             </div>
                         </div>
-                        <div class="card-footer border-0 bg-white">
-                            <div class="price-btn text-center">
-                                <a href="/login" :class="plan.buttonClass">Solicitar demonstração</a>
+                    </button>
+                </div>
+            </div>
+
+            <div v-if="currentSection" class="row mt-4 g-4">
+                <div class="col-12">
+                    <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+                        <div class="card-body p-4 p-lg-5">
+                            <div class="mb-4">
+                                <span class="badge text-bg-light border text-uppercase px-3 py-2 fw-semibold">
+                                    {{ currentSection.label }}
+                                </span>
+                                <h3 class="fw-bold text-primary mt-3 mb-2">{{ currentSection.title }}</h3>
+                                <p class="text-muted mb-0">{{ currentSection.description }}</p>
+                            </div>
+
+                            <div class="row g-4">
+                                <div v-for="plan in currentSection.plans" :key="`plan-${currentSection.value}-${plan.id}`" class="col-md-6 col-xl-4">
+                                    <div class="card h-100 border-0 shadow-sm border-top border-3"
+                                        :class="plan.is_featured ? 'border-success' : 'border-primary'">
+                                        <div class="card-body">
+                                            <div class="d-flex justify-content-between align-items-start gap-2">
+                                                <h5 class="fw-bold mb-0"
+                                                    :class="plan.is_featured ? 'text-success' : 'text-primary'">
+                                                    {{ plan.name }}
+                                                </h5>
+                                                <span v-if="plan.badge" class="badge rounded-pill text-bg-light border">
+                                                    {{ plan.badge }}
+                                                </span>
+                                            </div>
+                                            <p class="mt-2 text-muted mb-1">{{ plan.subtitle || limitText(plan) }}</p>
+                                            <p class="small text-muted">{{ plan.summary || 'Plano flexível para o nicho.' }}</p>
+
+                                            <h4 class="display-6 fw-bold my-3"
+                                                :class="plan.is_featured ? 'text-success' : 'text-primary'">
+                                                {{ formatMoney(plan.price_monthly) }}
+                                                <span class="fs-6 text-muted">/ mês</span>
+                                            </h4>
+
+                                            <ul class="list-unstyled mb-0">
+                                                <li v-for="feature in topFeatures(plan)" :key="`${plan.id}-${feature}`" class="d-flex align-items-start gap-2 mb-2">
+                                                    <i class="ri-checkbox-circle-fill text-success mt-1"></i>
+                                                    <span>{{ feature }}</span>
+                                                </li>
+                                                <li v-if="!topFeatures(plan).length" class="text-muted small">
+                                                    Nenhum benefício configurado ainda.
+                                                </li>
+                                            </ul>
+                                        </div>
+                                        <div class="card-footer bg-white border-0 pb-4">
+                                            <a
+                                                href="/login"
+                                                class="btn w-100 fw-semibold"
+                                                :class="plan.is_featured ? 'btn-success' : 'btn-primary'"
+                                            >
+                                                Solicitar demonstração
+                                            </a>
+                                            <p class="small text-muted mt-3 mb-0">
+                                                {{ plan.footer_message || 'Consumo consolidado por contratante, com gestão centralizada.' }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="!currentSection.plans.length" class="alert alert-light border text-muted mb-0 mt-3">
+                                Nenhum plano disponível neste nicho no momento.
                             </div>
                         </div>
                     </div>
@@ -94,3 +324,40 @@ const plans = [
         <img src="/landing/images/Wave.svg" alt="" class="img-fluid w-100 shape z-n1" />
     </section>
 </template>
+
+<style scoped>
+.plan-tab-card {
+    border-radius: 18px;
+    box-shadow: 0 14px 28px -24px rgba(2, 17, 22, 0.85);
+    background: #ffffff;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    border: 1px solid #e2e8f0;
+}
+
+.plan-tab-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 34px -24px rgba(2, 17, 22, 0.95);
+}
+
+.plan-tab-card.is-active {
+    border-color: #198754;
+    box-shadow: 0 22px 40px -30px rgba(25, 135, 84, 0.78);
+}
+
+.plan-tab-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #f1f5f9;
+    color: #0f172a;
+    font-size: 20px;
+}
+
+.plan-tab-card.is-active .plan-tab-icon {
+    background: #dcfce7;
+    color: #166534;
+}
+</style>

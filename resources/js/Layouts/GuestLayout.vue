@@ -46,7 +46,7 @@ const currentYear = new Date().getFullYear();
                     <aside class="veshop-auth-aside veshop-auth-equal-height w-100 p-4 p-lg-5">
                         <p class="mb-2 text-uppercase ls-2 fw-semibold text-success">Ecossistema {{ BRANDING.appName }}</p>
                         <h1 class="veshop-auth-title mb-3">
-                            Gestão de varejo com a mesma identidade da landing page.
+                            Plataforma de gestão para comércios e serviços.
                         </h1>
                         <p class="veshop-auth-copy mb-0">
                             Centralize pedidos, estoque, financeiro e fiscal em um único ambiente para decisões mais rápidas.

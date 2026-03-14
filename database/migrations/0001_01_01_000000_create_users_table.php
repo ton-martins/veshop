@@ -30,6 +30,7 @@ return new class extends Migration
             $table->text('two_factor_secret')->nullable();
             $table->timestamp('two_factor_confirmed_at')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

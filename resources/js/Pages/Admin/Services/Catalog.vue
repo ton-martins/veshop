@@ -1,5 +1,6 @@
 ﻿<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import { Head, router } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { Briefcase, Search, Filter, Clock3, CircleDollarSign } from 'lucide-vue-next';
@@ -61,6 +62,7 @@ const clearFilters = () => {
 };
 
 const rows = computed(() => props.services?.data ?? []);
+const paginationLinks = computed(() => props.services?.links ?? []);
 const asCurrency = (value) =>
     Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const formatDuration = (minutes) => `${Number(minutes ?? 0)} min`;
@@ -162,6 +164,8 @@ const statsCards = computed(() => [
                         Nenhum serviço cadastrado para este contratante.
                     </div>
                 </div>
+
+                <PaginationLinks :links="paginationLinks" :min-links="4" />
             </section>
         </section>
     </AuthenticatedLayout>

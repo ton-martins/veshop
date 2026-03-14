@@ -222,7 +222,7 @@ class CommerceCrudTest extends TestCase
             ->delete(route('admin.clients.destroy', $client));
 
         $deleteResponse->assertRedirect();
-        $this->assertDatabaseMissing('clients', ['id' => $client->id]);
+        $this->assertSoftDeleted('clients', ['id' => $client->id]);
     }
 
     public function test_admin_cannot_update_supplier_from_another_contractor_context(): void

@@ -25,6 +25,7 @@ return new class extends Migration
             $table->string('image_url', 2048)->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
+            $table->softDeletes();
 
             $table->unique(['contractor_id', 'sku']);
             $table->index(['contractor_id', 'name']);
@@ -42,4 +43,3 @@ return new class extends Migration
         Schema::dropIfExists('products');
     }
 };
-

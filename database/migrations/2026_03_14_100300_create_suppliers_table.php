@@ -22,6 +22,7 @@ return new class extends Migration
             $table->unsignedInteger('lead_time_days')->default(0);
             $table->boolean('is_active')->default(true);
             $table->timestamps();
+            $table->softDeletes();
 
             $table->index(['contractor_id', 'name']);
             $table->index(['contractor_id', 'is_active']);
@@ -36,4 +37,3 @@ return new class extends Migration
         Schema::dropIfExists('suppliers');
     }
 };
-

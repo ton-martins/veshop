@@ -1,6 +1,8 @@
 <?php
 
+use App\Http\Controllers\Master\ContractorController;
 use App\Http\Controllers\Master\DashboardController;
+use App\Http\Controllers\Master\PlanController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -16,13 +18,11 @@ Route::middleware(['auth', '2fa', 'verified', 'role:master'])
         Route::resource('users', UserController::class)
             ->except(['show']);
 
-        Route::get('/contractors', function () {
-            return Inertia::render('Master/Contractors/Index');
-        })->name('contractors.index');
+        Route::resource('contractors', ContractorController::class)
+            ->except(['show', 'create', 'edit']);
 
-        Route::get('/plans', function () {
-            return Inertia::render('Master/Plans/Index');
-        })->name('plans.index');
+        Route::resource('plans', PlanController::class)
+            ->except(['show', 'create', 'edit']);
 
         Route::get('/billing', function () {
             return Inertia::render('Master/Billing/Index');

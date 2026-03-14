@@ -27,6 +27,7 @@ return new class extends Migration
             $table->string('brand_avatar_url')->nullable();
             $table->json('settings')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

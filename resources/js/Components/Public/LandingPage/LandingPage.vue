@@ -17,6 +17,10 @@ defineProps({
         type: Boolean,
         default: true,
     },
+    planSections: {
+        type: Array,
+        default: () => [],
+    },
 });
 </script>
 
@@ -41,7 +45,7 @@ defineProps({
             <LandingServices />
             <LandingWhyChoose />
             <LandingWork />
-            <LandingPricing />
+            <LandingPricing :plan-sections="planSections" />
             <LandingFaq />
             <LandingTestimonials />
             <LandingCta />

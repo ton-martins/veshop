@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Contractor;
+use App\Models\Plan;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -21,7 +22,8 @@ class ContractorSeeder extends Seeder
                 'cnpj' => '12345678000191',
                 'brand_name' => 'Veshop Mix',
                 'niche' => Contractor::NICHE_COMMERCIAL,
-                'active_plan_name' => 'Pro',
+                'plan_niche' => Plan::NICHE_COMMERCIAL,
+                'plan_slug' => 'pro',
             ],
             [
                 'slug' => 'veshop-store',
@@ -30,7 +32,8 @@ class ContractorSeeder extends Seeder
                 'cnpj' => '12345678000192',
                 'brand_name' => 'Veshop Store',
                 'niche' => Contractor::NICHE_COMMERCIAL,
-                'active_plan_name' => 'Business',
+                'plan_niche' => Plan::NICHE_COMMERCIAL,
+                'plan_slug' => 'business',
             ],
             [
                 'slug' => 'veshop-services',
@@ -39,12 +42,17 @@ class ContractorSeeder extends Seeder
                 'cnpj' => '12345678000193',
                 'brand_name' => 'Veshop Services',
                 'niche' => Contractor::NICHE_SERVICES,
-                'active_plan_name' => 'Business',
+                'plan_niche' => Plan::NICHE_SERVICES,
+                'plan_slug' => 'business',
             ],
         ];
 
         foreach ($contractors as $data) {
             $contractor = Contractor::firstOrNew(['slug' => $data['slug']]);
+            $plan = Plan::query()
+                ->where('slug', $data['plan_slug'])
+                ->where('niche', $data['plan_niche'])
+                ->first();
 
             if (! $contractor->exists) {
                 $contractor->uuid = (string) Str::uuid();
@@ -55,6 +63,7 @@ class ContractorSeeder extends Seeder
                 'email' => $data['email'],
                 'phone' => null,
                 'cnpj' => $data['cnpj'],
+                'plan_id' => $plan?->id,
                 'timezone' => 'America/Sao_Paulo',
                 'address' => null,
                 'brand_name' => $data['brand_name'],
@@ -63,11 +72,12 @@ class ContractorSeeder extends Seeder
                 'brand_avatar_url' => null,
                 'settings' => [
                     'business_niche' => $data['niche'],
-                    'active_plan_name' => $data['active_plan_name'],
+                    'active_plan_name' => $plan?->name ?? 'Sem plano',
                     'require_2fa' => true,
                     'require_email_verification' => true,
                     'email_notifications_enabled' => true,
                 ],
+                'is_active' => true,
             ])->save();
         }
     }

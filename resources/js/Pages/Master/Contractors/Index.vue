@@ -1,21 +1,207 @@
-﻿<script setup>
+<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head } from '@inertiajs/vue3';
-import { Building2, CircleCheckBig, Clock3, Ban, Search, Plus, Filter } from 'lucide-vue-next';
+import Modal from '@/Components/Modal.vue';
+import PaginationLinks from '@/Components/App/PaginationLinks.vue';
+import { Head, router, useForm, usePage } from '@inertiajs/vue3';
+import { Building2, CircleCheckBig, Store, Briefcase, Search, Filter, Plus, Pencil, Trash2 } from 'lucide-vue-next';
+import { computed, ref, watch } from 'vue';
 
-const stats = [
-    { key: 'total', label: 'Contratantes', value: '42', icon: Building2, tone: 'bg-slate-100 text-slate-700' },
-    { key: 'active', label: 'Ativos', value: '37', icon: CircleCheckBig, tone: 'bg-emerald-100 text-emerald-700' },
-    { key: 'trial', label: 'Em trial', value: '3', icon: Clock3, tone: 'bg-blue-100 text-blue-700' },
-    { key: 'blocked', label: 'Bloqueados', value: '2', icon: Ban, tone: 'bg-amber-100 text-amber-700' },
-];
+const props = defineProps({
+    contractors: {
+        type: Object,
+        default: () => ({ data: [], links: [] }),
+    },
+    filters: {
+        type: Object,
+        default: () => ({}),
+    },
+    stats: {
+        type: Object,
+        default: () => ({ total: 0, active: 0, commercial: 0, services: 0 }),
+    },
+    plans: {
+        type: Array,
+        default: () => [],
+    },
+    niches: {
+        type: Array,
+        default: () => [],
+    },
+});
 
-const contractors = [
-    { name: 'Veshop Mix', plan: 'Pro', admins: 4, monthly: 'R$ 399,00', status: 'Ativo' },
-    { name: 'Veshop Store', plan: 'Business', admins: 7, monthly: 'R$ 799,00', status: 'Ativo' },
-    { name: 'Doce Encanto', plan: 'Start', admins: 2, monthly: 'R$ 199,00', status: 'Trial' },
-    { name: 'Atacado Litoral', plan: 'Pro', admins: 3, monthly: 'R$ 399,00', status: 'Bloqueado' },
-];
+const page = usePage();
+const flashStatus = computed(() => page.props.flash?.status ?? null);
+
+const filterForm = useForm({
+    search: props.filters?.search ?? '',
+    niche: props.filters?.niche ?? '',
+    status: props.filters?.status ?? '',
+    plan_id: props.filters?.plan_id ?? '',
+});
+
+watch(
+    () => props.filters,
+    (next) => {
+        filterForm.search = next?.search ?? '';
+        filterForm.niche = next?.niche ?? '';
+        filterForm.status = next?.status ?? '';
+        filterForm.plan_id = next?.plan_id ?? '';
+    },
+    { deep: true },
+);
+
+const applyFilters = () => {
+    router.get(
+        route('master.contractors.index'),
+        {
+            search: filterForm.search || undefined,
+            niche: filterForm.niche || undefined,
+            status: filterForm.status || undefined,
+            plan_id: filterForm.plan_id || undefined,
+        },
+        {
+            preserveState: true,
+            replace: true,
+            preserveScroll: true,
+        },
+    );
+};
+
+const clearFilters = () => {
+    filterForm.search = '';
+    filterForm.niche = '';
+    filterForm.status = '';
+    filterForm.plan_id = '';
+    applyFilters();
+};
+
+const rows = computed(() => props.contractors?.data ?? []);
+const paginationLinks = computed(() => props.contractors?.links ?? []);
+const filteredPlans = computed(() => {
+    const allPlans = props.plans ?? [];
+    if (!filterForm.niche) return allPlans;
+
+    return allPlans.filter((plan) => plan.niche === filterForm.niche);
+});
+
+const statsCards = computed(() => [
+    { key: 'total', label: 'Contratantes', value: String(props.stats?.total ?? 0), icon: Building2, tone: 'bg-slate-100 text-slate-700' },
+    { key: 'active', label: 'Ativos', value: String(props.stats?.active ?? 0), icon: CircleCheckBig, tone: 'bg-emerald-100 text-emerald-700' },
+    { key: 'commercial', label: 'Nicho comercio', value: String(props.stats?.commercial ?? 0), icon: Store, tone: 'bg-blue-100 text-blue-700' },
+    { key: 'services', label: 'Nicho servicos', value: String(props.stats?.services ?? 0), icon: Briefcase, tone: 'bg-amber-100 text-amber-700' },
+]);
+
+const showModal = ref(false);
+const editingContractor = ref(null);
+
+const contractorForm = useForm({
+    name: '',
+    email: '',
+    phone: '',
+    cnpj: '',
+    slug: '',
+    timezone: 'America/Sao_Paulo',
+    brand_name: '',
+    brand_primary_color: '#073341',
+    business_niche: props.niches?.[0]?.value ?? 'commercial',
+    plan_id: '',
+    is_active: true,
+});
+const formPlans = computed(() => {
+    return (props.plans ?? []).filter((plan) => plan.niche === contractorForm.business_niche);
+});
+
+const isEditing = computed(() => Boolean(editingContractor.value?.id));
+
+watch(
+    () => filterForm.niche,
+    () => {
+        if (!filterForm.plan_id) return;
+        const stillExists = filteredPlans.value.some((plan) => String(plan.id) === String(filterForm.plan_id));
+        if (!stillExists) {
+            filterForm.plan_id = '';
+        }
+    },
+);
+
+watch(
+    () => contractorForm.business_niche,
+    () => {
+        if (!contractorForm.plan_id) return;
+        const stillExists = formPlans.value.some((plan) => String(plan.id) === String(contractorForm.plan_id));
+        if (!stillExists) {
+            contractorForm.plan_id = '';
+        }
+    },
+);
+
+const openCreate = () => {
+    editingContractor.value = null;
+    contractorForm.reset();
+    contractorForm.clearErrors();
+    contractorForm.timezone = 'America/Sao_Paulo';
+    contractorForm.brand_primary_color = '#073341';
+    contractorForm.business_niche = props.niches?.[0]?.value ?? 'commercial';
+    contractorForm.plan_id = '';
+    contractorForm.is_active = true;
+    showModal.value = true;
+};
+
+const openEdit = (contractor) => {
+    editingContractor.value = contractor;
+    contractorForm.name = contractor.name ?? '';
+    contractorForm.email = contractor.email ?? '';
+    contractorForm.phone = contractor.phone ?? '';
+    contractorForm.cnpj = contractor.cnpj ?? '';
+    contractorForm.slug = contractor.slug ?? '';
+    contractorForm.timezone = contractor.timezone ?? 'America/Sao_Paulo';
+    contractorForm.brand_name = contractor.brand_name ?? '';
+    contractorForm.brand_primary_color = contractor.brand_primary_color ?? '#073341';
+    contractorForm.business_niche = contractor.business_niche ?? 'commercial';
+    contractorForm.plan_id = contractor.plan_id ?? '';
+    contractorForm.is_active = Boolean(contractor.is_active);
+    contractorForm.clearErrors();
+    showModal.value = true;
+};
+
+const closeModal = () => {
+    showModal.value = false;
+    editingContractor.value = null;
+};
+
+const submitContractor = () => {
+    if (isEditing.value) {
+        contractorForm.put(route('master.contractors.update', editingContractor.value.id), {
+            preserveScroll: true,
+            onSuccess: closeModal,
+        });
+        return;
+    }
+
+    contractorForm.post(route('master.contractors.store'), {
+        preserveScroll: true,
+        onSuccess: closeModal,
+    });
+};
+
+const removeContractor = (contractor) => {
+    const confirmed = window.confirm(`Excluir o contratante "${contractor.name}"?`);
+    if (!confirmed) return;
+
+    router.delete(route('master.contractors.destroy', contractor.id), {
+        preserveScroll: true,
+    });
+};
+
+const formatMoney = (value) => {
+    if (value === null || value === undefined) return 'Sob consulta';
+
+    const parsed = Number(value);
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+    }).format(Number.isFinite(parsed) ? parsed : 0);
+};
 </script>
 
 <template>
@@ -23,8 +209,12 @@ const contractors = [
 
     <AuthenticatedLayout area="master" header-variant="compact" header-title="Contratantes">
         <section class="space-y-4">
+            <div v-if="flashStatus" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                {{ flashStatus }}
+            </div>
+
             <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <article v-for="stat in stats" :key="stat.key" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <article v-for="stat in statsCards" :key="stat.key" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div class="flex items-start justify-between gap-3">
                         <div>
                             <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
@@ -41,14 +231,57 @@ const contractors = [
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div class="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                         <Search class="h-4 w-4 text-slate-500" />
-                        <input type="text" placeholder="Buscar contratante por nome" class="w-full bg-transparent text-sm text-slate-700 outline-none" />
+                        <input
+                            v-model="filterForm.search"
+                            type="text"
+                            placeholder="Buscar contratante por nome, email, slug ou CNPJ"
+                            class="w-full bg-transparent text-sm text-slate-700 outline-none"
+                            @keydown.enter.prevent="applyFilters"
+                        />
                     </div>
                     <div class="flex items-center gap-2">
-                        <button type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                        <select
+                            v-model="filterForm.niche"
+                            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                            @change="applyFilters"
+                        >
+                            <option value="">Todos nichos</option>
+                            <option v-for="niche in props.niches" :key="niche.value" :value="niche.value">
+                                {{ niche.label }}
+                            </option>
+                        </select>
+                        <select
+                            v-model="filterForm.plan_id"
+                            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                            @change="applyFilters"
+                        >
+                            <option value="">Todos planos</option>
+                            <option v-for="plan in filteredPlans" :key="plan.id" :value="plan.id">
+                                {{ filterForm.niche ? plan.name : `${plan.name} (${plan.niche_label})` }}
+                            </option>
+                        </select>
+                        <select
+                            v-model="filterForm.status"
+                            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                            @change="applyFilters"
+                        >
+                            <option value="">Todos status</option>
+                            <option value="active">Ativos</option>
+                            <option value="inactive">Inativos</option>
+                        </select>
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="clearFilters"
+                        >
                             <Filter class="h-3.5 w-3.5" />
-                            Plano
+                            Limpar
                         </button>
-                        <button type="button" class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800">
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                            @click="openCreate"
+                        >
                             <Plus class="h-3.5 w-3.5" />
                             Novo contratante
                         </button>
@@ -61,27 +294,212 @@ const contractors = [
                             <tr>
                                 <th class="px-4 py-3">Contratante</th>
                                 <th class="px-4 py-3">Plano</th>
+                                <th class="px-4 py-3">Nicho</th>
                                 <th class="px-4 py-3">Admins</th>
-                                <th class="px-4 py-3">Mensalidade</th>
                                 <th class="px-4 py-3">Status</th>
+                                <th class="px-4 py-3">Ações</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
-                            <tr v-for="contractor in contractors" :key="contractor.name">
-                                <td class="px-4 py-3 font-semibold text-slate-900">{{ contractor.name }}</td>
-                                <td class="px-4 py-3 text-slate-600">{{ contractor.plan }}</td>
-                                <td class="px-4 py-3 text-slate-600">{{ contractor.admins }}</td>
-                                <td class="px-4 py-3 font-semibold text-slate-800">{{ contractor.monthly }}</td>
+                            <tr v-if="!rows.length">
+                                <td colspan="6" class="px-4 py-10 text-center text-sm text-slate-500">
+                                    Nenhum contratante encontrado.
+                                </td>
+                            </tr>
+                            <tr v-for="contractor in rows" :key="contractor.id">
                                 <td class="px-4 py-3">
-                                    <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="contractor.status === 'Ativo' ? 'bg-emerald-100 text-emerald-700' : contractor.status === 'Trial' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'">
-                                        {{ contractor.status }}
+                                    <p class="font-semibold text-slate-900">{{ contractor.name }}</p>
+                                    <p class="text-xs text-slate-500">{{ contractor.email }}</p>
+                                </td>
+                                <td class="px-4 py-3 text-slate-600">
+                                    <p class="font-semibold text-slate-800">{{ contractor.plan_name || 'Sem plano' }}</p>
+                                    <p class="text-xs text-slate-500">{{ formatMoney(contractor.monthly_price) }}</p>
+                                </td>
+                                <td class="px-4 py-3 text-slate-600">{{ contractor.business_niche_label }}</td>
+                                <td class="px-4 py-3 text-slate-600">{{ contractor.admins_count }}</td>
+                                <td class="px-4 py-3">
+                                    <span
+                                        class="rounded-full px-2 py-1 text-[11px] font-semibold"
+                                        :class="contractor.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'"
+                                    >
+                                        {{ contractor.status_label }}
                                     </span>
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                            @click="openEdit(contractor)"
+                                        >
+                                            <Pencil class="h-3.5 w-3.5" />
+                                            Editar
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                                            @click="removeContractor(contractor)"
+                                        >
+                                            <Trash2 class="h-3.5 w-3.5" />
+                                            Excluir
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+
+                <PaginationLinks :links="paginationLinks" :min-links="4" />
             </section>
         </section>
+
+        <Modal :show="showModal" max-width="2xl" @close="closeModal">
+            <div class="space-y-4 bg-white p-6">
+                <h3 class="text-base font-semibold text-slate-900">
+                    {{ isEditing ? 'Editar contratante' : 'Novo contratante' }}
+                </h3>
+
+                <div class="grid gap-3 md:grid-cols-2">
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
+                        <input
+                            v-model="contractorForm.name"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Ex.: Veshop Market"
+                        >
+                        <p v-if="contractorForm.errors.name" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.name }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">E-mail</label>
+                        <input
+                            v-model="contractorForm.email"
+                            type="email"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="contato@empresa.com.br"
+                        >
+                        <p v-if="contractorForm.errors.email" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.email }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone</label>
+                        <input
+                            v-model="contractorForm.phone"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="(00) 00000-0000"
+                        >
+                        <p v-if="contractorForm.errors.phone" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.phone }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">CNPJ</label>
+                        <input
+                            v-model="contractorForm.cnpj"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Somente números"
+                        >
+                        <p v-if="contractorForm.errors.cnpj" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.cnpj }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Slug (opcional)</label>
+                        <input
+                            v-model="contractorForm.slug"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="veshop-market"
+                        >
+                        <p v-if="contractorForm.errors.slug" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.slug }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Timezone</label>
+                        <input
+                            v-model="contractorForm.timezone"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="America/Sao_Paulo"
+                        >
+                        <p v-if="contractorForm.errors.timezone" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.timezone }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome da marca</label>
+                        <input
+                            v-model="contractorForm.brand_name"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Nome exibido no sistema"
+                        >
+                        <p v-if="contractorForm.errors.brand_name" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.brand_name }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cor principal</label>
+                        <input
+                            v-model="contractorForm.brand_primary_color"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="#073341"
+                        >
+                        <p v-if="contractorForm.errors.brand_primary_color" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.brand_primary_color }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nicho</label>
+                        <select
+                            v-model="contractorForm.business_niche"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        >
+                            <option v-for="niche in props.niches" :key="niche.value" :value="niche.value">
+                                {{ niche.label }}
+                            </option>
+                        </select>
+                        <p v-if="contractorForm.errors.business_niche" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.business_niche }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Plano ativo</label>
+                        <select
+                            v-model="contractorForm.plan_id"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        >
+                            <option value="">Sem plano</option>
+                            <option v-for="plan in formPlans" :key="plan.id" :value="plan.id">
+                                {{ plan.name }}
+                            </option>
+                        </select>
+                        <p v-if="contractorForm.errors.plan_id" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.plan_id }}</p>
+                    </div>
+                </div>
+
+                <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input v-model="contractorForm.is_active" type="checkbox" class="rounded border-slate-300">
+                    Contratante ativo
+                </label>
+
+                <div class="flex items-center justify-end gap-2 border-t border-slate-200 pt-4">
+                    <button
+                        type="button"
+                        class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        @click="closeModal"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        type="button"
+                        class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        :disabled="contractorForm.processing"
+                        @click="submitContractor"
+                    >
+                        {{ contractorForm.processing ? 'Salvando...' : 'Salvar' }}
+                    </button>
+                </div>
+            </div>
+        </Modal>
     </AuthenticatedLayout>
 </template>

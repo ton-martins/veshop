@@ -177,23 +177,23 @@ watch(
 
         <div class="relative z-10 flex min-h-screen items-center justify-center px-6 py-10">
             <div
-                class="w-full max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-white/95 p-5 text-slate-900 shadow-2xl backdrop-blur lg:p-6"
+                class="w-full max-w-[1080px] overflow-hidden rounded-3xl border border-white/10 bg-white/95 p-5 text-slate-900 shadow-2xl backdrop-blur lg:p-6"
             >
-                <div class="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-                    <section class="space-y-4">
-                        <div class="flex items-center gap-3">
-                            <div class="veshop-twofa-brand-icon">
-                                <img
-                                    src="/brand/icone-veshop.png"
-                                    :alt="`${BRANDING.appName} ícone`"
-                                    class="veshop-twofa-brand-icon-img"
-                                />
+                <div class="grid gap-4 lg:grid-cols-[1.18fr_0.82fr]">
+                    <section class="space-y-3 lg:pr-1">
+                        <div class="space-y-1.5">
+                            <div class="flex items-center gap-2.5">
+                                <span class="veshop-twofa-brand-icon">
+                                    <img
+                                        src="/brand/icone-veshop.png"
+                                        :alt="`${BRANDING.appName} ícone`"
+                                        class="veshop-twofa-brand-icon-img"
+                                    />
+                                </span>
+                                <p class="veshop-twofa-brand-name mb-0">{{ BRANDING.appName }}</p>
                             </div>
-                            <div>
-                                <p class="veshop-twofa-brand-name mb-1">{{ BRANDING.appName }}</p>
-                                <p class="veshop-login-pill mb-0">Segurança do acesso</p>
-                                <h1 class="veshop-login-title mt-1">{{ heading }}</h1>
-                            </div>
+                            <p class="veshop-login-pill mb-0">Segurança do acesso</p>
+                            <h1 class="veshop-login-title mt-1">{{ heading }}</h1>
                         </div>
 
                         <p class="veshop-login-subtitle mt-0">
@@ -213,11 +213,11 @@ watch(
                             {{ props.status }}
                         </div>
 
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3.5">
                             <p class="veshop-login-label mb-0">Passo a passo</p>
-                            <div class="mt-4 grid gap-3">
-                                <div class="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-                                    <div class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+                            <div class="mt-3 grid gap-2.5">
+                                <div class="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                                    <div class="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
                                         1
                                     </div>
                                     <div>
@@ -225,8 +225,8 @@ watch(
                                         <p class="veshop-twofa-step-text">Google, Microsoft ou outro app compatível.</p>
                                     </div>
                                 </div>
-                                <div class="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-                                    <div class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+                                <div class="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                                    <div class="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
                                         2
                                     </div>
                                     <div>
@@ -234,8 +234,8 @@ watch(
                                         <p class="veshop-twofa-step-text">Ou use o código manual exibido ao lado.</p>
                                     </div>
                                 </div>
-                                <div class="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-                                    <div class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+                                <div class="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                                    <div class="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
                                         3
                                     </div>
                                     <div>
@@ -246,7 +246,7 @@ watch(
                             </div>
                         </div>
 
-                        <div class="attention-pulse rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+                        <div class="attention-pulse overflow-hidden rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
                             <strong>Atenção:</strong> se você perder os códigos de recuperação e o Authenticator, poderá ficar
                             sem acesso ao sistema.
                         </div>
@@ -286,7 +286,7 @@ watch(
                                     Guarde estes códigos em local seguro. Cada código pode ser usado apenas uma vez.
                                 </p>
                                 <div class="mt-3 grid grid-cols-2 gap-2 text-[11px] font-semibold text-amber-900">
-                                    <div v-for="code in props.recoveryCodes" :key="code" class="rounded-lg bg-white px-2 py-1">
+                                    <div v-for="code in props.recoveryCodes" :key="code" class="break-all rounded-lg bg-white px-2 py-1">
                                         {{ code }}
                                     </div>
                                 </div>
@@ -396,12 +396,13 @@ watch(
 <style scoped>
 .veshop-twofa-page {
     font-family: 'Public Sans', sans-serif;
+    overflow-x: hidden;
 }
 
 .veshop-twofa-brand-icon {
-    width: 46px;
-    height: 46px;
-    border-radius: 12px;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
     border: 1px solid rgba(7, 51, 65, 0.72);
     background: #073341;
     display: inline-flex;
@@ -412,8 +413,8 @@ watch(
 }
 
 .veshop-twofa-brand-icon-img {
-    width: 27px;
-    height: 27px;
+    width: 23px;
+    height: 23px;
     object-fit: contain;
 }
 

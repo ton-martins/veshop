@@ -22,6 +22,7 @@ return new class extends Migration
             $table->decimal('base_price', 10, 2)->default(0);
             $table->boolean('is_active')->default(true);
             $table->timestamps();
+            $table->softDeletes();
 
             $table->unique(['contractor_id', 'code']);
             $table->index(['contractor_id', 'name']);
@@ -38,4 +39,3 @@ return new class extends Migration
         Schema::dropIfExists('service_catalogs');
     }
 };
-

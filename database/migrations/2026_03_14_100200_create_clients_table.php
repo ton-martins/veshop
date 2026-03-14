@@ -22,6 +22,7 @@ return new class extends Migration
             $table->string('state', 2)->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
+            $table->softDeletes();
 
             $table->index(['contractor_id', 'name']);
             $table->index(['contractor_id', 'is_active']);
@@ -36,4 +37,3 @@ return new class extends Migration
         Schema::dropIfExists('clients');
     }
 };
-

@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Modal from '@/Components/Modal.vue';
+import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import { Box, Boxes, CircleDollarSign, AlertTriangle, Plus, Search, Filter, ChevronRight, Tags, Pencil, Trash2 } from 'lucide-vue-next';
@@ -343,21 +344,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                     </aside>
                 </div>
 
-                <div v-if="paginationLinks.length > 3" class="mt-4 flex flex-wrap items-center justify-end gap-2">
-                    <Link
-                        v-for="link in paginationLinks"
-                        :key="link.label"
-                        :href="link.url || '#'"
-                        class="rounded-lg border px-2.5 py-1.5 text-xs font-semibold"
-                        :class="[
-                            link.active
-                                ? 'border-slate-900 bg-slate-900 text-white'
-                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
-                            !link.url ? 'pointer-events-none opacity-50' : '',
-                        ]"
-                        v-html="link.label"
-                    />
-                </div>
+                <PaginationLinks :links="paginationLinks" :min-links="4" />
             </section>
         </section>
 

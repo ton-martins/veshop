@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
@@ -207,21 +208,8 @@ const destroyUser = (user) => {
                     </table>
                 </div>
 
-                <div v-if="users.links?.length" class="flex flex-wrap items-center gap-2 border-t border-slate-200 p-3">
-                    <component
-                        :is="link.url ? Link : 'span'"
-                        v-for="(link, index) in users.links"
-                        :key="`page-link-${index}`"
-                        :href="link.url || undefined"
-                        class="rounded-lg border px-2.5 py-1.5 text-xs"
-                        :class="[
-                            link.active
-                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                                : 'border-slate-200 bg-white text-slate-600',
-                            !link.url ? 'cursor-not-allowed opacity-50' : '',
-                        ]"
-                        v-html="link.label"
-                    />
+                <div class="border-t border-slate-200 p-3">
+                    <PaginationLinks :links="users.links ?? []" :min-links="4" align="start" />
                 </div>
             </section>
         </div>
