@@ -156,10 +156,9 @@ const systemContextLabel = computed(() => {
     return currentArea.value === 'master' ? 'Área Master' : 'Área Admin';
 });
 
-const systemBrandName = 'Veshop';
-const systemIconUrl = '/brand/icone-veshop.png';
-
 const {
+    brandName,
+    systemIconUrl,
     contractorActiveGradient,
     publicFaviconHref,
     publicFaviconType,
@@ -168,6 +167,8 @@ const {
     normalizeHex,
     primaryColor,
 } = useBranding();
+
+const systemBrandName = computed(() => String(brandName.value || 'Veshop'));
 
 const contractorName = computed(() => currentContractor.value?.brand_name || currentContractor.value?.name || '');
 const contractorLogoUrl = computed(() => currentContractor.value?.brand_avatar_url || currentContractor.value?.brand_logo_url || '');
@@ -865,6 +866,31 @@ const openNotifications = () => {
                                             </li>
                                         </ul>
                                     </transition>
+                                </div>
+                            </div>
+                            <div class="border-t border-slate-200 px-4 py-3">
+                                <div class="rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm">
+                                    <div class="flex items-center gap-3">
+                                        <div class="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-700 ring-1 ring-slate-200">
+                                            <img v-if="userAvatarUrl" :src="userAvatarUrl" :alt="user?.name ?? 'Avatar'" class="h-full w-full object-cover" />
+                                            <span v-else class="text-sm font-semibold text-slate-700">{{ userInitial }}</span>
+                                            <span class="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
+                                        </div>
+                                        <div class="min-w-0 flex-1">
+                                            <p class="truncate text-sm font-semibold text-slate-900">{{ user?.name ?? 'Usuário' }}</p>
+                                            <p class="truncate text-xs text-slate-600">{{ user?.email ?? '' }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 grid gap-2">
+                                        <Link :href="safeRoute('profile.edit', '/profile')" class="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200/80 transition hover:bg-slate-100" @click="closeSidebar">
+                                            <UserCircle2 class="h-4 w-4" />
+                                            Perfil
+                                        </Link>
+                                        <button type="button" class="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700 ring-1 ring-rose-200/80 transition hover:bg-rose-100" @click="closeSidebar(); doLogout()">
+                                            <LogOut class="h-4 w-4" />
+                                            Sair
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

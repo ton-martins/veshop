@@ -62,4 +62,18 @@
             },
         ],
     },
+    {
+        key: 'settings',
+        label: 'Configurações',
+        icon: 'Cog',
+        links: [
+            {
+                key: 'master-branding',
+                label: 'Branding',
+                route: 'master.branding.index',
+                match: ['master.branding.*'],
+                icon: 'Palette',
+            },
+        ],
+    },
 ];

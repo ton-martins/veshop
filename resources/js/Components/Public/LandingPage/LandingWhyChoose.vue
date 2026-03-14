@@ -1,10 +1,16 @@
 <script setup>
+import { computed } from 'vue';
+import { useBranding } from '@/branding';
+
 const advantages = [
-    'Multiempresa e multiusuário',
-    'Parametrização por segmento',
-    'Controle fiscal e contábil',
-    'Escalável para crescimento',
+    'Multiempresa e multiusuario',
+    'Parametrizacao por segmento',
+    'Controle fiscal e contabil',
+    'Escalavel para crescimento',
 ];
+
+const { landingImages } = useBranding();
+const whyChooseImageUrl = computed(() => landingImages.value.why_choose || '/landing/images/working.jpg');
 </script>
 
 <template>
@@ -39,7 +45,7 @@ const advantages = [
 
                 <div class="col-lg-6">
                     <img
-                        src="/landing/images/working.jpg"
+                        :src="whyChooseImageUrl"
                         alt="Equipe analisando indicadores no Veshop"
                         class="img-fluid mt-4 shadow-sm rounded-2"
                     />
@@ -48,3 +54,4 @@ const advantages = [
         </div>
     </section>
 </template>
+

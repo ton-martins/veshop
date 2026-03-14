@@ -1,9 +1,17 @@
+<script setup>
+import { computed } from 'vue';
+import { useBranding } from '@/branding';
+
+const { landingImages } = useBranding();
+const aboutImageUrl = computed(() => landingImages.value.about || '/landing/images/about.png');
+</script>
+
 <template>
     <section class="section about-section bg-light" id="about">
         <div class="container">
             <div class="row align-items-center justify-content-between">
                 <div class="col-lg-6">
-                    <img src="/landing/images/about.png" alt="Equipe utilizando o Veshop" class="img-fluid" />
+                    <img :src="aboutImageUrl" alt="Equipe utilizando o Veshop" class="img-fluid" />
                 </div>
                 <div class="col-lg-5">
                     <div class="title-sm">

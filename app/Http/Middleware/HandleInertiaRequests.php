@@ -2,8 +2,10 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use Throwable;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -52,6 +54,7 @@ class HandleInertiaRequests extends Middleware
     private function resolveSystemBranding(Request $request, mixed $currentContractor = null): array
     {
         $defaultBranding = config('branding', []);
+        $persistedBranding = $this->resolvePersistedSystemBranding();
         $contractorBranding = [];
         $sessionBranding = $request->session()->get('system_branding', []);
 
@@ -70,12 +73,31 @@ class HandleInertiaRequests extends Middleware
 
         return array_replace(
             $defaultBranding,
+            $persistedBranding,
             $contractorBranding,
             array_filter(
                 $sessionBranding,
                 static fn ($value) => $value !== null && $value !== '',
             ),
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolvePersistedSystemBranding(): array
+    {
+        try {
+            $stored = SystemSetting::getValue(SystemSetting::KEY_BRANDING, []);
+
+            if (! is_array($stored)) {
+                return [];
+            }
+
+            return $stored;
+        } catch (Throwable) {
+            return [];
+        }
     }
 
     private function resolveCurrentContractor(Request $request): mixed

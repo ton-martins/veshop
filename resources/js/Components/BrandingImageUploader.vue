@@ -22,6 +22,10 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    accept: {
+        type: String,
+        default: 'image/*',
+    },
 });
 
 const emit = defineEmits(['change']);
@@ -87,7 +91,7 @@ onBeforeUnmount(() => {
         </div>
         <input
             type="file"
-            accept="image/*"
+            :accept="accept"
             class="block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             :disabled="disabled"
             @change="handleFileChange"
@@ -95,4 +99,3 @@ onBeforeUnmount(() => {
         <p v-if="helpText" class="text-[11px] text-slate-500">{{ helpText }}</p>
     </div>
 </template>
-

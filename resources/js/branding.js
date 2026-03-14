@@ -28,6 +28,11 @@ const BRANDING = Object.freeze({
             'radial-gradient(circle at 12% 10%, rgba(2, 132, 199, 0.24), transparent 44%), radial-gradient(circle at 88% 4%, rgba(245, 158, 11, 0.2), transparent 34%), linear-gradient(180deg, #F8FBFF 0%, #F8FBFF 40%, #EEF4FF 100%)',
         cta: 'linear-gradient(135deg, #112240 0%, #0E2A5B 55%, #0284C7 140%)',
     },
+    landingImages: {
+        about: '/landing/images/about.png',
+        why_choose: '/landing/images/working.jpg',
+        work: '/landing/images/group-working.jpg',
+    },
 });
 
 export const BRAND_CSS_VARS = Object.freeze({
@@ -85,6 +90,18 @@ const lightenHex = (hex, amount = 0.35) => {
         .join('')}`;
 };
 
+const darkenHex = (hex, amount = 0.18) => {
+    const normalized = normalizeHex(hex, '#073341').slice(1);
+    const int = parseInt(normalized, 16);
+    const r = (int >> 16) & 255;
+    const g = (int >> 8) & 255;
+    const b = int & 255;
+    const darken = (channel) => Math.max(0, Math.round(channel * (1 - amount)));
+    return `#${[darken(r), darken(g), darken(b)]
+        .map((component) => component.toString(16).padStart(2, '0'))
+        .join('')}`;
+};
+
 export const useBranding = () => {
     const page = usePage();
 
@@ -93,13 +110,20 @@ export const useBranding = () => {
     const currentContractor = computed(() => contractorContext.value.current ?? null);
 
     const brandName = computed(() => branding.value.name || BRANDING.appName);
+    const tagline = computed(() => branding.value.tagline || 'ERP para comércio e serviços');
     const logoUrl = computed(() => branding.value.logo_url || '');
     const avatarUrl = computed(() => branding.value.avatar_url || '');
-    const primaryColor = computed(() => normalizeHex(branding.value.primary_color, '#073341'));
+    const iconUrl = computed(() => branding.value.icon_url || '');
+    const primaryColor = computed(() => normalizeHex(branding.value.primary_color, BRANDING.colors.primary));
     const secondaryColor = computed(() => normalizeHex(branding.value.accent_color, '#81D86F'));
+    const highlightColor = computed(() => normalizeHex(branding.value.highlight_color, BRANDING.colors.highlight));
     const contractorPrimary = computed(() =>
         normalizeHex(currentContractor.value?.brand_primary_color, primaryColor.value),
     );
+
+    const systemIconUrl = computed(() => {
+        return iconUrl.value || avatarUrl.value || logoUrl.value || BRANDING.systemIcon;
+    });
 
     const contractorActiveGradient = computed(
         () =>
@@ -111,8 +135,20 @@ export const useBranding = () => {
             `linear-gradient(135deg, ${withAlpha(contractorPrimary.value, 0.45)}, rgba(255,255,255,0.38), ${withAlpha(glassSecondary.value, 0.5)})`,
     );
 
+    const landingImages = computed(() => {
+        const remote = branding.value?.landing_images;
+        if (!remote || typeof remote !== 'object' || Array.isArray(remote)) {
+            return BRANDING.landingImages;
+        }
+
+        return {
+            ...BRANDING.landingImages,
+            ...remote,
+        };
+    });
+
     const publicFaviconHref = computed(() => {
-        return branding.value.favicon_url || avatarUrl.value || logoUrl.value || BRANDING.favicon;
+        return branding.value.favicon_url || systemIconUrl.value || BRANDING.favicon;
     });
 
     const publicFaviconType = computed(() => {
@@ -125,22 +161,36 @@ export const useBranding = () => {
     const userAvatarUrl = computed(() => page.props.auth?.user?.avatar_url || '');
     const themeStyles = computed(() => ({
         ...BRAND_CSS_VARS,
+        '--veshop-primary': primaryColor.value,
+        '--veshop-primary-hover': darkenHex(primaryColor.value, 0.16),
+        '--veshop-accent': secondaryColor.value,
+        '--veshop-accent-soft': withAlpha(secondaryColor.value, 0.14),
+        '--veshop-accent-border': withAlpha(secondaryColor.value, 0.48),
+        '--veshop-accent-ink': darkenHex(secondaryColor.value, 0.4),
+        '--veshop-highlight': highlightColor.value,
+        '--veshop-highlight-soft': withAlpha(highlightColor.value, 0.2),
+        '--veshop-highlight-ink': darkenHex(highlightColor.value, 0.4),
         '--contractor-primary': contractorPrimary.value,
         '--brand-primary': primaryColor.value,
         '--brand-accent': secondaryColor.value,
     }));
 
-    const defaultBrandIconUrl = computed(() => BRANDING.systemIcon);
+    const defaultBrandIconUrl = computed(() => systemIconUrl.value);
 
     return {
         branding,
         brandName,
+        tagline,
         logoUrl,
         avatarUrl,
+        iconUrl,
+        systemIconUrl,
+        landingImages,
         publicFaviconHref,
         publicFaviconType,
         primaryColor,
         secondaryColor,
+        highlightColor,
         contractorActiveGradient,
         glassGradient,
         userAvatarUrl,

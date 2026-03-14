@@ -4,8 +4,11 @@ namespace Tests\Feature\Master;
 
 use App\Models\Contractor;
 use App\Models\Plan;
+use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -199,6 +202,46 @@ class MasterCrudTest extends TestCase
 
         $response->assertForbidden();
         $this->assertSame(0, (int) session('current_contractor_id', 0));
+    }
+
+    public function test_master_can_update_system_branding(): void
+    {
+        Storage::fake('public');
+        $master = $this->createMasterUser();
+
+        $getResponse = $this
+            ->actingAs($master)
+            ->withSession(['two_factor_passed' => true])
+            ->get(route('master.branding.index'));
+
+        $getResponse->assertOk();
+
+        $updateResponse = $this
+            ->actingAs($master)
+            ->withSession(['two_factor_passed' => true])
+            ->put(route('master.branding.update'), [
+                'name' => 'Veshop Prime',
+                'tagline' => 'ERP completo para operação',
+                'primary_color' => '#0F172A',
+                'accent_color' => '#22C55E',
+                'logo' => UploadedFile::fake()->image('logo.png', 600, 200),
+                'icon' => UploadedFile::fake()->image('icon.png', 256, 256),
+            ]);
+
+        $updateResponse->assertRedirect();
+
+        $branding = SystemSetting::getValue(SystemSetting::KEY_BRANDING, []);
+        $this->assertIsArray($branding);
+        $this->assertSame('Veshop Prime', $branding['name'] ?? null);
+        $this->assertSame('ERP completo para operação', $branding['tagline'] ?? null);
+        $this->assertSame('#0F172A', $branding['primary_color'] ?? null);
+        $this->assertSame('#22C55E', $branding['accent_color'] ?? null);
+
+        $logoPath = ltrim(str_replace('/storage/', '', (string) ($branding['logo_url'] ?? '')), '/');
+        $iconPath = ltrim(str_replace('/storage/', '', (string) ($branding['icon_url'] ?? '')), '/');
+
+        Storage::disk('public')->assertExists($logoPath);
+        Storage::disk('public')->assertExists($iconPath);
     }
 
     private function createMasterUser(): User

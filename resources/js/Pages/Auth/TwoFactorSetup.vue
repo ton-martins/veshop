@@ -1,9 +1,12 @@
 <script setup>
 import InputError from '@/Components/InputError.vue';
-import BRANDING from '@/branding';
+import { useBranding } from '@/branding';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import QRCode from 'qrcode';
 import { computed, ref, watch } from 'vue';
+
+const { brandName, systemIconUrl } = useBranding();
+const pageTitle = computed(() => `Autenticacao em dois fatores | ${brandName.value}`);
 
 const props = defineProps({
     required: {
@@ -157,7 +160,7 @@ watch(
 
 <template>
     <div class="veshop-twofa-page relative min-h-screen overflow-hidden text-white">
-        <Head :title="`Autenticação em dois fatores | ${BRANDING.appName}`">
+        <Head :title="pageTitle">
             <link
                 head-key="public-sans-font"
                 rel="stylesheet"
@@ -185,12 +188,12 @@ watch(
                             <div class="flex items-center gap-2.5">
                                 <span class="veshop-twofa-brand-icon">
                                     <img
-                                        src="/brand/icone-veshop.png"
-                                        :alt="`${BRANDING.appName} ícone`"
+                                        :src="systemIconUrl"
+                                        :alt="`${brandName} icone`"
                                         class="veshop-twofa-brand-icon-img"
                                     />
                                 </span>
-                                <p class="veshop-twofa-brand-name mb-0">{{ BRANDING.appName }}</p>
+                                <p class="veshop-twofa-brand-name mb-0">{{ brandName }}</p>
                             </div>
                             <p class="veshop-login-pill mb-0">Segurança do acesso</p>
                             <h1 class="veshop-login-title mt-1">{{ heading }}</h1>

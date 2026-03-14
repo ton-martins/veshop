@@ -1,0 +1,8 @@
+
+-- Comandos de otimização e reconstrução do front
+
+php artisan cache:clear
+php artisan optimize:clear
+php artisan config:clear
+php artisan optimize
+npm run dev

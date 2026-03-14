@@ -1,6 +1,13 @@
 <script setup>
 import { Link } from '@inertiajs/vue3';
+import { useBranding } from '@/branding';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+
+const { secondaryColor, withAlpha } = useBranding();
+
+const heroQuarterCircleStyle = computed(() => ({
+    background: `radial-gradient(circle at center, ${withAlpha(secondaryColor.value, 0.34)} 0%, ${withAlpha(secondaryColor.value, 0.24)} 42%, ${withAlpha(secondaryColor.value, 0.14)} 62%, transparent 78%)`,
+}));
 
 const heroCards = [
     {
@@ -406,7 +413,8 @@ onBeforeUnmount(() => {
 
 <template>
     <section class="veshop-hero-app" id="home">
-        <div class="veshop-hero-glow" aria-hidden="true"></div>
+        <div class="veshop-hero-surface" aria-hidden="true"></div>
+        <div class="veshop-hero-quarter-secondary" :style="heroQuarterCircleStyle" aria-hidden="true"></div>
 
         <div class="container veshop-hero-wrap">
             <div class="row g-4 align-items-center">
@@ -656,41 +664,31 @@ onBeforeUnmount(() => {
 .veshop-hero-app {
     position: relative;
     padding: 170px 0 90px;
-    background-image: url('/landing/images/bg-img-4.png');
-    background-size: cover;
-    background-position: center;
+    background: linear-gradient(180deg, #f7fdff 0%, #eef8fc 45%, #eaf5f8 100%);
     overflow: hidden;
 }
 
-.veshop-hero-glow {
+.veshop-hero-surface {
     position: absolute;
     inset: 0;
     pointer-events: none;
     z-index: 0;
+    background:
+        radial-gradient(42% 42% at 12% 16%, rgba(129, 216, 111, 0.24) 0%, rgba(129, 216, 111, 0) 72%),
+        radial-gradient(46% 46% at 86% 12%, rgba(7, 51, 65, 0.08) 0%, rgba(7, 51, 65, 0) 72%),
+        radial-gradient(55% 48% at 50% 92%, rgba(2, 132, 199, 0.09) 0%, rgba(2, 132, 199, 0) 74%);
 }
 
-.veshop-hero-glow::before,
-.veshop-hero-glow::after {
-    content: '';
+.veshop-hero-quarter-secondary {
     position: absolute;
+    width: clamp(1020px, 66vw, 1620px);
+    aspect-ratio: 1 / 1;
+    right: -28%;
+    top: -92%;
     border-radius: 999px;
-    filter: blur(70px);
-}
-
-.veshop-hero-glow::before {
-    width: 360px;
-    height: 360px;
-    left: -110px;
-    top: 90px;
-    background: rgba(129, 216, 111, 0.26);
-}
-
-.veshop-hero-glow::after {
-    width: 420px;
-    height: 420px;
-    right: -120px;
-    top: -40px;
-    background: rgba(7, 51, 65, 0.18);
+    pointer-events: none;
+    z-index: 0;
+    filter: blur(6px);
 }
 
 .veshop-hero-wrap {
@@ -812,6 +810,7 @@ onBeforeUnmount(() => {
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+    min-width: 0;
 }
 
 .veshop-ops-brand {
@@ -875,6 +874,13 @@ onBeforeUnmount(() => {
     background: rgba(245, 253, 255, 0.06);
     border-radius: 12px;
     padding: 4px;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.veshop-ops-tabs::-webkit-scrollbar {
+    display: none;
 }
 
 .veshop-tab-btn {
@@ -963,6 +969,18 @@ onBeforeUnmount(() => {
     justify-content: space-between;
     align-items: center;
     gap: 8px;
+    min-width: 0;
+}
+
+.veshop-feed-title > span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.veshop-feed-title .veshop-badge {
+    flex-shrink: 0;
 }
 
 .veshop-feed-meta {
@@ -1220,18 +1238,151 @@ onBeforeUnmount(() => {
         padding: 130px 0 60px;
     }
 
+    .veshop-hero-quarter-secondary {
+        width: clamp(700px, 108vw, 1040px);
+        right: -52%;
+        top: -66%;
+        filter: blur(3px);
+    }
+
+    .veshop-hero-title {
+        font-size: clamp(1.72rem, 5vw, 2.2rem);
+        line-height: 1.18;
+        max-width: none;
+        text-wrap: balance;
+    }
+
+    .veshop-hero-subtitle {
+        font-size: 15px;
+        line-height: 1.52;
+        max-width: none;
+    }
+
     .veshop-mini-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
 @media (max-width: 575px) {
+    .veshop-hero-app {
+        padding: 112px 0 52px;
+    }
+
+    .veshop-hero-surface {
+        background:
+            radial-gradient(48% 48% at 86% 12%, rgba(7, 51, 65, 0.08) 0%, rgba(7, 51, 65, 0) 72%),
+            radial-gradient(55% 48% at 50% 92%, rgba(2, 132, 199, 0.09) 0%, rgba(2, 132, 199, 0) 74%);
+    }
+
+    .veshop-hero-quarter-secondary {
+        width: 120vw;
+        right: -60vw;
+        top: -58vw;
+        filter: blur(0);
+    }
+
+    .veshop-hero-badge {
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        padding: 7px 12px;
+    }
+
+    .veshop-hero-title {
+        margin-top: 14px;
+        font-size: clamp(1.34rem, 5.9vw, 1.58rem);
+        line-height: 1.24;
+        max-width: none;
+        text-wrap: balance;
+    }
+
+    .veshop-hero-subtitle {
+        margin-top: 12px;
+        font-size: 12.5px;
+        line-height: 1.44;
+    }
+
+    .veshop-hero-actions .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .veshop-ops-head {
+        flex-wrap: wrap;
+    }
+
+    .veshop-ops-status {
+        margin-left: auto;
+    }
+
     .veshop-mini-grid {
         grid-template-columns: minmax(0, 1fr);
     }
 
     .veshop-metric-arrow {
         display: none;
+    }
+}
+
+@media (max-width: 360px) {
+    .veshop-hero-app {
+        padding: 104px 0 44px;
+    }
+
+    .veshop-hero-quarter-secondary {
+        width: 132vw;
+        right: -76vw;
+        top: -72vw;
+        opacity: 0.9;
+    }
+
+    .veshop-hero-badge {
+        font-size: 9px;
+        letter-spacing: 0.06em;
+        gap: 6px;
+        padding: 6px 10px;
+    }
+
+    .veshop-hero-title {
+        margin-top: 12px;
+        font-size: clamp(1.24rem, 5.3vw, 1.38rem);
+        line-height: 1.26;
+    }
+
+    .veshop-hero-subtitle {
+        margin-top: 10px;
+        font-size: 12px;
+        line-height: 1.42;
+    }
+
+    .veshop-hero-actions {
+        margin-top: 16px;
+        gap: 8px;
+    }
+
+    .veshop-hero-actions .btn {
+        padding: 10px 12px;
+        font-size: 0.96rem;
+    }
+
+    .veshop-ops-panel {
+        padding: 14px;
+    }
+
+    .veshop-tab-btn {
+        font-size: 11px;
+        padding: 5px 8px;
+    }
+
+    .veshop-feed-title {
+        font-size: 12px;
+    }
+
+    .veshop-feed-meta {
+        font-size: 11px;
+    }
+
+    .veshop-metric-card {
+        flex-basis: 148px;
     }
 }
 </style>

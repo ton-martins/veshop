@@ -232,7 +232,7 @@ const topFeatures = (plan) => {
             </div>
 
             <div class="row mt-5 g-3 justify-content-center">
-                <div v-for="section in sections" :key="`plan-tab-${section.value}`" class="col-md-6 col-lg-4">
+                <div v-for="section in sections" :key="`plan-tab-${section.value}`" class="col-12 col-md-6 col-lg-4">
                     <button
                         type="button"
                         class="card plan-tab-card h-100 w-100 border-0 text-start"
@@ -254,8 +254,8 @@ const topFeatures = (plan) => {
 
             <div v-if="currentSection" class="row mt-4 g-4">
                 <div class="col-12">
-                    <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
-                        <div class="card-body p-4 p-lg-5">
+                    <div class="card plan-section-shell shadow-sm border-0 rounded-4 overflow-hidden">
+                        <div class="card-body p-3 p-md-4 p-lg-5">
                             <div class="mb-4">
                                 <span class="badge text-bg-light border text-uppercase px-3 py-2 fw-semibold">
                                     {{ currentSection.label }}
@@ -266,7 +266,7 @@ const topFeatures = (plan) => {
 
                             <div class="row g-4">
                                 <div v-for="plan in currentSection.plans" :key="`plan-${currentSection.value}-${plan.id}`" class="col-md-6 col-xl-4">
-                                    <div class="card h-100 border-0 shadow-sm border-top border-3"
+                                    <div class="card plan-card h-100 border-0 shadow-sm border-top border-3"
                                         :class="plan.is_featured ? 'border-success' : 'border-primary'">
                                         <div class="card-body">
                                             <div class="d-flex justify-content-between align-items-start gap-2">
@@ -281,7 +281,7 @@ const topFeatures = (plan) => {
                                             <p class="mt-2 text-muted mb-1">{{ plan.subtitle || limitText(plan) }}</p>
                                             <p class="small text-muted">{{ plan.summary || 'Plano flexível para o nicho.' }}</p>
 
-                                            <h4 class="display-6 fw-bold my-3"
+                                            <h4 class="plan-price fw-bold my-3"
                                                 :class="plan.is_featured ? 'text-success' : 'text-primary'">
                                                 {{ formatMoney(plan.price_monthly) }}
                                                 <span class="fs-6 text-muted">/ mês</span>
@@ -359,5 +359,169 @@ const topFeatures = (plan) => {
 .plan-tab-card.is-active .plan-tab-icon {
     background: #dcfce7;
     color: #166534;
+}
+
+.plan-section-shell {
+    width: 100%;
+}
+
+.plan-card {
+    width: 100%;
+}
+
+.plan-card .card-body,
+.plan-card .card-footer {
+    word-break: break-word;
+}
+
+.plan-price {
+    font-size: clamp(1.55rem, 3.3vw, 2.25rem);
+    line-height: 1.15;
+}
+
+@media (max-width: 767.98px) {
+    .price-section .container {
+        padding-left: 0.55rem;
+        padding-right: 0.55rem;
+    }
+
+    .plan-tab-card .card-body {
+        align-items: flex-start;
+        padding: 0.8rem;
+    }
+
+    .plan-tab-icon {
+        width: 40px;
+        height: 40px;
+        font-size: 18px;
+        flex-shrink: 0;
+    }
+
+    .plan-section-shell > .card-body {
+        padding: 0 !important;
+    }
+
+    .plan-section-shell .row.g-4 {
+        --bs-gutter-x: 0.7rem;
+        --bs-gutter-y: 0.7rem;
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    .plan-card .card-body {
+        padding: 0.85rem;
+    }
+
+    .plan-price {
+        font-size: clamp(1.35rem, 7.2vw, 1.8rem);
+    }
+
+    .plan-card .card-footer {
+        padding: 0 0.85rem 0.85rem;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .price-section .container {
+        padding-left: 0.45rem;
+        padding-right: 0.45rem;
+    }
+
+    .plan-tab-card .small {
+        font-size: 0.76rem;
+        line-height: 1.35;
+    }
+
+    .plan-section-shell > .card-body {
+        padding: 0 !important;
+    }
+
+    .plan-card .card-body {
+        padding: 0.72rem;
+    }
+
+    .plan-card .card-footer {
+        padding: 0 0.72rem 0.72rem;
+    }
+
+    .plan-card .card-body p,
+    .plan-card .card-body li,
+    .plan-card .card-footer p {
+        font-size: 0.9rem;
+        line-height: 1.45;
+    }
+}
+
+@media (max-width: 360px) {
+    .price-section .container {
+        padding-left: 0.35rem;
+        padding-right: 0.35rem;
+    }
+
+    .price-title h2 {
+        font-size: 1.3rem;
+        line-height: 1.25;
+    }
+
+    .price-title p {
+        font-size: 0.9rem;
+        line-height: 1.4;
+    }
+
+    .plan-tab-card .card-body {
+        padding: 0.62rem;
+        gap: 0.6rem !important;
+    }
+
+    .plan-tab-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        font-size: 16px;
+    }
+
+    .plan-section-shell {
+        border-radius: 12px !important;
+    }
+
+    .plan-section-shell > .card-body > .mb-4 {
+        padding: 0 0.2rem 0.2rem;
+    }
+
+    .plan-section-shell > .card-body > .mb-4 h3 {
+        font-size: 1.22rem;
+        line-height: 1.25;
+    }
+
+    .plan-section-shell > .card-body > .mb-4 p {
+        font-size: 0.86rem;
+        line-height: 1.35;
+    }
+
+    .plan-section-shell .row.g-4 {
+        --bs-gutter-x: 0.55rem;
+        --bs-gutter-y: 0.55rem;
+    }
+
+    .plan-card .card-body {
+        padding: 0.6rem;
+    }
+
+    .plan-card .card-footer {
+        padding: 0 0.6rem 0.6rem;
+    }
+
+    .plan-price {
+        font-size: clamp(1.18rem, 6.3vw, 1.45rem);
+    }
+
+    .plan-card .btn {
+        padding: 9px 12px;
+        font-size: 0.92rem;
+    }
+
+    .plan-card .badge {
+        font-size: 0.66rem;
+    }
 }
 </style>

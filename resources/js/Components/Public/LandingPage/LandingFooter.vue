@@ -1,22 +1,25 @@
 <script setup>
+import { useBranding } from '@/branding';
+
 const year = new Date().getFullYear();
+const { brandName, systemIconUrl } = useBranding();
 </script>
 
 <template>
     <footer class="section footer-part-3 py-5 footer-part">
         <div class="container">
-            <div class="row my-5 justify-content-between">
+            <div class="row my-5 justify-content-between footer-main-row">
                 <div class="col-lg-3 align-self-start">
                     <div class="logo">
-                        <a class="fs-4 text-light ls-1 fw-bold" href="#home">
+                        <a class="fs-4 text-light ls-1 fw-bold d-inline-flex align-items-center" href="#home">
                             <span class="veshop-system-logo-wrap me-2">
                                 <img
-                                    src="/brand/icone-veshop.png"
-                                    alt="Ícone Veshop"
+                                    :src="systemIconUrl"
+                                    :alt="`Ícone ${brandName}`"
                                     class="veshop-system-logo"
                                 />
                             </span>
-                            VESHOP
+                            {{ brandName }}
                         </a>
                     </div>
                     <div class="d-flex mt-4">
@@ -30,29 +33,19 @@ const year = new Date().getFullYear();
                     <div class="footer-icon-3 ms-lg-auto me-lg-5">
                         <ul class="d-flex mt-4">
                             <li>
-                                <a href="#!" class="text-light me-2">
-                                    <i class="ri-facebook-fill p-2 border rounded-circle text-white-50"></i>
-                                </a>
+                                <a href="#!" class="text-light me-2"><i class="ri-facebook-fill p-2 border rounded-circle text-white-50"></i></a>
                             </li>
                             <li>
-                                <a href="#!" class="text-light mx-2">
-                                    <i class="ri-instagram-fill p-2 border rounded-circle text-white-50"></i>
-                                </a>
+                                <a href="#!" class="text-light mx-2"><i class="ri-instagram-fill p-2 border rounded-circle text-white-50"></i></a>
                             </li>
                             <li>
-                                <a href="#!" class="text-light mx-2">
-                                    <i class="ri-twitter-fill p-2 border rounded-circle text-white-50"></i>
-                                </a>
+                                <a href="#!" class="text-light mx-2"><i class="ri-twitter-fill p-2 border rounded-circle text-white-50"></i></a>
                             </li>
                             <li>
-                                <a href="#!" class="text-light mx-2">
-                                    <i class="ri-github-fill p-2 border rounded-circle text-white-50"></i>
-                                </a>
+                                <a href="#!" class="text-light mx-2"><i class="ri-github-fill p-2 border rounded-circle text-white-50"></i></a>
                             </li>
                             <li>
-                                <a href="#!" class="text-light mx-2">
-                                    <i class="ri-google-fill p-2 border rounded-circle text-white-50"></i>
-                                </a>
+                                <a href="#!" class="text-light mx-2"><i class="ri-google-fill p-2 border rounded-circle text-white-50"></i></a>
                             </li>
                         </ul>
                     </div>
@@ -79,8 +72,8 @@ const year = new Date().getFullYear();
                     </ul>
                 </div>
 
-                <div class="col-lg-3">
-                    <h5 class="text-light">Receba novidades do Veshop:</h5>
+                <div class="col-lg-3 col-md-12 col-12">
+                    <h5 class="text-light">Receba novidades do {{ brandName }}:</h5>
                     <div class="form-button mt-4">
                         <form action="" class="d-flex align-items-center">
                             <input type="email" class="form-control" placeholder="Digite seu e-mail" />
@@ -89,9 +82,7 @@ const year = new Date().getFullYear();
                     </div>
                     <div class="d-flex mt-4">
                         <i class="ri-twitter-fill fs-5 me-3 text-success"></i>
-                        <p class="text-white-50">
-                            Conteúdos práticos sobre ERP, gestão comercial e desempenho operacional.
-                        </p>
+                        <p class="text-white-50">Conteúdos práticos sobre ERP, gestão comercial e desempenho operacional.</p>
                     </div>
                     <a href="#!" class="text-light">Conhecer mais</a>
                 </div>
@@ -100,8 +91,7 @@ const year = new Date().getFullYear();
     </footer>
     <div class="footer-copyright py-3 bg-dark">
         <div class="copy-info text-center text-white-50">
-            © {{ year }} Veshop -
-            <a href="#" class="text-white-50 text-decoration-underline">ERP para comércio e varejo</a>
+            &copy; {{ year }} {{ brandName }}. Todos os direitos reservados.
         </div>
     </div>
 </template>
@@ -125,5 +115,65 @@ const year = new Date().getFullYear();
     border: 1px solid rgba(7, 51, 65, 0.72);
     box-shadow: 0 14px 26px -20px rgba(2, 17, 22, 0.82);
     vertical-align: middle;
+}
+
+.footer-main-row > [class*='col-'] {
+    min-width: 0;
+}
+
+.footer-main-row .d-flex a {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 767.98px) {
+    .footer-main-row {
+        margin-top: 1.6rem !important;
+        margin-bottom: 1.6rem !important;
+        row-gap: 1.3rem;
+    }
+
+    .footer-main-row .col-12 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .footer-part {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1.5rem !important;
+    }
+
+    .footer-main-row {
+        margin-top: 1.15rem !important;
+        margin-bottom: 1.15rem !important;
+        row-gap: 1rem;
+    }
+
+    .footer-part .form-button input {
+        padding: 11px 10px;
+    }
+
+    .footer-part .form-button a {
+        padding: 6px 15px;
+    }
+
+    .copy-info {
+        font-size: 0.82rem;
+        line-height: 1.35;
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }
+}
+
+@media (max-width: 360px) {
+    .footer-main-row {
+        margin-top: 1rem !important;
+        margin-bottom: 1rem !important;
+    }
+
+    .footer-part .form-button input {
+        padding-right: 3rem;
+    }
 }
 </style>

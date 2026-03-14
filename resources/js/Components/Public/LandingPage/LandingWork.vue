@@ -1,4 +1,7 @@
 <script setup>
+import { computed } from 'vue';
+import { useBranding } from '@/branding';
+
 const flowSteps = [
     {
         iconClass: 'ri-donut-chart-fill',
@@ -25,6 +28,9 @@ const flowSteps = [
             'Acompanhe caixa, contas, conciliação e obrigações fiscais em relatórios claros para decisão.',
     },
 ];
+
+const { landingImages } = useBranding();
+const workImageUrl = computed(() => landingImages.value.work || '/landing/images/group-working.jpg');
 </script>
 
 <template>
@@ -33,7 +39,7 @@ const flowSteps = [
             <div class="row align-items-center justify-content-between">
                 <div class="col-lg-6">
                     <img
-                        src="/landing/images/group-working.jpg"
+                        :src="workImageUrl"
                         alt="Equipe executando fluxo operacional com o Veshop"
                         class="img-fluid shadow-sm rounded-2"
                     />

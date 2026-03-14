@@ -1,5 +1,5 @@
 <script setup>
-import BRANDING from '@/branding';
+import { useBranding } from '@/branding';
 import { Head, Link } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -16,11 +16,13 @@ const highlights = [
 ];
 
 const currentYear = new Date().getFullYear();
+const { brandName, tagline, systemIconUrl, publicFaviconHref, publicFaviconType } = useBranding();
 </script>
 
 <template>
     <Head>
         <meta charset="UTF-8" />
+        <link v-if="publicFaviconHref" rel="icon" :href="publicFaviconHref" :type="publicFaviconType" />
         <link head-key="landing-remixicon-preload" rel="preload" as="style" href="/landing/css/remixicon.css" />
         <link head-key="landing-bootstrap-preload" rel="preload" as="style" href="/landing/css/bootstrap.min.css" />
         <link head-key="landing-style-preload" rel="preload" as="style" href="/landing/css/style.min.css" />
@@ -44,7 +46,7 @@ const currentYear = new Date().getFullYear();
             >
                 <div v-if="props.showAside" class="col-lg-6 d-none d-lg-flex">
                     <aside class="veshop-auth-aside veshop-auth-equal-height w-100 p-4 p-lg-5">
-                        <p class="mb-2 text-uppercase ls-2 fw-semibold text-success">Ecossistema {{ BRANDING.appName }}</p>
+                        <p class="mb-2 text-uppercase ls-2 fw-semibold text-success">Ecossistema {{ brandName }}</p>
                         <h1 class="veshop-auth-title mb-3">
                             Plataforma de gestão para comércios e serviços.
                         </h1>
@@ -60,7 +62,7 @@ const currentYear = new Date().getFullYear();
                         </div>
 
                         <p class="mb-0 mt-4 small text-light opacity-75">
-                            © {{ currentYear }} {{ BRANDING.appName }}. Todos os direitos reservados.
+                            © {{ currentYear }} {{ brandName }}. Todos os direitos reservados.
                         </p>
                     </aside>
                 </div>
@@ -73,14 +75,14 @@ const currentYear = new Date().getFullYear();
                         <Link href="/" class="d-inline-flex align-items-center gap-3 text-decoration-none">
                             <span class="veshop-auth-logo">
                                 <img
-                                    src="/brand/icone-veshop.png"
-                                    :alt="`${BRANDING.appName} ícone`"
+                                    :src="systemIconUrl"
+                                    :alt="`${brandName} icone`"
                                     class="veshop-auth-logo-img"
                                 />
                             </span>
                             <span>
-                                <span class="d-block fs-5 fw-bold text-primary ls-1">{{ BRANDING.appName }}</span>
-                                <span class="veshop-auth-subbrand d-block text-uppercase ls-2">ERP para comércio e varejo</span>
+                                <span class="d-block fs-5 fw-bold text-primary ls-1">{{ brandName }}</span>
+                                <span class="veshop-auth-subbrand d-block text-uppercase ls-2">{{ tagline }}</span>
                             </span>
                         </Link>
 
@@ -89,7 +91,7 @@ const currentYear = new Date().getFullYear();
                         </div>
 
                         <p class="mb-0 mt-4 text-center d-lg-none small text-muted">
-                            © {{ currentYear }} {{ BRANDING.appName }}. Todos os direitos reservados.
+                            © {{ currentYear }} {{ brandName }}. Todos os direitos reservados.
                         </p>
                     </section>
                 </div>

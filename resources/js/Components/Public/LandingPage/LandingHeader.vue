@@ -1,5 +1,6 @@
 ﻿<script setup>
 import { Link } from '@inertiajs/vue3';
+import { useBranding } from '@/branding';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
 defineProps({
@@ -11,6 +12,7 @@ defineProps({
 
 const isMenuOpen = ref(false);
 const navbarRef = ref(null);
+const { brandName, systemIconUrl } = useBranding();
 
 const closeMenu = () => {
     isMenuOpen.value = false;
@@ -49,12 +51,12 @@ onBeforeUnmount(() => {
                     <a class="navbar-caption fs-4 text-primary ls-1 fw-bold" href="#home">
                         <span class="veshop-system-logo-wrap me-2">
                             <img
-                                src="/brand/icone-veshop.png"
-                                alt="Ícone Veshop"
+                                :src="systemIconUrl"
+                                :alt="`Icone ${brandName}`"
                                 class="veshop-system-logo"
                             />
                         </span>
-                        VESHOP
+                        {{ brandName }}
                     </a>
                 </div>
 
@@ -89,9 +91,14 @@ onBeforeUnmount(() => {
                     </ul>
 
                     <ul class="navbar-nav nav-btn">
-                        <li class="nav-item" v-if="$page.props.auth.user">
-                            <Link class="nav-link" :href="route('home')">Início</Link>
-                        </li>
+                        <template v-if="$page.props.auth.user">
+                            <li class="nav-item">
+                                <Link class="nav-link" :href="route('home')">Voltar ao portal</Link>
+                            </li>
+                            <li class="nav-item">
+                                <Link class="nav-link" :href="route('logout')" method="post" as="button">Sair</Link>
+                            </li>
+                        </template>
                         <li class="nav-item" v-else-if="canLogin">
                             <Link class="nav-link" :href="route('login')">
                                 Entrar
@@ -122,9 +129,22 @@ onBeforeUnmount(() => {
                     </ul>
 
                     <ul class="navbar-nav nav-btn">
-                        <li class="nav-item" v-if="$page.props.auth.user">
-                            <Link class="nav-link" :href="route('home')" @click="closeMenu">Início</Link>
-                        </li>
+                        <template v-if="$page.props.auth.user">
+                            <li class="nav-item">
+                                <Link class="nav-link" :href="route('home')" @click="closeMenu">Voltar ao portal</Link>
+                            </li>
+                            <li class="nav-item">
+                                <Link
+                                    class="nav-link"
+                                    :href="route('logout')"
+                                    method="post"
+                                    as="button"
+                                    @click="closeMenu"
+                                >
+                                    Sair
+                                </Link>
+                            </li>
+                        </template>
                         <li class="nav-item" v-else-if="canLogin">
                             <Link class="nav-link" :href="route('login')" @click="closeMenu">
                                 Entrar
@@ -204,6 +224,22 @@ onBeforeUnmount(() => {
 @media (max-width: 991.98px) {
     #navbar {
         background-color: #f5fdff;
+    }
+
+    #navbar .navbar-caption {
+        color: #073341 !important;
+    }
+
+    #navbar.nav-sticky {
+        background-color: #f5fdff !important;
+    }
+
+    #navbar.nav-sticky .logo a {
+        color: #073341 !important;
+    }
+
+    #navbar.nav-sticky .navbar-toggler {
+        color: #073341 !important;
     }
 }
 
