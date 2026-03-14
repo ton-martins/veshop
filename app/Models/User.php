@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -18,6 +19,17 @@ class User extends Authenticatable
     public const ROLE_ADMIN = 'admin';
 
     /**
+     * @return list<string>
+     */
+    public static function roles(): array
+    {
+        return [
+            self::ROLE_MASTER,
+            self::ROLE_ADMIN,
+        ];
+    }
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
@@ -25,8 +37,16 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'cpf',
+        'phone',
         'password',
         'role',
+        'job_title',
+        'address',
+        'is_active',
+        'password_changed_at',
+        'preferences',
+        'avatar_url',
         'two_factor_secret',
         'two_factor_confirmed_at',
     ];
@@ -52,8 +72,26 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'address' => 'array',
+            'preferences' => 'array',
+            'is_active' => 'boolean',
+            'password_changed_at' => 'datetime',
             'two_factor_confirmed_at' => 'datetime',
         ];
+    }
+
+    public function contractors(): BelongsToMany
+    {
+        return $this->belongsToMany(Contractor::class)->withTimestamps();
+    }
+
+    public function defaultContractor(): ?Contractor
+    {
+        if (! $this->relationLoaded('contractors')) {
+            $this->load('contractors');
+        }
+
+        return $this->contractors->first();
     }
 
     public function hasTwoFactorEnabled(): bool
@@ -69,5 +107,10 @@ class User extends Authenticatable
     public function isAdmin(): bool
     {
         return $this->role === self::ROLE_ADMIN;
+    }
+
+    public function isActive(): bool
+    {
+        return (bool) $this->is_active;
     }
 }

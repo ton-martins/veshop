@@ -24,6 +24,11 @@ Faixa de porte:
 - 1 a 10 lojas por empresa
 - 2 a 50 usuarios internos
 
+Perfil de usuario final:
+- Faixa etaria principal entre 20 e 50 anos.
+- Diferentes niveis de familiaridade com tecnologia.
+- Necessidade de fluxo simples, objetivo e com baixa curva de aprendizado.
+
 3. Proposta de Valor
 --------------------
 - Sistema unico para operacao e financeiro.
@@ -134,6 +139,19 @@ Politica de cadastro:
 - Escalabilidade:
   - Arquitetura modular com monolito bem organizado.
   - Eventos de dominio para desacoplar modulos.
+- Responsividade e usabilidade:
+  - A aplicacao deve ser 100% responsiva para desktop, tablet e celular.
+  - Todas as telas criticas devem funcionar em orientacao retrato e paisagem.
+  - A navegacao deve ser otimizada para toque (alvos minimos de 44x44 px).
+  - Tabelas e listagens devem possuir comportamento mobile-first (cards, colunas colapsadas ou scroll controlado).
+  - Nao depender de hover para acoes essenciais em dispositivos moveis.
+  - Fluxos principais devem ser operaveis com no maximo 3 interacoes para tarefas comuns.
+  - Textos e labels devem ser claros para publico de 20 a 50 anos, evitando termos tecnicos desnecessarios.
+- Experiencia visual (UI diferenciada):
+  - Manter identidade visual consistente do Veshop em todas as areas.
+  - Definir padroes de layout por contexto (dashboard, cadastros, operacao e configuracao).
+  - Aplicar hierarquia visual clara: prioridade para dados, acoes e alertas.
+  - Evitar poluicao visual em telas transacionais com excesso de elementos decorativos.
 - Padrao de idioma e codificacao:
   - Textos da plataforma (UI, emails, mensagens de validacao e documentacao funcional) devem ser em portugues do Brasil (`pt-BR`).
   - Arquivos de codigo e conteudo textual devem usar codificacao UTF-8.
@@ -167,6 +185,15 @@ Por que essa stack:
 - Financeiro: contas a pagar/receber, caixa, conciliacao.
 - Omnichannel: vitrine online, WhatsApp, campanhas.
 - Analytics: dashboard e relatorios.
+
+Segmentacao por nicho do contratante (fase atual):
+- Cada contratante deve estar vinculado a um unico nicho de operacao.
+- O nicho ativo direciona os modulos, menu e rotas internas do sistema.
+- Nichos disponiveis no momento:
+  - `commercial`: operacao de comercio (PDV, produtos, categorias, pedidos, estoque e financeiro).
+  - `services`: operacao de servicos (catalogo de servicos, ordens de servico e agenda tecnica).
+- Escopo de desenvolvimento atual:
+  - Desenvolver apenas os nichos `commercial` e `services`.
 
 9. Modelagem Inicial (entidades)
 --------------------------------
@@ -220,6 +247,7 @@ Fase 3 - Escala e Diferenciais (4 semanas)
 - Catalogo publico funcional com CTA para WhatsApp.
 - Dashboard com KPIs minimos validos.
 - Suite de testes para fluxos criticos e sem falhas.
+- Telas principais validadas em mobile e tablet (sem quebra de layout ou perda de funcionalidade).
 
 12. Pendencias de Decisao (antes de codar)
 ------------------------------------------

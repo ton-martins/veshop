@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { Link } from '@inertiajs/vue3';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
@@ -56,7 +56,7 @@ onBeforeUnmount(() => {
                     type="button"
                     aria-controls="navbarCollapseMobile"
                     :aria-expanded="isMenuOpen"
-                    aria-label="Alternar navegação"
+                    aria-label="Alternar navegaÃ§Ã£o"
                     @click="isMenuOpen = !isMenuOpen"
                 >
                     <span class="fw-bold fs-4"><i class="ri-menu-5-line"></i></span>
@@ -65,13 +65,13 @@ onBeforeUnmount(() => {
                 <div id="navbarCollapseDesktop" class="landing-navbar-desktop d-none d-lg-flex">
                     <ul class="navbar-nav mx-auto" id="navbar-navlist">
                         <li class="nav-item">
-                            <a class="nav-link" href="#home">Início</a>
+                            <a class="nav-link" href="#home">InÃ­cio</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="#about">Sobre</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#services">Módulos</a>
+                            <a class="nav-link" href="#services">MÃ³dulos</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="#price">Planos</a>
@@ -83,9 +83,7 @@ onBeforeUnmount(() => {
 
                     <ul class="navbar-nav nav-btn">
                         <li class="nav-item" v-if="$page.props.auth.user">
-                            <Link class="nav-link" :href="route('dashboard')">
-                                Dashboard
-                            </Link>
+                            <Link class="nav-link" :href="route('home')">Início</Link>
                         </li>
                         <li class="nav-item" v-else-if="canLogin">
                             <Link class="nav-link" :href="route('login')">
@@ -100,13 +98,13 @@ onBeforeUnmount(() => {
                 <div class="container">
                     <ul class="navbar-nav" id="navbar-navlist-mobile">
                         <li class="nav-item">
-                            <a class="nav-link" href="#home" @click="closeMenu">Início</a>
+                            <a class="nav-link" href="#home" @click="closeMenu">InÃ­cio</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="#about" @click="closeMenu">Sobre</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#services" @click="closeMenu">Módulos</a>
+                            <a class="nav-link" href="#services" @click="closeMenu">MÃ³dulos</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="#price" @click="closeMenu">Planos</a>
@@ -118,9 +116,7 @@ onBeforeUnmount(() => {
 
                     <ul class="navbar-nav nav-btn">
                         <li class="nav-item" v-if="$page.props.auth.user">
-                            <Link class="nav-link" :href="route('dashboard')" @click="closeMenu">
-                                Dashboard
-                            </Link>
+                            <Link class="nav-link" :href="route('home')" @click="closeMenu">Início</Link>
                         </li>
                         <li class="nav-item" v-else-if="canLogin">
                             <Link class="nav-link" :href="route('login')" @click="closeMenu">

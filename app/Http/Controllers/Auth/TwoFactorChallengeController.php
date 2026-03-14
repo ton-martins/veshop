@@ -25,7 +25,7 @@ class TwoFactorChallengeController extends Controller
         }
 
         if ($request->session()->get('two_factor_passed', false)) {
-            return redirect()->intended(route('dashboard', absolute: false));
+            return redirect()->intended(route('home', absolute: false));
         }
 
         return Inertia::render('Auth/TwoFactorChallenge');
@@ -53,6 +53,6 @@ class TwoFactorChallengeController extends Controller
 
         $request->session()->put('two_factor_passed', true);
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        return redirect()->intended(route('home', absolute: false));
     }
 }

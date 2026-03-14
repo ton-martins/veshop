@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Contractor;
 use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
@@ -42,7 +43,17 @@ class RegisteredUserController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'role' => User::ROLE_ADMIN,
+            'is_active' => true,
+            'password_changed_at' => now(),
         ]);
+
+        $defaultContractor = Contractor::query()
+            ->orderBy('id')
+            ->first();
+
+        if ($defaultContractor) {
+            $user->contractors()->sync([$defaultContractor->id]);
+        }
 
         event(new Registered($user));
 

@@ -64,7 +64,7 @@ class TwoFactorSetupController extends Controller
 
         $request->session()->put('two_factor_passed', true);
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        return redirect()->intended(route('home', absolute: false));
     }
 
     public function regenerate(Request $request): RedirectResponse

@@ -61,11 +61,11 @@ const loginRoute = computed(() => {
 });
 
 const safeDashboard = computed(() => {
-    if (typeof route !== 'function') return '/dashboard';
+    if (typeof route !== 'function') return '/home';
     try {
-        return route('dashboard', {}, false);
+        return route('home', {}, false);
     } catch {
-        return '/dashboard';
+        return '/home';
     }
 });
 

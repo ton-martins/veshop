@@ -1,0 +1,161 @@
+﻿export const adminMenuGroups = [
+    {
+        key: 'dashboard',
+        label: 'Início',
+        icon: 'LayoutDashboard',
+        links: [
+            {
+                key: 'admin-dashboard',
+                label: 'Visão geral',
+                route: 'admin.home',
+                match: ['admin.home'],
+                icon: 'LayoutDashboard',
+            },
+        ],
+    },
+    {
+        key: 'cadastros',
+        label: 'Cadastros',
+        icon: 'Package',
+        module: 'commercial',
+        links: [
+            {
+                key: 'admin-products',
+                label: 'Produtos',
+                route: 'admin.products.index',
+                match: ['admin.products.*'],
+                icon: 'Package',
+            },
+            {
+                key: 'admin-categories',
+                label: 'Categorias',
+                route: 'admin.categories.index',
+                match: ['admin.categories.*'],
+                icon: 'Package',
+            },
+            {
+                key: 'admin-clients',
+                label: 'Clientes',
+                route: 'admin.clients.index',
+                match: ['admin.clients.*'],
+                icon: 'Users',
+            },
+            {
+                key: 'admin-suppliers',
+                label: 'Fornecedores',
+                route: 'admin.suppliers.index',
+                match: ['admin.suppliers.*'],
+                icon: 'Store',
+            },
+        ],
+    },
+    {
+        key: 'operacao',
+        label: 'Operação',
+        icon: 'ClipboardList',
+        module: 'commercial',
+        links: [
+            {
+                key: 'admin-orders',
+                label: 'Pedidos',
+                route: 'admin.orders.index',
+                match: ['admin.orders.*'],
+                icon: 'ClipboardList',
+            },
+            {
+                key: 'admin-inventory',
+                label: 'Estoque',
+                route: 'admin.inventory.index',
+                match: ['admin.inventory.*'],
+                icon: 'Network',
+            },
+        ],
+    },
+    {
+        key: 'financeiro',
+        label: 'Financeiro',
+        icon: 'History',
+        module: 'commercial',
+        links: [
+            {
+                key: 'admin-payables',
+                label: 'Contas a pagar',
+                route: 'admin.finance.payables',
+                match: ['admin.finance.payables'],
+                icon: 'History',
+            },
+            {
+                key: 'admin-receivables',
+                label: 'Contas a receber',
+                route: 'admin.finance.receivables',
+                match: ['admin.finance.receivables'],
+                icon: 'History',
+            },
+        ],
+    },
+    {
+        key: 'relatorios',
+        label: 'Relatórios',
+        icon: 'BookOpenCheck',
+        module: 'commercial',
+        links: [
+            {
+                key: 'admin-reports',
+                label: 'Painéis e análises',
+                route: 'admin.reports.index',
+                match: ['admin.reports.*'],
+                icon: 'BookOpenCheck',
+            },
+        ],
+    },
+    {
+        key: 'services',
+        label: 'Serviços',
+        icon: 'Briefcase',
+        module: 'services',
+        links: [
+            {
+                key: 'admin-services-overview',
+                label: 'Visão geral',
+                route: 'admin.services.index',
+                match: ['admin.services.index'],
+                icon: 'Briefcase',
+            },
+            {
+                key: 'admin-services-catalog',
+                label: 'Catálogo de serviços',
+                route: 'admin.services.catalog',
+                match: ['admin.services.catalog'],
+                icon: 'BookOpenCheck',
+            },
+            {
+                key: 'admin-services-orders',
+                label: 'Ordens de serviço',
+                route: 'admin.services.orders',
+                match: ['admin.services.orders'],
+                icon: 'ClipboardList',
+            },
+            {
+                key: 'admin-services-schedule',
+                label: 'Agenda técnica',
+                route: 'admin.services.schedule',
+                match: ['admin.services.schedule'],
+                icon: 'History',
+            },
+        ],
+    },
+    {
+        key: 'configuracoes',
+        label: 'Configurações',
+        icon: 'Cog',
+        links: [
+            {
+                key: 'admin-branding',
+                label: 'Branding',
+                route: 'admin.branding.index',
+                match: ['admin.branding.*'],
+                icon: 'Palette',
+            },
+        ],
+    },
+];

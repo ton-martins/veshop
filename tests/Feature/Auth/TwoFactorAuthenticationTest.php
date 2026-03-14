@@ -65,7 +65,7 @@ class TwoFactorAuthenticationTest extends TestCase
             'code' => $otp,
         ]);
 
-        $response->assertRedirect(route('dashboard', absolute: false));
+        $response->assertRedirect(route('home', absolute: false));
         $this->assertNotNull($user->fresh()->two_factor_confirmed_at);
         $this->assertTrue((bool) session('two_factor_passed'));
     }
