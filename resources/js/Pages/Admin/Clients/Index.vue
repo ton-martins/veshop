@@ -1,13 +1,14 @@
-﻿<script setup>
+<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, router } from '@inertiajs/vue3';
+import Modal from '@/Components/Modal.vue';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
-import { Users2, UserPlus2, MapPin, AlertCircle, Search, Filter } from 'lucide-vue-next';
+import { Users2, UserPlus2, MapPin, AlertCircle, Search, Filter, Plus, Pencil, Trash2 } from 'lucide-vue-next';
 
 const props = defineProps({
     clients: {
         type: Object,
-        default: () => ({ data: [] }),
+        default: () => ({ data: [], links: [] }),
     },
     stats: {
         type: Object,
@@ -19,14 +20,16 @@ const props = defineProps({
     },
 });
 
-const search = ref(props.filters?.search ?? '');
-const status = ref(props.filters?.status ?? '');
+const filterForm = useForm({
+    search: props.filters?.search ?? '',
+    status: props.filters?.status ?? '',
+});
 
 watch(
     () => props.filters,
     (next) => {
-        search.value = next?.search ?? '';
-        status.value = next?.status ?? '';
+        filterForm.search = next?.search ?? '';
+        filterForm.status = next?.status ?? '';
     },
     { deep: true },
 );
@@ -35,8 +38,8 @@ const applyFilters = () => {
     router.get(
         route('admin.clients.index'),
         {
-            search: search.value || undefined,
-            status: status.value || undefined,
+            search: filterForm.search || undefined,
+            status: filterForm.status || undefined,
         },
         {
             preserveState: true,
@@ -47,12 +50,13 @@ const applyFilters = () => {
 };
 
 const clearFilters = () => {
-    search.value = '';
-    status.value = '';
+    filterForm.search = '';
+    filterForm.status = '';
     applyFilters();
 };
 
 const rows = computed(() => props.clients?.data ?? []);
+const paginationLinks = computed(() => props.clients?.links ?? []);
 
 const statsCards = computed(() => [
     { key: 'total', label: 'Clientes cadastrados', value: String(props.stats?.total ?? 0), icon: Users2, tone: 'bg-slate-100 text-slate-700' },
@@ -60,6 +64,71 @@ const statsCards = computed(() => [
     { key: 'new_month', label: 'Novos no mês', value: String(props.stats?.new_month ?? 0), icon: AlertCircle, tone: 'bg-blue-100 text-blue-700' },
     { key: 'cities', label: 'Cidades atendidas', value: String(props.stats?.cities ?? 0), icon: MapPin, tone: 'bg-amber-100 text-amber-700' },
 ]);
+
+const showModal = ref(false);
+const editingClient = ref(null);
+
+const clientForm = useForm({
+    name: '',
+    email: '',
+    phone: '',
+    document: '',
+    city: '',
+    state: '',
+    is_active: true,
+});
+
+const isEditing = computed(() => Boolean(editingClient.value?.id));
+
+const openCreate = () => {
+    editingClient.value = null;
+    clientForm.reset();
+    clientForm.clearErrors();
+    clientForm.is_active = true;
+    showModal.value = true;
+};
+
+const openEdit = (client) => {
+    editingClient.value = client;
+    clientForm.name = client.name ?? '';
+    clientForm.email = client.email ?? '';
+    clientForm.phone = client.phone ?? '';
+    clientForm.document = client.document ?? '';
+    clientForm.city = client.city ?? '';
+    clientForm.state = client.state ?? '';
+    clientForm.is_active = Boolean(client.is_active);
+    clientForm.clearErrors();
+    showModal.value = true;
+};
+
+const closeModal = () => {
+    showModal.value = false;
+    editingClient.value = null;
+};
+
+const submitClient = () => {
+    if (isEditing.value) {
+        clientForm.put(route('admin.clients.update', editingClient.value.id), {
+            preserveScroll: true,
+            onSuccess: closeModal,
+        });
+        return;
+    }
+
+    clientForm.post(route('admin.clients.store'), {
+        preserveScroll: true,
+        onSuccess: closeModal,
+    });
+};
+
+const removeClient = (client) => {
+    const confirmed = window.confirm(`Excluir o cliente "${client.name}"?`);
+    if (!confirmed) return;
+
+    router.delete(route('admin.clients.destroy', client.id), {
+        preserveScroll: true,
+    });
+};
 </script>
 
 <template>
@@ -86,7 +155,7 @@ const statsCards = computed(() => [
                     <div class="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                         <Search class="h-4 w-4 text-slate-500" />
                         <input
-                            v-model="search"
+                            v-model="filterForm.search"
                             type="text"
                             placeholder="Buscar cliente por nome, email, telefone ou cidade"
                             class="w-full bg-transparent text-sm text-slate-700 outline-none"
@@ -95,7 +164,7 @@ const statsCards = computed(() => [
                     </div>
                     <div class="flex items-center gap-2">
                         <select
-                            v-model="status"
+                            v-model="filterForm.status"
                             class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
                             @change="applyFilters"
                         >
@@ -106,6 +175,10 @@ const statsCards = computed(() => [
                         <button type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="clearFilters">
                             <Filter class="h-3.5 w-3.5" />
                             Limpar
+                        </button>
+                        <button type="button" class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800" @click="openCreate">
+                            <Plus class="h-3.5 w-3.5" />
+                            Novo cliente
                         </button>
                     </div>
                 </div>
@@ -119,9 +192,15 @@ const statsCards = computed(() => [
                                 <th class="px-4 py-3">Documento</th>
                                 <th class="px-4 py-3">Cidade</th>
                                 <th class="px-4 py-3">Status</th>
+                                <th class="px-4 py-3">Ações</th>
                             </tr>
                         </thead>
-                        <tbody v-if="rows.length" class="divide-y divide-slate-100 bg-white">
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                            <tr v-if="!rows.length">
+                                <td colspan="6" class="px-4 py-10 text-center text-sm text-slate-500">
+                                    Nenhum cliente cadastrado para este contratante.
+                                </td>
+                            </tr>
                             <tr v-for="client in rows" :key="client.id">
                                 <td class="px-4 py-3">
                                     <p class="font-semibold text-slate-900">{{ client.name }}</p>
@@ -140,14 +219,148 @@ const statsCards = computed(() => [
                                         {{ client.status_label }}
                                     </span>
                                 </td>
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                            @click="openEdit(client)"
+                                        >
+                                            <Pencil class="h-3.5 w-3.5" />
+                                            Editar
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                                            @click="removeClient(client)"
+                                        >
+                                            <Trash2 class="h-3.5 w-3.5" />
+                                            Excluir
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
                         </tbody>
                     </table>
-                    <div v-if="!rows.length" class="px-4 py-8 text-center text-sm text-slate-500">
-                        Nenhum cliente cadastrado para este contratante.
-                    </div>
+                </div>
+
+                <div v-if="paginationLinks.length > 3" class="mt-4 flex flex-wrap items-center justify-end gap-2">
+                    <Link
+                        v-for="link in paginationLinks"
+                        :key="link.label"
+                        :href="link.url || '#'"
+                        class="rounded-lg border px-2.5 py-1.5 text-xs font-semibold"
+                        :class="[
+                            link.active
+                                ? 'border-slate-900 bg-slate-900 text-white'
+                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+                            !link.url ? 'pointer-events-none opacity-50' : '',
+                        ]"
+                        v-html="link.label"
+                    />
                 </div>
             </section>
         </section>
+
+        <Modal :show="showModal" max-width="lg" @close="closeModal">
+            <div class="space-y-4 bg-white p-6">
+                <h3 class="text-base font-semibold text-slate-900">
+                    {{ isEditing ? 'Editar cliente' : 'Novo cliente' }}
+                </h3>
+
+                <div class="grid gap-3 md:grid-cols-2">
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
+                        <input
+                            v-model="clientForm.name"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Ex.: Maria Souza"
+                        >
+                        <p v-if="clientForm.errors.name" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.name }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">E-mail</label>
+                        <input
+                            v-model="clientForm.email"
+                            type="email"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="cliente@email.com"
+                        >
+                        <p v-if="clientForm.errors.email" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.email }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone</label>
+                        <input
+                            v-model="clientForm.phone"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="(00) 00000-0000"
+                        >
+                        <p v-if="clientForm.errors.phone" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.phone }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Documento</label>
+                        <input
+                            v-model="clientForm.document"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="CPF/CNPJ"
+                        >
+                        <p v-if="clientForm.errors.document" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.document }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cidade</label>
+                        <input
+                            v-model="clientForm.city"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Cidade"
+                        >
+                        <p v-if="clientForm.errors.city" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.city }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">UF</label>
+                        <input
+                            v-model="clientForm.state"
+                            type="text"
+                            maxlength="2"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm uppercase text-slate-700"
+                            placeholder="SP"
+                        >
+                        <p v-if="clientForm.errors.state" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.state }}</p>
+                    </div>
+                </div>
+
+                <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input v-model="clientForm.is_active" type="checkbox" class="rounded border-slate-300">
+                    Cliente ativo
+                </label>
+
+                <div class="flex items-center justify-end gap-2 border-t border-slate-200 pt-4">
+                    <button
+                        type="button"
+                        class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        @click="closeModal"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        type="button"
+                        class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        :disabled="clientForm.processing"
+                        @click="submitClient"
+                    >
+                        {{ clientForm.processing ? 'Salvando...' : 'Salvar' }}
+                    </button>
+                </div>
+            </div>
+        </Modal>
     </AuthenticatedLayout>
 </template>
+

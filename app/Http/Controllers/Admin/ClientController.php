@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\StoreClientRequest;
+use App\Http\Requests\Admin\UpdateClientRequest;
 use App\Models\Client;
 use App\Models\Contractor;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -96,6 +99,50 @@ class ClientController extends Controller
         ]);
     }
 
+    /**
+     * Store a newly created client in storage.
+     */
+    public function store(StoreClientRequest $request): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $data = $request->validated();
+        $data['contractor_id'] = $contractor->id;
+
+        Client::query()->create($data);
+
+        return back()->with('status', 'Cliente criado com sucesso.');
+    }
+
+    /**
+     * Update the specified client in storage.
+     */
+    public function update(UpdateClientRequest $request, Client $client): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $client = $this->resolveOwnedClient($contractor, $client);
+        $client->fill($request->validated())->save();
+
+        return back()->with('status', 'Cliente atualizado com sucesso.');
+    }
+
+    /**
+     * Remove the specified client from storage.
+     */
+    public function destroy(Request $request, Client $client): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $client = $this->resolveOwnedClient($contractor, $client);
+        $client->delete();
+
+        return back()->with('status', 'Cliente removido com sucesso.');
+    }
+
     private function resolveCurrentContractor(Request $request): ?Contractor
     {
         $user = $request->user();
@@ -125,5 +172,11 @@ class ClientController extends Controller
 
         return $fallback;
     }
-}
 
+    private function resolveOwnedClient(Contractor $contractor, Client $client): Client
+    {
+        abort_unless((int) $client->contractor_id === (int) $contractor->id, 404);
+
+        return $client;
+    }
+}

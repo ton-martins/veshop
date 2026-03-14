@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\StoreSupplierRequest;
+use App\Http\Requests\Admin\UpdateSupplierRequest;
 use App\Models\Contractor;
 use App\Models\Supplier;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -94,6 +97,50 @@ class SupplierController extends Controller
         ]);
     }
 
+    /**
+     * Store a newly created supplier in storage.
+     */
+    public function store(StoreSupplierRequest $request): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $data = $request->validated();
+        $data['contractor_id'] = $contractor->id;
+
+        Supplier::query()->create($data);
+
+        return back()->with('status', 'Fornecedor criado com sucesso.');
+    }
+
+    /**
+     * Update the specified supplier in storage.
+     */
+    public function update(UpdateSupplierRequest $request, Supplier $supplier): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $supplier = $this->resolveOwnedSupplier($contractor, $supplier);
+        $supplier->fill($request->validated())->save();
+
+        return back()->with('status', 'Fornecedor atualizado com sucesso.');
+    }
+
+    /**
+     * Remove the specified supplier from storage.
+     */
+    public function destroy(Request $request, Supplier $supplier): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $supplier = $this->resolveOwnedSupplier($contractor, $supplier);
+        $supplier->delete();
+
+        return back()->with('status', 'Fornecedor removido com sucesso.');
+    }
+
     private function resolveCurrentContractor(Request $request): ?Contractor
     {
         $user = $request->user();
@@ -123,5 +170,11 @@ class SupplierController extends Controller
 
         return $fallback;
     }
-}
 
+    private function resolveOwnedSupplier(Contractor $contractor, Supplier $supplier): Supplier
+    {
+        abort_unless((int) $supplier->contractor_id === (int) $contractor->id, 404);
+
+        return $supplier;
+    }
+}

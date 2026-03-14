@@ -3,7 +3,9 @@
 namespace Tests\Feature\Admin;
 
 use App\Models\Category;
+use App\Models\Client;
 use App\Models\Contractor;
+use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -167,6 +169,100 @@ class CommerceCrudTest extends TestCase
         $this->assertDatabaseMissing('products', [
             'contractor_id' => $contractorA->id,
             'sku' => 'INV-001',
+        ]);
+    }
+
+    public function test_admin_can_update_and_delete_client_for_current_contractor(): void
+    {
+        $contractor = $this->createContractor('contratante-clientes', Contractor::NICHE_COMMERCIAL);
+        $user = $this->createAdminUser([$contractor]);
+
+        $client = Client::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Inicial',
+            'email' => 'cliente@exemplo.com',
+            'phone' => '11999990000',
+            'document' => '12345678900',
+            'city' => 'São Paulo',
+            'state' => 'SP',
+            'is_active' => true,
+        ]);
+
+        $updateResponse = $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->put(route('admin.clients.update', $client), [
+                'name' => 'Cliente Atualizado',
+                'email' => 'cliente-atualizado@exemplo.com',
+                'phone' => '11988887777',
+                'document' => '12345678900',
+                'city' => 'Campinas',
+                'state' => 'sp',
+                'is_active' => false,
+            ]);
+
+        $updateResponse->assertRedirect();
+        $this->assertDatabaseHas('clients', [
+            'id' => $client->id,
+            'name' => 'Cliente Atualizado',
+            'city' => 'Campinas',
+            'state' => 'SP',
+            'is_active' => false,
+        ]);
+
+        $deleteResponse = $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->delete(route('admin.clients.destroy', $client));
+
+        $deleteResponse->assertRedirect();
+        $this->assertDatabaseMissing('clients', ['id' => $client->id]);
+    }
+
+    public function test_admin_cannot_update_supplier_from_another_contractor_context(): void
+    {
+        $contractorA = $this->createContractor('contratante-a-suppliers', Contractor::NICHE_COMMERCIAL);
+        $contractorB = $this->createContractor('contratante-b-suppliers', Contractor::NICHE_COMMERCIAL);
+        $user = $this->createAdminUser([$contractorA, $contractorB]);
+
+        $foreignSupplier = Supplier::query()->create([
+            'contractor_id' => $contractorB->id,
+            'name' => 'Fornecedor Externo',
+            'email' => 'externo@exemplo.com',
+            'phone' => '21999990000',
+            'document' => '00999999999999',
+            'category' => 'Distribuição',
+            'lead_time_days' => 3,
+            'is_active' => true,
+        ]);
+
+        $response = $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractorA->id,
+                'two_factor_passed' => true,
+            ])
+            ->put(route('admin.suppliers.update', $foreignSupplier), [
+                'name' => 'Fornecedor Hackeado',
+                'email' => 'hack@exemplo.com',
+                'phone' => '21999990000',
+                'document' => '00999999999999',
+                'category' => 'Distribuição',
+                'lead_time_days' => 7,
+                'is_active' => true,
+            ]);
+
+        $response->assertNotFound();
+        $this->assertDatabaseHas('suppliers', [
+            'id' => $foreignSupplier->id,
+            'name' => 'Fornecedor Externo',
+            'lead_time_days' => 3,
         ]);
     }
 

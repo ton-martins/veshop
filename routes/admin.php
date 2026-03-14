@@ -28,9 +28,11 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
             Route::resource('categories', CategoryController::class)
                 ->except(['show', 'create', 'edit']);
 
-            Route::get('/clients', [ClientController::class, 'index'])->name('clients.index');
+            Route::resource('clients', ClientController::class)
+                ->except(['show', 'create', 'edit']);
 
-            Route::get('/suppliers', [SupplierController::class, 'index'])->name('suppliers.index');
+            Route::resource('suppliers', SupplierController::class)
+                ->except(['show', 'create', 'edit']);
 
             Route::get('/orders', function () {
                 return Inertia::render('Admin/Orders/Index');
