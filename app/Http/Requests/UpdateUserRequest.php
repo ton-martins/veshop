@@ -59,6 +59,7 @@ class UpdateUserRequest extends FormRequest
             'address' => ['nullable', 'array'],
             'preferences' => ['nullable', 'array'],
             'avatar_url' => ['nullable', 'url', 'max:2048'],
+            'avatar' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:2048'],
             'is_active' => ['required', 'boolean'],
         ];
     }

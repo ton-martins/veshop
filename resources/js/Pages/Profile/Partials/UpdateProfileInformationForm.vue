@@ -1,6 +1,7 @@
 <script setup>
 import InputError from '@/Components/InputError.vue';
-import { Link, useForm, usePage } from '@inertiajs/vue3';
+import { Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { computed, onBeforeUnmount, ref } from 'vue';
 
 defineProps({
     mustVerifyEmail: {
@@ -11,18 +12,133 @@ defineProps({
     },
 });
 
-const user = usePage().props.auth.user;
+const page = usePage();
+const user = computed(() => page.props.auth?.user ?? {});
 
 const form = useForm({
-    name: user.name,
-    email: user.email,
+    name: user.value.name ?? '',
+    email: user.value.email ?? '',
+    avatar: null,
+    remove_avatar: false,
 });
 
+const avatarInput = ref(null);
+const avatarPreviewUrl = ref('');
+const avatarImageError = ref(false);
+
+const normalizeStorageAvatarUrl = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+
+    try {
+        const parsed = new URL(raw, 'http://local');
+        const path = String(parsed.pathname || '');
+        if (path.startsWith('/storage/')) {
+            return `${path}${parsed.search || ''}`;
+        }
+    } catch {
+        // ignore
+    }
+
+    if (raw.startsWith('/storage/')) return raw;
+    if (raw.startsWith('storage/')) return `/${raw}`;
+
+    return raw;
+};
+
+const revokeAvatarPreview = () => {
+    if (avatarPreviewUrl.value && avatarPreviewUrl.value.startsWith('blob:')) {
+        URL.revokeObjectURL(avatarPreviewUrl.value);
+    }
+
+    avatarPreviewUrl.value = '';
+};
+
+const currentAvatarUrl = computed(() => {
+    if (avatarPreviewUrl.value) return avatarPreviewUrl.value;
+    if (form.remove_avatar) return '';
+
+    const value = normalizeStorageAvatarUrl(user.value.avatar_url ?? '');
+    if (!value || avatarImageError.value) return '';
+
+    return value;
+});
+
+const avatarInitials = computed(() => {
+    const source = String(form.name || user.value.name || 'U').trim();
+    const parts = source.split(/\s+/).filter(Boolean).slice(0, 2);
+    if (!parts.length) return 'U';
+    return parts.map((part) => part.charAt(0)).join('').toUpperCase();
+});
+
+const avatarFileLabel = computed(() => {
+    if (!(form.avatar instanceof File)) return '';
+    return form.avatar.name;
+});
+
+const chooseAvatarFile = () => {
+    avatarInput.value?.click();
+};
+
+const onAvatarFileChange = (event) => {
+    const input = event?.target;
+    const file = input?.files?.[0] ?? null;
+
+    revokeAvatarPreview();
+    avatarImageError.value = false;
+    form.remove_avatar = false;
+
+    if (!file) {
+        form.avatar = null;
+        return;
+    }
+
+    form.avatar = file;
+    avatarPreviewUrl.value = URL.createObjectURL(file);
+};
+
+const clearAvatar = () => {
+    form.avatar = null;
+    form.remove_avatar = true;
+    avatarImageError.value = false;
+    revokeAvatarPreview();
+
+    if (avatarInput.value) {
+        avatarInput.value.value = '';
+    }
+};
+
 const submit = () => {
-    form.patch(route('profile.update'), {
+    form.transform((data) => {
+        const payload = {
+            ...data,
+            _method: 'patch',
+        };
+
+        if (!(payload.avatar instanceof File)) {
+            delete payload.avatar;
+        }
+
+        return payload;
+    }).post(route('profile.update'), {
         preserveScroll: true,
+        preserveState: false,
+        forceFormData: true,
+        onSuccess: () => {
+            form.avatar = null;
+            avatarImageError.value = false;
+            revokeAvatarPreview();
+            router.reload({
+                preserveScroll: true,
+                only: ['auth'],
+            });
+        },
     });
 };
+
+onBeforeUnmount(() => {
+    revokeAvatarPreview();
+});
 </script>
 
 <template>
@@ -38,6 +154,54 @@ const submit = () => {
         </header>
 
         <form @submit.prevent="submit" class="space-y-4">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                <div class="flex items-center gap-3">
+                    <div class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-200 text-sm font-semibold text-slate-700">
+                        <img
+                            v-if="currentAvatarUrl"
+                            :src="currentAvatarUrl"
+                            alt="Avatar do usuário"
+                            class="h-full w-full object-cover"
+                            @error="avatarImageError = true"
+                        >
+                        <span v-else>{{ avatarInitials }}</span>
+                    </div>
+                    <div class="min-w-0 flex-1 space-y-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                class="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                @click="chooseAvatarFile"
+                            >
+                                Upload de avatar
+                            </button>
+                            <button
+                                v-if="currentAvatarUrl || avatarFileLabel"
+                                type="button"
+                                class="inline-flex items-center rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                                @click="clearAvatar"
+                            >
+                                Remover avatar
+                            </button>
+                        </div>
+                        <input
+                            ref="avatarInput"
+                            type="file"
+                            class="hidden"
+                            accept="image/png,image/jpeg,image/jpg"
+                            @change="onAvatarFileChange"
+                        >
+                        <p class="text-[11px] text-slate-500">
+                            Formatos: PNG, JPG ou JPEG (até 2MB).
+                        </p>
+                        <p v-if="avatarFileLabel" class="text-[11px] text-slate-600">
+                            Arquivo: {{ avatarFileLabel }}
+                        </p>
+                        <InputError class="mt-1" :message="form.errors.avatar" />
+                    </div>
+                </div>
+            </div>
+
             <div class="space-y-1">
                 <label for="name" class="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Nome
@@ -120,3 +284,4 @@ const submit = () => {
         </form>
     </section>
 </template>
+

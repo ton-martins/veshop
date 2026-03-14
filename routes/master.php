@@ -17,7 +17,7 @@ Route::middleware(['auth', '2fa', 'verified', 'role:master'])
         Route::redirect('/inicio', '/master/home');
 
         Route::resource('users', UserController::class)
-            ->except(['show']);
+            ->except(['show', 'create', 'edit']);
 
         Route::resource('contractors', ContractorController::class)
             ->except(['show', 'create', 'edit']);

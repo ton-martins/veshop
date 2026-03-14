@@ -1,5 +1,6 @@
 <script setup>
 import InputError from '@/Components/InputError.vue';
+import UiSelect from '@/Components/App/UiSelect.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
@@ -18,6 +19,11 @@ const props = defineProps({
 const addressJson = ref('');
 const preferencesJson = ref('');
 const jsonError = ref('');
+
+const roleOptions = props.roles.map((role) => ({
+    value: role,
+    label: role,
+}));
 
 const form = useForm({
     contractor_ids: [],
@@ -104,9 +110,7 @@ const submit = () => {
 
                 <div class="space-y-1">
                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Perfil</label>
-                    <select v-model="form.role" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                        <option v-for="role in roles" :key="role" :value="role">{{ role }}</option>
-                    </select>
+                    <UiSelect v-model="form.role" :options="roleOptions" button-class="w-full text-sm" />
                     <InputError :message="form.errors.role" />
                 </div>
 
@@ -118,17 +122,18 @@ const submit = () => {
 
                 <div class="space-y-1">
                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Contratante</label>
-                    <select
-                        v-model="form.contractor_ids"
-                        multiple
-                        class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                    >
-                        <option v-for="contractor in contractors" :key="contractor.id" :value="contractor.id">
-                            {{ contractor.name }}
-                        </option>
-                    </select>
+                    <div class="max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+                        <label
+                            v-for="contractor in contractors"
+                            :key="contractor.id"
+                            class="flex cursor-pointer items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm text-slate-700 last:border-b-0 hover:bg-slate-50"
+                        >
+                            <input v-model="form.contractor_ids" type="checkbox" class="rounded border-slate-300" :value="contractor.id">
+                            <span>{{ contractor.name }}</span>
+                        </label>
+                    </div>
                     <InputError :message="form.errors.contractor_ids" />
-                    <p class="text-[11px] text-slate-500">Segure Ctrl (ou Cmd) para selecionar mais de um contratante.</p>
+                    <p class="text-[11px] text-slate-500">Selecione um ou mais contratantes.</p>
                 </div>
 
                 <div class="space-y-1">

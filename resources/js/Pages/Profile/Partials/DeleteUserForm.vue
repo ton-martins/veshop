@@ -79,7 +79,7 @@ const closeModal = () => {
                         class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-rose-400 focus:ring-rose-300"
                         placeholder="Digite sua senha"
                         @keyup.enter="deleteUser"
-                    />
+                    >
 
                     <InputError :message="form.errors.password" class="mt-1" />
                 </div>

@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
@@ -33,13 +33,13 @@ const userName = computed(() => page.props.auth?.user?.name ?? 'Usuário');
                 <p class="mt-2 text-2xl font-semibold text-slate-900">{{ totals.masters ?? 0 }}</p>
             </article>
             <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">UsuÃ¡rios ativos</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Usuários ativos</p>
                 <p class="mt-2 text-2xl font-semibold text-slate-900">{{ totals.active_users ?? 0 }}</p>
             </article>
         </section>
 
         <section class="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 class="text-base font-semibold text-slate-900">Atalhos de gestÃ£o SaaS</h2>
+            <h2 class="text-base font-semibold text-slate-900">Atalhos de gestão SaaS</h2>
             <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <Link class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700" :href="route('master.contractors.index')">
                     Contratantes

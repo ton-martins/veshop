@@ -102,6 +102,26 @@ const darkenHex = (hex, amount = 0.18) => {
         .join('')}`;
 };
 
+const normalizeStorageAssetUrl = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    try {
+        const parsed = new URL(raw, 'http://local');
+        const path = String(parsed.pathname || '');
+        if (path.startsWith('/storage/')) {
+            return `${path}${parsed.search || ''}`;
+        }
+    } catch {
+        // ignore and fallback to raw checks below
+    }
+
+    if (raw.startsWith('/storage/')) return raw;
+    if (raw.startsWith('storage/')) return `/${raw}`;
+
+    return raw;
+};
+
 export const useBranding = () => {
     const page = usePage();
 
@@ -158,7 +178,7 @@ export const useBranding = () => {
         return 'image/png';
     });
 
-    const userAvatarUrl = computed(() => page.props.auth?.user?.avatar_url || '');
+    const userAvatarUrl = computed(() => normalizeStorageAssetUrl(page.props.auth?.user?.avatar_url || ''));
     const themeStyles = computed(() => ({
         ...BRAND_CSS_VARS,
         '--veshop-primary': primaryColor.value,

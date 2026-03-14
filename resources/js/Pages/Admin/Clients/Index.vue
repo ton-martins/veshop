@@ -1,7 +1,10 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Modal from '@/Components/Modal.vue';
+import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
+import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
+import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { Users2, UserPlus2, MapPin, AlertCircle, Search, Filter, Plus, Pencil, Trash2 } from 'lucide-vue-next';
@@ -25,6 +28,12 @@ const filterForm = useForm({
     search: props.filters?.search ?? '',
     status: props.filters?.status ?? '',
 });
+
+const statusOptions = [
+    { value: '', label: 'Todos' },
+    { value: 'active', label: 'Ativos' },
+    { value: 'inactive', label: 'Inativos' },
+];
 
 watch(
     () => props.filters,
@@ -68,6 +77,8 @@ const statsCards = computed(() => [
 
 const showModal = ref(false);
 const editingClient = ref(null);
+const showDeleteModal = ref(false);
+const clientToDelete = ref(null);
 
 const clientForm = useForm({
     name: '',
@@ -78,6 +89,7 @@ const clientForm = useForm({
     state: '',
     is_active: true,
 });
+const deleteForm = useForm({});
 
 const isEditing = computed(() => Boolean(editingClient.value?.id));
 
@@ -122,12 +134,22 @@ const submitClient = () => {
     });
 };
 
-const removeClient = (client) => {
-    const confirmed = window.confirm(`Excluir o cliente "${client.name}"?`);
-    if (!confirmed) return;
+const openDeleteModal = (client) => {
+    clientToDelete.value = client;
+    showDeleteModal.value = true;
+};
 
-    router.delete(route('admin.clients.destroy', client.id), {
+const closeDeleteModal = () => {
+    showDeleteModal.value = false;
+    clientToDelete.value = null;
+};
+
+const removeClient = () => {
+    if (!clientToDelete.value?.id) return;
+
+    deleteForm.delete(route('admin.clients.destroy', clientToDelete.value.id), {
         preserveScroll: true,
+        onSuccess: closeDeleteModal,
     });
 };
 </script>
@@ -153,26 +175,23 @@ const removeClient = (client) => {
 
             <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div class="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                        <Search class="h-4 w-4 text-slate-500" />
+                    <div class="veshop-search-shell flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <Search class="veshop-search-icon h-4 w-4 text-slate-500" />
                         <input
                             v-model="filterForm.search"
                             type="text"
                             placeholder="Buscar cliente por nome, email, telefone ou cidade"
-                            class="w-full bg-transparent text-sm text-slate-700 outline-none"
+                            class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                             @keydown.enter.prevent="applyFilters"
                         />
                     </div>
                     <div class="veshop-toolbar-actions lg:justify-end">
-                        <select
+                        <UiSelect
                             v-model="filterForm.status"
-                            class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 sm:w-auto"
+                            :options="statusOptions"
+                            button-class="w-full sm:w-auto"
                             @change="applyFilters"
-                        >
-                            <option value="">Todos</option>
-                            <option value="active">Ativos</option>
-                            <option value="inactive">Inativos</option>
-                        </select>
+                        />
                         <button type="button" class="inline-flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto" @click="clearFilters">
                             <Filter class="h-3.5 w-3.5" />
                             Limpar
@@ -233,7 +252,7 @@ const removeClient = (client) => {
                                         <button
                                             type="button"
                                             class="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                                            @click="removeClient(client)"
+                                            @click="openDeleteModal(client)"
                                         >
                                             <Trash2 class="h-3.5 w-3.5" />
                                             Excluir
@@ -249,12 +268,14 @@ const removeClient = (client) => {
             </section>
         </section>
 
-        <Modal :show="showModal" max-width="lg" @close="closeModal">
-            <div class="space-y-4 bg-white p-6">
-                <h3 class="text-base font-semibold text-slate-900">
-                    {{ isEditing ? 'Editar cliente' : 'Novo cliente' }}
-                </h3>
-
+        <Modal :show="showModal" max-width="5xl" @close="closeModal">
+            <WizardModalFrame
+                :title="isEditing ? 'Editar cliente' : 'Novo cliente'"
+                description="Preencha os dados do cliente."
+                :steps="['Dados do cliente']"
+                :current-step="1"
+                @close="closeModal"
+            >
                 <div class="grid gap-3 md:grid-cols-2">
                     <div class="md:col-span-2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
@@ -329,24 +350,36 @@ const removeClient = (client) => {
                     Cliente ativo
                 </label>
 
-                <div class="flex items-center justify-end gap-2 border-t border-slate-200 pt-4">
-                    <button
-                        type="button"
-                        class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        @click="closeModal"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        type="button"
-                        class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                        :disabled="clientForm.processing"
-                        @click="submitClient"
-                    >
-                        {{ clientForm.processing ? 'Salvando...' : 'Salvar' }}
-                    </button>
-                </div>
-            </div>
+                <template #footer>
+                    <div class="flex items-center justify-end gap-2">
+                        <button
+                            type="button"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="closeModal"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="clientForm.processing"
+                            @click="submitClient"
+                        >
+                            {{ clientForm.processing ? 'Salvando...' : 'Salvar' }}
+                        </button>
+                    </div>
+                </template>
+            </WizardModalFrame>
         </Modal>
+
+        <DeleteConfirmModal
+            :show="showDeleteModal"
+            title="Excluir cliente"
+            message="Tem certeza que deseja excluir este cliente?"
+            :item-label="clientToDelete?.name ? `Cliente: ${clientToDelete.name}` : ''"
+            :processing="deleteForm.processing"
+            @close="closeDeleteModal"
+            @confirm="removeClient"
+        />
     </AuthenticatedLayout>
 </template>

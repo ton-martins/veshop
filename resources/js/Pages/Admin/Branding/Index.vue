@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import BrandingImageUploader from '@/Components/BrandingImageUploader.vue';
 import ActionButton from '@/Components/ActionButton.vue';
+import UiSelect from '@/Components/App/UiSelect.vue';
 import Modal from '@/Components/Modal.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
@@ -51,6 +52,13 @@ const currentNicheLabel = computed(() => {
     if (found?.label) return found.label;
     return currentNiche.value === 'services' ? 'Serviços' : 'Comércio';
 });
+
+const timezoneOptions = computed(() =>
+    (props.timezones ?? []).map((timezone) => ({
+        value: timezone.value,
+        label: timezone.label ?? timezone.value,
+    })),
+);
 
 const hydrate = () => {
     const contractor = props.profileContractor ?? {};
@@ -233,11 +241,7 @@ const submitSupportConfirmation = () => {
 
                         <div class="space-y-2">
                             <label class="text-xs font-medium uppercase tracking-wide text-slate-500">Fuso horário</label>
-                            <select v-model="form.timezone" class="w-full rounded-md border border-emerald-100 px-3 py-2 text-sm">
-                                <option v-for="timezone in props.timezones" :key="timezone.value" :value="timezone.value">
-                                    {{ timezone.label ?? timezone.value }}
-                                </option>
-                            </select>
+                            <UiSelect v-model="form.timezone" :options="timezoneOptions" button-class="w-full text-sm" />
                             <p v-if="form.errors.timezone" class="text-[11px] text-rose-600">{{ form.errors.timezone }}</p>
                         </div>
                     </div>

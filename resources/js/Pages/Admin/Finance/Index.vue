@@ -141,12 +141,12 @@ const emptyStateLabel = computed(() =>
 
             <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div class="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                        <Search class="h-4 w-4 text-slate-500" />
+                    <div class="veshop-search-shell flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <Search class="veshop-search-icon h-4 w-4 text-slate-500" />
                         <input
                             type="text"
                             :placeholder="searchPlaceholder"
-                            class="w-full bg-transparent text-sm text-slate-700 outline-none"
+                            class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                         />
                     </div>
 

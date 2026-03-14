@@ -1,6 +1,7 @@
-﻿<script setup>
+<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
+import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, router } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { Briefcase, Search, Filter, Clock3, CircleDollarSign } from 'lucide-vue-next';
@@ -67,6 +68,20 @@ const asCurrency = (value) =>
     Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const formatDuration = (minutes) => `${Number(minutes ?? 0)} min`;
 
+const categoryOptions = computed(() => [
+    { value: '', label: 'Todas categorias' },
+    ...(props.categories ?? []).map((category) => ({
+        value: category.id,
+        label: category.name,
+    })),
+]);
+
+const statusOptions = [
+    { value: '', label: 'Todos' },
+    { value: 'active', label: 'Ativos' },
+    { value: 'inactive', label: 'Inativos' },
+];
+
 const statsCards = computed(() => [
     { key: 'total', label: 'Serviços cadastrados', value: String(props.stats?.total ?? 0), icon: Briefcase, tone: 'bg-slate-100 text-slate-700' },
     { key: 'active', label: 'Serviços ativos', value: String(props.stats?.active ?? 0), icon: Clock3, tone: 'bg-emerald-100 text-emerald-700' },
@@ -95,36 +110,29 @@ const statsCards = computed(() => [
 
             <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div class="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                        <Search class="h-4 w-4 text-slate-500" />
+                    <div class="veshop-search-shell flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <Search class="veshop-search-icon h-4 w-4 text-slate-500" />
                         <input
                             v-model="search"
                             type="text"
                             placeholder="Buscar serviço por código ou nome"
-                            class="w-full bg-transparent text-sm text-slate-700 outline-none"
+                            class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                             @keydown.enter.prevent="applyFilters"
                         />
                     </div>
                     <div class="flex items-center gap-2">
-                        <select
+                        <UiSelect
                             v-model="categoryId"
-                            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                            :options="categoryOptions"
+                            button-class="w-full sm:w-auto"
                             @change="applyFilters"
-                        >
-                            <option value="">Todas categorias</option>
-                            <option v-for="category in categories" :key="category.id" :value="category.id">
-                                {{ category.name }}
-                            </option>
-                        </select>
-                        <select
+                        />
+                        <UiSelect
                             v-model="status"
-                            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                            :options="statusOptions"
+                            button-class="w-full sm:w-auto"
                             @change="applyFilters"
-                        >
-                            <option value="">Todos</option>
-                            <option value="active">Ativos</option>
-                            <option value="inactive">Inativos</option>
-                        </select>
+                        />
                         <button type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="clearFilters">
                             <Filter class="h-3.5 w-3.5" />
                             Limpar

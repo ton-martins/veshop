@@ -74,7 +74,7 @@
     {
         key: 'financeiro',
         label: 'Financeiro',
-        icon: 'History',
+        icon: 'CircleDollarSign',
         module: 'commercial',
         links: [
             {
@@ -97,7 +97,7 @@
                 label: 'Relatórios',
                 route: 'admin.reports.index',
                 match: ['admin.reports.*'],
-                icon: 'PieChart',
+                icon: 'FileText',
             },
         ],
     },

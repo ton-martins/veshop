@@ -1,7 +1,10 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Modal from '@/Components/Modal.vue';
+import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
+import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
+import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import {
     Layers,
@@ -81,6 +84,24 @@ const clearFilters = () => {
 
 const rows = computed(() => props.plans?.data ?? []);
 const paginationLinks = computed(() => props.plans?.links ?? []);
+const nicheFilterOptions = computed(() => [
+    { value: '', label: 'Todos nichos' },
+    ...(props.niches ?? []).map((niche) => ({
+        value: niche.value,
+        label: niche.label,
+    })),
+]);
+const statusOptions = [
+    { value: '', label: 'Todos' },
+    { value: 'active', label: 'Ativos' },
+    { value: 'inactive', label: 'Inativos' },
+];
+const nicheFormOptions = computed(() =>
+    (props.niches ?? []).map((niche) => ({
+        value: niche.value,
+        label: niche.label,
+    })),
+);
 const groupedRows = computed(() => {
     const nicheMap = new Map((props.niches ?? []).map((niche) => [niche.value, { ...niche, plans: [] }]));
 
@@ -114,6 +135,8 @@ const statsCards = computed(() => [
 
 const showModal = ref(false);
 const editingPlan = ref(null);
+const showDeleteModal = ref(false);
+const planToDelete = ref(null);
 
 const planForm = useForm({
     niche: props.niches?.[0]?.value ?? 'commercial',
@@ -133,6 +156,7 @@ const planForm = useForm({
     is_featured: false,
     show_on_landing: false,
 });
+const deleteForm = useForm({});
 
 const isEditing = computed(() => Boolean(editingPlan.value?.id));
 
@@ -207,12 +231,22 @@ const submitPlan = () => {
     });
 };
 
-const removePlan = (plan) => {
-    const confirmed = window.confirm(`Excluir o plano "${plan.name}"?`);
-    if (!confirmed) return;
+const openDeleteModal = (plan) => {
+    planToDelete.value = plan;
+    showDeleteModal.value = true;
+};
 
-    router.delete(route('master.plans.destroy', plan.id), {
+const closeDeleteModal = () => {
+    showDeleteModal.value = false;
+    planToDelete.value = null;
+};
+
+const removePlan = () => {
+    if (!planToDelete.value?.id) return;
+
+    deleteForm.delete(route('master.plans.destroy', planToDelete.value.id), {
         preserveScroll: true,
+        onSuccess: closeDeleteModal,
     });
 };
 
@@ -299,36 +333,29 @@ const planFeatureLines = (plan) =>
 
             <section class="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm md:p-6">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div class="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                        <Search class="h-4 w-4 text-slate-500" />
+                    <div class="veshop-search-shell flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <Search class="veshop-search-icon h-4 w-4 text-slate-500" />
                         <input
                             v-model="filterForm.search"
                             type="text"
                             placeholder="Buscar plano por nome, slug, badge ou subtitulo"
-                            class="w-full bg-transparent text-sm text-slate-700 outline-none"
+                            class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                             @keydown.enter.prevent="applyFilters"
                         />
                     </div>
                     <div class="veshop-toolbar-actions lg:justify-end">
-                        <select
+                        <UiSelect
                             v-model="filterForm.niche"
-                            class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 sm:w-auto"
+                            :options="nicheFilterOptions"
+                            button-class="w-full sm:w-auto"
                             @change="applyFilters"
-                        >
-                            <option value="">Todos nichos</option>
-                            <option v-for="niche in props.niches" :key="`plan-filter-niche-${niche.value}`" :value="niche.value">
-                                {{ niche.label }}
-                            </option>
-                        </select>
-                        <select
+                        />
+                        <UiSelect
                             v-model="filterForm.status"
-                            class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 sm:w-auto"
+                            :options="statusOptions"
+                            button-class="w-full sm:w-auto"
                             @change="applyFilters"
-                        >
-                            <option value="">Todos</option>
-                            <option value="active">Ativos</option>
-                            <option value="inactive">Inativos</option>
-                        </select>
+                        />
                         <button
                             type="button"
                             class="inline-flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto"
@@ -448,7 +475,7 @@ const planFeatureLines = (plan) =>
                                         <button
                                             type="button"
                                             class="inline-flex items-center justify-center gap-1 rounded-lg border border-rose-200 px-2 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                                            @click="removePlan(plan)"
+                                            @click="openDeleteModal(plan)"
                                         >
                                             <Trash2 class="h-3.5 w-3.5" />
                                             Excluir
@@ -486,13 +513,15 @@ const planFeatureLines = (plan) =>
             </section>
         </section>
 
-        <Modal :show="showModal" max-width="2xl" @close="closeModal">
-            <div class="space-y-4 bg-white p-6">
-                <h3 class="text-base font-semibold text-slate-900">
-                    {{ isEditing ? 'Editar plano' : 'Novo plano' }}
-                </h3>
-
-                <div class="grid gap-3 md:grid-cols-2">
+        <Modal :show="showModal" max-width="5xl" @close="closeModal">
+            <WizardModalFrame
+                :title="isEditing ? 'Editar plano' : 'Novo plano'"
+                description="Preencha os dados do plano."
+                :steps="['Dados do plano']"
+                :current-step="1"
+                @close="closeModal"
+            >
+                <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
                         <input
@@ -517,14 +546,11 @@ const planFeatureLines = (plan) =>
 
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nicho</label>
-                        <select
+                        <UiSelect
                             v-model="planForm.niche"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                        >
-                            <option v-for="niche in props.niches" :key="`plan-form-niche-${niche.value}`" :value="niche.value">
-                                {{ niche.label }}
-                            </option>
-                        </select>
+                            :options="nicheFormOptions"
+                            button-class="mt-1 w-full text-sm"
+                        />
                         <p v-if="planForm.errors.niche" class="mt-1 text-xs text-rose-600">{{ planForm.errors.niche }}</p>
                     </div>
 
@@ -539,7 +565,7 @@ const planFeatureLines = (plan) =>
                         <p v-if="planForm.errors.badge" class="mt-1 text-xs text-rose-600">{{ planForm.errors.badge }}</p>
                     </div>
 
-                    <div class="md:col-span-2">
+                    <div class="md:col-span-2 xl:col-span-3">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Subtitulo</label>
                         <input
                             v-model="planForm.subtitle"
@@ -550,7 +576,7 @@ const planFeatureLines = (plan) =>
                         <p v-if="planForm.errors.subtitle" class="mt-1 text-xs text-rose-600">{{ planForm.errors.subtitle }}</p>
                     </div>
 
-                    <div class="md:col-span-2">
+                    <div class="md:col-span-2 xl:col-span-3">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Resumo</label>
                         <textarea
                             v-model="planForm.summary"
@@ -626,7 +652,7 @@ const planFeatureLines = (plan) =>
                         <p v-if="planForm.errors.tier_rank" class="mt-1 text-xs text-rose-600">{{ planForm.errors.tier_rank }}</p>
                     </div>
 
-                    <div class="md:col-span-2">
+                    <div class="md:col-span-2 xl:col-span-3">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Beneficios (1 por linha)</label>
                         <textarea
                             v-model="planForm.features_text"
@@ -664,24 +690,36 @@ const planFeatureLines = (plan) =>
                     </label>
                 </div>
 
-                <div class="flex items-center justify-end gap-2 border-t border-slate-200 pt-4">
-                    <button
-                        type="button"
-                        class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        @click="closeModal"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        type="button"
-                        class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                        :disabled="planForm.processing"
-                        @click="submitPlan"
-                    >
-                        {{ planForm.processing ? 'Salvando...' : 'Salvar' }}
-                    </button>
-                </div>
-            </div>
+                <template #footer>
+                    <div class="flex items-center justify-end gap-2">
+                        <button
+                            type="button"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="closeModal"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="planForm.processing"
+                            @click="submitPlan"
+                        >
+                            {{ planForm.processing ? 'Salvando...' : 'Salvar' }}
+                        </button>
+                    </div>
+                </template>
+            </WizardModalFrame>
         </Modal>
+
+        <DeleteConfirmModal
+            :show="showDeleteModal"
+            title="Excluir plano"
+            message="Tem certeza que deseja excluir este plano?"
+            :item-label="planToDelete?.name ? `Plano: ${planToDelete.name}` : ''"
+            :processing="deleteForm.processing"
+            @close="closeDeleteModal"
+            @confirm="removePlan"
+        />
     </AuthenticatedLayout>
 </template>

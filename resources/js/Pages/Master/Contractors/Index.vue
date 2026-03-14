@@ -1,7 +1,10 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Modal from '@/Components/Modal.vue';
+import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
+import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
+import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import { Building2, CircleCheckBig, Store, Briefcase, Search, Filter, Plus, Pencil, Trash2 } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
@@ -83,6 +86,25 @@ const filteredPlans = computed(() => {
 
     return allPlans.filter((plan) => plan.niche === filterForm.niche);
 });
+const nicheFilterOptions = computed(() => [
+    { value: '', label: 'Todos nichos' },
+    ...(props.niches ?? []).map((niche) => ({
+        value: niche.value,
+        label: niche.label,
+    })),
+]);
+const planFilterOptions = computed(() => [
+    { value: '', label: 'Todos planos' },
+    ...(filteredPlans.value ?? []).map((plan) => ({
+        value: plan.id,
+        label: filterForm.niche ? plan.name : `${plan.name} (${plan.niche_label})`,
+    })),
+]);
+const statusFilterOptions = [
+    { value: '', label: 'Todos status' },
+    { value: 'active', label: 'Ativos' },
+    { value: 'inactive', label: 'Inativos' },
+];
 
 const statsCards = computed(() => [
     { key: 'total', label: 'Contratantes', value: String(props.stats?.total ?? 0), icon: Building2, tone: 'bg-slate-100 text-slate-700' },
@@ -93,6 +115,8 @@ const statsCards = computed(() => [
 
 const showModal = ref(false);
 const editingContractor = ref(null);
+const showDeleteModal = ref(false);
+const contractorToDelete = ref(null);
 
 const contractorForm = useForm({
     name: '',
@@ -107,9 +131,23 @@ const contractorForm = useForm({
     plan_id: '',
     is_active: true,
 });
+const deleteForm = useForm({});
 const formPlans = computed(() => {
     return (props.plans ?? []).filter((plan) => plan.niche === contractorForm.business_niche);
 });
+const nicheFormOptions = computed(() =>
+    (props.niches ?? []).map((niche) => ({
+        value: niche.value,
+        label: niche.label,
+    })),
+);
+const planFormOptions = computed(() => [
+    { value: '', label: 'Sem plano' },
+    ...(formPlans.value ?? []).map((plan) => ({
+        value: plan.id,
+        label: plan.name,
+    })),
+]);
 
 const isEditing = computed(() => Boolean(editingContractor.value?.id));
 
@@ -184,12 +222,22 @@ const submitContractor = () => {
     });
 };
 
-const removeContractor = (contractor) => {
-    const confirmed = window.confirm(`Excluir o contratante "${contractor.name}"?`);
-    if (!confirmed) return;
+const openDeleteModal = (contractor) => {
+    contractorToDelete.value = contractor;
+    showDeleteModal.value = true;
+};
 
-    router.delete(route('master.contractors.destroy', contractor.id), {
+const closeDeleteModal = () => {
+    showDeleteModal.value = false;
+    contractorToDelete.value = null;
+};
+
+const removeContractor = () => {
+    if (!contractorToDelete.value?.id) return;
+
+    deleteForm.delete(route('master.contractors.destroy', contractorToDelete.value.id), {
         preserveScroll: true,
+        onSuccess: closeDeleteModal,
     });
 };
 
@@ -229,46 +277,35 @@ const formatMoney = (value) => {
 
             <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div class="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                        <Search class="h-4 w-4 text-slate-500" />
+                    <div class="veshop-search-shell flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <Search class="veshop-search-icon h-4 w-4 text-slate-500" />
                         <input
                             v-model="filterForm.search"
                             type="text"
                             placeholder="Buscar contratante por nome, email, slug ou CNPJ"
-                            class="w-full bg-transparent text-sm text-slate-700 outline-none"
+                            class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                             @keydown.enter.prevent="applyFilters"
                         />
                     </div>
                     <div class="flex items-center gap-2">
-                        <select
+                        <UiSelect
                             v-model="filterForm.niche"
-                            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                            :options="nicheFilterOptions"
+                            button-class="w-full sm:w-auto"
                             @change="applyFilters"
-                        >
-                            <option value="">Todos nichos</option>
-                            <option v-for="niche in props.niches" :key="niche.value" :value="niche.value">
-                                {{ niche.label }}
-                            </option>
-                        </select>
-                        <select
+                        />
+                        <UiSelect
                             v-model="filterForm.plan_id"
-                            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                            :options="planFilterOptions"
+                            button-class="w-full sm:w-auto"
                             @change="applyFilters"
-                        >
-                            <option value="">Todos planos</option>
-                            <option v-for="plan in filteredPlans" :key="plan.id" :value="plan.id">
-                                {{ filterForm.niche ? plan.name : `${plan.name} (${plan.niche_label})` }}
-                            </option>
-                        </select>
-                        <select
+                        />
+                        <UiSelect
                             v-model="filterForm.status"
-                            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                            :options="statusFilterOptions"
+                            button-class="w-full sm:w-auto"
                             @change="applyFilters"
-                        >
-                            <option value="">Todos status</option>
-                            <option value="active">Ativos</option>
-                            <option value="inactive">Inativos</option>
-                        </select>
+                        />
                         <button
                             type="button"
                             class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
@@ -338,7 +375,7 @@ const formatMoney = (value) => {
                                         <button
                                             type="button"
                                             class="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                                            @click="removeContractor(contractor)"
+                                            @click="openDeleteModal(contractor)"
                                         >
                                             <Trash2 class="h-3.5 w-3.5" />
                                             Excluir
@@ -354,12 +391,14 @@ const formatMoney = (value) => {
             </section>
         </section>
 
-        <Modal :show="showModal" max-width="2xl" @close="closeModal">
-            <div class="space-y-4 bg-white p-6">
-                <h3 class="text-base font-semibold text-slate-900">
-                    {{ isEditing ? 'Editar contratante' : 'Novo contratante' }}
-                </h3>
-
+        <Modal :show="showModal" max-width="5xl" @close="closeModal">
+            <WizardModalFrame
+                :title="isEditing ? 'Editar contratante' : 'Novo contratante'"
+                description="Preencha os dados do contratante."
+                :steps="['Dados do contratante']"
+                :current-step="1"
+                @close="closeModal"
+            >
                 <div class="grid gap-3 md:grid-cols-2">
                     <div class="md:col-span-2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
@@ -451,28 +490,21 @@ const formatMoney = (value) => {
 
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nicho</label>
-                        <select
+                        <UiSelect
                             v-model="contractorForm.business_niche"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                        >
-                            <option v-for="niche in props.niches" :key="niche.value" :value="niche.value">
-                                {{ niche.label }}
-                            </option>
-                        </select>
+                            :options="nicheFormOptions"
+                            button-class="mt-1 w-full text-sm"
+                        />
                         <p v-if="contractorForm.errors.business_niche" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.business_niche }}</p>
                     </div>
 
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Plano ativo</label>
-                        <select
+                        <UiSelect
                             v-model="contractorForm.plan_id"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                        >
-                            <option value="">Sem plano</option>
-                            <option v-for="plan in formPlans" :key="plan.id" :value="plan.id">
-                                {{ plan.name }}
-                            </option>
-                        </select>
+                            :options="planFormOptions"
+                            button-class="mt-1 w-full text-sm"
+                        />
                         <p v-if="contractorForm.errors.plan_id" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.plan_id }}</p>
                     </div>
                 </div>
@@ -482,24 +514,36 @@ const formatMoney = (value) => {
                     Contratante ativo
                 </label>
 
-                <div class="flex items-center justify-end gap-2 border-t border-slate-200 pt-4">
-                    <button
-                        type="button"
-                        class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        @click="closeModal"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        type="button"
-                        class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                        :disabled="contractorForm.processing"
-                        @click="submitContractor"
-                    >
-                        {{ contractorForm.processing ? 'Salvando...' : 'Salvar' }}
-                    </button>
-                </div>
-            </div>
+                <template #footer>
+                    <div class="flex items-center justify-end gap-2">
+                        <button
+                            type="button"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="closeModal"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="contractorForm.processing"
+                            @click="submitContractor"
+                        >
+                            {{ contractorForm.processing ? 'Salvando...' : 'Salvar' }}
+                        </button>
+                    </div>
+                </template>
+            </WizardModalFrame>
         </Modal>
+
+        <DeleteConfirmModal
+            :show="showDeleteModal"
+            title="Excluir contratante"
+            message="Tem certeza que deseja excluir este contratante?"
+            :item-label="contractorToDelete?.name ? `Contratante: ${contractorToDelete.name}` : ''"
+            :processing="deleteForm.processing"
+            @close="closeDeleteModal"
+            @confirm="removeContractor"
+        />
     </AuthenticatedLayout>
 </template>

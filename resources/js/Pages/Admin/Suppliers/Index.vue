@@ -1,7 +1,10 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Modal from '@/Components/Modal.vue';
+import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
+import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
+import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { Truck, PackageCheck, Timer, AlertTriangle, Search, Filter, Plus, Pencil, Trash2 } from 'lucide-vue-next';
@@ -25,6 +28,12 @@ const filterForm = useForm({
     search: props.filters?.search ?? '',
     status: props.filters?.status ?? '',
 });
+
+const statusOptions = [
+    { value: '', label: 'Todos' },
+    { value: 'active', label: 'Ativos' },
+    { value: 'inactive', label: 'Inativos' },
+];
 
 watch(
     () => props.filters,
@@ -68,6 +77,8 @@ const statsCards = computed(() => [
 
 const showModal = ref(false);
 const editingSupplier = ref(null);
+const showDeleteModal = ref(false);
+const supplierToDelete = ref(null);
 
 const supplierForm = useForm({
     name: '',
@@ -78,6 +89,7 @@ const supplierForm = useForm({
     lead_time_days: 0,
     is_active: true,
 });
+const deleteForm = useForm({});
 
 const isEditing = computed(() => Boolean(editingSupplier.value?.id));
 
@@ -123,12 +135,22 @@ const submitSupplier = () => {
     });
 };
 
-const removeSupplier = (supplier) => {
-    const confirmed = window.confirm(`Excluir o fornecedor "${supplier.name}"?`);
-    if (!confirmed) return;
+const openDeleteModal = (supplier) => {
+    supplierToDelete.value = supplier;
+    showDeleteModal.value = true;
+};
 
-    router.delete(route('admin.suppliers.destroy', supplier.id), {
+const closeDeleteModal = () => {
+    showDeleteModal.value = false;
+    supplierToDelete.value = null;
+};
+
+const removeSupplier = () => {
+    if (!supplierToDelete.value?.id) return;
+
+    deleteForm.delete(route('admin.suppliers.destroy', supplierToDelete.value.id), {
         preserveScroll: true,
+        onSuccess: closeDeleteModal,
     });
 };
 </script>
@@ -154,26 +176,23 @@ const removeSupplier = (supplier) => {
 
             <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div class="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                        <Search class="h-4 w-4 text-slate-500" />
+                    <div class="veshop-search-shell flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <Search class="veshop-search-icon h-4 w-4 text-slate-500" />
                         <input
                             v-model="filterForm.search"
                             type="text"
                             placeholder="Buscar fornecedor por nome, email ou segmento"
-                            class="w-full bg-transparent text-sm text-slate-700 outline-none"
+                            class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                             @keydown.enter.prevent="applyFilters"
                         />
                     </div>
                     <div class="veshop-toolbar-actions lg:justify-end">
-                        <select
+                        <UiSelect
                             v-model="filterForm.status"
-                            class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 sm:w-auto"
+                            :options="statusOptions"
+                            button-class="w-full sm:w-auto"
                             @change="applyFilters"
-                        >
-                            <option value="">Todos</option>
-                            <option value="active">Ativos</option>
-                            <option value="inactive">Inativos</option>
-                        </select>
+                        />
                         <button type="button" class="inline-flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto" @click="clearFilters">
                             <Filter class="h-3.5 w-3.5" />
                             Limpar
@@ -234,7 +253,7 @@ const removeSupplier = (supplier) => {
                                         <button
                                             type="button"
                                             class="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                                            @click="removeSupplier(supplier)"
+                                            @click="openDeleteModal(supplier)"
                                         >
                                             <Trash2 class="h-3.5 w-3.5" />
                                             Excluir
@@ -250,12 +269,14 @@ const removeSupplier = (supplier) => {
             </section>
         </section>
 
-        <Modal :show="showModal" max-width="lg" @close="closeModal">
-            <div class="space-y-4 bg-white p-6">
-                <h3 class="text-base font-semibold text-slate-900">
-                    {{ isEditing ? 'Editar fornecedor' : 'Novo fornecedor' }}
-                </h3>
-
+        <Modal :show="showModal" max-width="5xl" @close="closeModal">
+            <WizardModalFrame
+                :title="isEditing ? 'Editar fornecedor' : 'Novo fornecedor'"
+                description="Preencha os dados do fornecedor."
+                :steps="['Dados do fornecedor']"
+                :current-step="1"
+                @close="closeModal"
+            >
                 <div class="grid gap-3 md:grid-cols-2">
                     <div class="md:col-span-2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
@@ -330,24 +351,36 @@ const removeSupplier = (supplier) => {
                     Fornecedor ativo
                 </label>
 
-                <div class="flex items-center justify-end gap-2 border-t border-slate-200 pt-4">
-                    <button
-                        type="button"
-                        class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        @click="closeModal"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        type="button"
-                        class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                        :disabled="supplierForm.processing"
-                        @click="submitSupplier"
-                    >
-                        {{ supplierForm.processing ? 'Salvando...' : 'Salvar' }}
-                    </button>
-                </div>
-            </div>
+                <template #footer>
+                    <div class="flex items-center justify-end gap-2">
+                        <button
+                            type="button"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="closeModal"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="supplierForm.processing"
+                            @click="submitSupplier"
+                        >
+                            {{ supplierForm.processing ? 'Salvando...' : 'Salvar' }}
+                        </button>
+                    </div>
+                </template>
+            </WizardModalFrame>
         </Modal>
+
+        <DeleteConfirmModal
+            :show="showDeleteModal"
+            title="Excluir fornecedor"
+            message="Tem certeza que deseja excluir este fornecedor?"
+            :item-label="supplierToDelete?.name ? `Fornecedor: ${supplierToDelete.name}` : ''"
+            :processing="deleteForm.processing"
+            @close="closeDeleteModal"
+            @confirm="removeSupplier"
+        />
     </AuthenticatedLayout>
 </template>

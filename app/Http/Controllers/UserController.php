@@ -7,7 +7,9 @@ use App\Http\Requests\UpdateUserRequest;
 use App\Models\Contractor;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -67,7 +69,15 @@ class UserController extends Controller
                         'phone' => $user->phone,
                         'role' => $user->role,
                         'job_title' => $user->job_title,
+                        'avatar_url' => $user->avatar_url,
                         'is_active' => (bool) $user->is_active,
+                        'address' => $user->address,
+                        'preferences' => $user->preferences,
+                        'contractor_ids' => $user->contractors
+                            ->pluck('id')
+                            ->map(static fn ($id): int => (int) $id)
+                            ->values()
+                            ->all(),
                         'contractors' => $user->contractors
                             ->map(static fn (Contractor $contractor): array => [
                                 'id' => $contractor->id,
@@ -92,31 +102,23 @@ class UserController extends Controller
     }
 
     /**
-     * Show the form for creating a new user.
-     */
-    public function create(Request $request): Response
-    {
-        $this->authorizeManager($request);
-
-        return Inertia::render('Users/Create', [
-            'roles' => User::roles(),
-            'contractors' => Contractor::query()
-                ->orderBy('name')
-                ->get(['id', 'name']),
-        ]);
-    }
-
-    /**
      * Store a newly created user.
      */
     public function store(StoreUserRequest $request): RedirectResponse
     {
         $data = $request->validated();
+        $avatarFile = $request->file('avatar');
         $contractorIds = $data['contractor_ids'] ?? [];
-        unset($data['contractor_ids']);
+        unset($data['contractor_ids'], $data['avatar']);
         $data['password_changed_at'] = now();
 
         $user = User::query()->create($data);
+
+        if ($avatarFile instanceof UploadedFile) {
+            $avatarUrl = $this->storeUserAvatar($user, $avatarFile);
+            $user->forceFill(['avatar_url' => $avatarUrl])->save();
+        }
+
         $this->syncUserContractors($user, $contractorIds);
 
         return redirect()
@@ -125,43 +127,14 @@ class UserController extends Controller
     }
 
     /**
-     * Show the form for editing a user.
-     */
-    public function edit(Request $request, User $user): Response
-    {
-        $this->authorizeManager($request);
-        $user->loadMissing('contractors:id,name');
-
-        return Inertia::render('Users/Edit', [
-            'userData' => [
-                'id' => $user->id,
-                'contractor_ids' => $user->contractors->pluck('id')->all(),
-                'name' => $user->name,
-                'email' => $user->email,
-                'cpf' => $user->cpf,
-                'phone' => $user->phone,
-                'role' => $user->role,
-                'job_title' => $user->job_title,
-                'address' => $user->address ?? [],
-                'preferences' => $user->preferences ?? [],
-                'avatar_url' => $user->avatar_url,
-                'is_active' => (bool) $user->is_active,
-            ],
-            'roles' => User::roles(),
-            'contractors' => Contractor::query()
-                ->orderBy('name')
-                ->get(['id', 'name']),
-        ]);
-    }
-
-    /**
      * Update a user.
      */
     public function update(UpdateUserRequest $request, User $user): RedirectResponse
     {
         $data = $request->validated();
+        $avatarFile = $request->file('avatar');
         $contractorIds = $data['contractor_ids'] ?? [];
-        unset($data['contractor_ids']);
+        unset($data['contractor_ids'], $data['avatar']);
 
         if (empty($data['password'])) {
             unset($data['password']);
@@ -186,6 +159,12 @@ class UserController extends Controller
         }
 
         $user->fill($data)->save();
+
+        if ($avatarFile instanceof UploadedFile) {
+            $avatarUrl = $this->storeUserAvatar($user, $avatarFile);
+            $user->forceFill(['avatar_url' => $avatarUrl])->save();
+        }
+
         $this->syncUserContractors($user, $contractorIds);
 
         return redirect()
@@ -236,5 +215,45 @@ class UserController extends Controller
             ->values();
 
         $user->contractors()->sync($normalizedIds->all());
+    }
+
+    private function storeUserAvatar(User $user, UploadedFile $avatarFile): string
+    {
+        Storage::disk('public')->deleteDirectory("users/{$user->id}/avatar");
+
+        $avatarPath = $avatarFile->store("users/{$user->id}/avatar", 'public');
+        return '/storage/'.$avatarPath;
+    }
+
+    private function deleteStoredFileFromPublicUrl(?string $publicUrl): void
+    {
+        $relativePath = $this->resolvePublicStorageRelativePath($publicUrl);
+
+        if (! $relativePath) {
+            return;
+        }
+
+        if (Storage::disk('public')->exists($relativePath)) {
+            Storage::disk('public')->delete($relativePath);
+        }
+    }
+
+    private function resolvePublicStorageRelativePath(?string $publicUrl): ?string
+    {
+        if (! $publicUrl) {
+            return null;
+        }
+
+        $path = parse_url($publicUrl, PHP_URL_PATH);
+        $normalizedPath = is_string($path) && $path !== '' ? $path : $publicUrl;
+
+        $prefix = '/storage/';
+        if (! str_starts_with($normalizedPath, $prefix)) {
+            return null;
+        }
+
+        $relativePath = ltrim(substr($normalizedPath, strlen($prefix)), '/');
+
+        return $relativePath !== '' ? $relativePath : null;
     }
 }

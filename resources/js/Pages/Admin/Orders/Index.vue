@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import { ShoppingBag, Boxes, CircleDollarSign, AlertTriangle, Search, Filter, Plus } from 'lucide-vue-next';
@@ -41,9 +41,9 @@ const kanban = [
 
             <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div class="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                        <Search class="h-4 w-4 text-slate-500" />
-                        <input type="text" placeholder="Buscar pedido por código ou cliente" class="w-full bg-transparent text-sm text-slate-700 outline-none" />
+                    <div class="veshop-search-shell flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <Search class="veshop-search-icon h-4 w-4 text-slate-500" />
+                        <input type="text" placeholder="Buscar pedido por código ou cliente" class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none" />
                     </div>
                     <div class="veshop-toolbar-actions lg:justify-end">
                         <button type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">

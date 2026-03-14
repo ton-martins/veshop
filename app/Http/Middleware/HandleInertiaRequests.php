@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\SystemSetting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Middleware;
 use Throwable;
 
@@ -32,11 +33,16 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $currentContractor = $this->resolveCurrentContractor($request);
+        $authenticatedUser = $request->user();
+
+        if ($authenticatedUser) {
+            $authenticatedUser->avatar_url = $this->resolveSharedUserAvatarUrl($authenticatedUser);
+        }
 
         return [
             ...parent::share($request),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $authenticatedUser,
             ],
             'flash' => [
                 'status' => fn () => $request->session()->get('status'),
@@ -208,5 +214,117 @@ class HandleInertiaRequests extends Middleware
             default => 'Comércio',
         };
     }
-}
 
+    private function normalizePublicStorageUrl(?string $value): ?string
+    {
+        if (! $value) {
+            return null;
+        }
+
+        $path = parse_url($value, PHP_URL_PATH);
+        $normalized = is_string($path) && $path !== '' ? $path : $value;
+
+        if (str_starts_with($normalized, '/storage/')) {
+            return $normalized;
+        }
+
+        if (str_starts_with($normalized, 'storage/')) {
+            return '/'.ltrim($normalized, '/');
+        }
+
+        return $value;
+    }
+
+    private function resolveSharedUserAvatarUrl(mixed $user): ?string
+    {
+        if (! $user || ! isset($user->id)) {
+            return null;
+        }
+
+        $normalized = $this->normalizePublicStorageUrl($user->avatar_url ?? null);
+
+        if ($normalized && ! $this->isStoragePublicUrl($normalized)) {
+            return $normalized;
+        }
+
+        if ($normalized && $this->publicStorageUrlExists($normalized)) {
+            return $normalized;
+        }
+
+        $fallbackRelativePath = $this->resolveLatestUserAvatarRelativePath((int) $user->id);
+
+        if ($fallbackRelativePath) {
+            return '/storage/'.$fallbackRelativePath;
+        }
+
+        return null;
+    }
+
+    private function isStoragePublicUrl(string $value): bool
+    {
+        return str_starts_with($value, '/storage/') || str_starts_with($value, 'storage/');
+    }
+
+    private function publicStorageUrlExists(string $value): bool
+    {
+        $relativePath = $this->resolvePublicStorageRelativePath($value);
+
+        if (! $relativePath) {
+            return false;
+        }
+
+        return Storage::disk('public')->exists($relativePath);
+    }
+
+    private function resolvePublicStorageRelativePath(?string $publicUrl): ?string
+    {
+        if (! $publicUrl) {
+            return null;
+        }
+
+        $path = parse_url($publicUrl, PHP_URL_PATH);
+        $normalizedPath = is_string($path) && $path !== '' ? $path : $publicUrl;
+
+        if (str_starts_with($normalizedPath, '/storage/')) {
+            $relativePath = ltrim(substr($normalizedPath, strlen('/storage/')), '/');
+
+            return $relativePath !== '' ? $relativePath : null;
+        }
+
+        if (str_starts_with($normalizedPath, 'storage/')) {
+            $relativePath = ltrim(substr($normalizedPath, strlen('storage/')), '/');
+
+            return $relativePath !== '' ? $relativePath : null;
+        }
+
+        return null;
+    }
+
+    private function resolveLatestUserAvatarRelativePath(int $userId): ?string
+    {
+        if ($userId <= 0) {
+            return null;
+        }
+
+        $directory = "users/{$userId}/avatar";
+
+        if (! Storage::disk('public')->exists($directory)) {
+            return null;
+        }
+
+        $files = Storage::disk('public')->files($directory);
+
+        if (empty($files)) {
+            return null;
+        }
+
+        usort($files, static function (string $left, string $right): int {
+            $leftModifiedAt = Storage::disk('public')->lastModified($left);
+            $rightModifiedAt = Storage::disk('public')->lastModified($right);
+
+            return $rightModifiedAt <=> $leftModifiedAt;
+        });
+
+        return $files[0] ?? null;
+    }
+}
