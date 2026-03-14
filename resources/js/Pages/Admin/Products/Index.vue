@@ -202,10 +202,10 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                             @keyup.enter="applyFilters"
                         >
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="veshop-toolbar-actions lg:justify-end">
                         <select
                             v-model="filterForm.category_id"
-                            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                            class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 sm:w-auto"
                             @change="applyFilters"
                         >
                             <option value="">Todas as categorias</option>
@@ -213,7 +213,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         </select>
                         <select
                             v-model="filterForm.status"
-                            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                            class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 sm:w-auto"
                             @change="applyFilters"
                         >
                             <option value="">Todos os status</option>
@@ -223,7 +223,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         </select>
                         <button
                             type="button"
-                            class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            class="inline-flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto"
                             @click="resetFilters"
                         >
                             <Filter class="h-3.5 w-3.5" />
@@ -231,7 +231,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         </button>
                         <button
                             type="button"
-                            class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                            class="inline-flex w-full items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 sm:w-auto"
                             @click="openCreate"
                         >
                             <Plus class="h-3.5 w-3.5" />
@@ -245,16 +245,13 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <h2 class="text-sm font-semibold text-slate-900">Categorias em destaque</h2>
                             <div class="flex flex-wrap items-center gap-2">
-                                <button type="button" class="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-800">
-                                    Ver catalogo completo
-                                    <ChevronRight class="h-3.5 w-3.5" />
-                                </button>
                                 <Link
                                     :href="route('admin.categories.index')"
                                     class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                                 >
                                     <Tags class="h-3.5 w-3.5" />
-                                    Categorias
+                                    Todas Categorias
+                                    <ChevronRight class="h-3.5 w-3.5" />
                                 </Link>
                             </div>
                         </div>
@@ -274,7 +271,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         </div>
                     </section>
 
-                    <div class="overflow-x-auto rounded-xl border border-slate-200">
+                    <div class="rounded-xl border border-slate-200 bg-white">
                         <table class="w-full min-w-[980px] divide-y divide-slate-200 text-sm">
                             <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                                 <tr>

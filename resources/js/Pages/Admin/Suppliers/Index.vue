@@ -164,28 +164,28 @@ const removeSupplier = (supplier) => {
                             @keydown.enter.prevent="applyFilters"
                         />
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="veshop-toolbar-actions lg:justify-end">
                         <select
                             v-model="filterForm.status"
-                            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                            class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 sm:w-auto"
                             @change="applyFilters"
                         >
                             <option value="">Todos</option>
                             <option value="active">Ativos</option>
                             <option value="inactive">Inativos</option>
                         </select>
-                        <button type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="clearFilters">
+                        <button type="button" class="inline-flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto" @click="clearFilters">
                             <Filter class="h-3.5 w-3.5" />
                             Limpar
                         </button>
-                        <button type="button" class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800" @click="openCreate">
+                        <button type="button" class="inline-flex w-full items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 sm:w-auto" @click="openCreate">
                             <Plus class="h-3.5 w-3.5" />
                             Novo fornecedor
                         </button>
                     </div>
                 </div>
 
-                <div class="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                <div class="mt-4 rounded-xl border border-slate-200 bg-white">
                     <table class="min-w-full divide-y divide-slate-200 text-sm">
                         <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                             <tr>

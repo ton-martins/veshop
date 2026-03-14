@@ -307,23 +307,43 @@ const mobileQuickLinks = computed(() => {
     const allLinks = collapsedLinks.value;
     if (!allLinks.length) return [];
 
-    const initialLinks = allLinks.slice(0, 4);
-    const activeLink = allLinks.find((link) => isLinkActive(link));
+    const preferredFixedKeys =
+        currentArea.value === 'master'
+            ? ['master-dashboard', 'master-support']
+            : ['admin-dashboard', 'admin-orders'];
 
-    if (!activeLink) {
-        return initialLinks;
+    const fixedLinks = preferredFixedKeys
+        .map((key) => allLinks.find((link) => link.key === key))
+        .filter(Boolean);
+
+    if (fixedLinks.length < 2) {
+        for (const link of allLinks) {
+            if (fixedLinks.length >= 2) break;
+            if (fixedLinks.some((item) => item.key === link.key)) continue;
+            fixedLinks.push(link);
+        }
     }
 
-    const alreadyIncluded = initialLinks.some((link) => link.key === activeLink.key);
-    if (alreadyIncluded) {
-        return initialLinks;
+    let dynamicLink = allLinks.find(
+        (link) => isLinkActive(link) && !fixedLinks.some((item) => item.key === link.key),
+    );
+
+    if (!dynamicLink) {
+        dynamicLink = allLinks.find((link) => !fixedLinks.some((item) => item.key === link.key));
     }
 
-    if (!initialLinks.length) {
-        return [activeLink];
+    const quickLinks = [...fixedLinks];
+    if (dynamicLink && !quickLinks.some((item) => item.key === dynamicLink.key)) {
+        quickLinks.push(dynamicLink);
     }
 
-    return [...initialLinks.slice(0, Math.max(initialLinks.length - 1, 0)), activeLink];
+    for (const link of allLinks) {
+        if (quickLinks.length >= 3) break;
+        if (quickLinks.some((item) => item.key === link.key)) continue;
+        quickLinks.push(link);
+    }
+
+    return quickLinks.slice(0, 3);
 });
 
 const sidebarOpen = ref(false);
@@ -349,6 +369,20 @@ const applyTableViewModeAttribute = () => {
     document.documentElement.setAttribute('data-table-view-mode', tableViewMode.value);
 };
 
+const ensureTableScrollWrapper = (table) => {
+    const parent = table.parentElement;
+    if (!parent) return;
+
+    if (parent.classList.contains('veshop-table-scroll')) {
+        return;
+    }
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'veshop-table-scroll';
+    parent.insertBefore(wrapper, table);
+    wrapper.appendChild(table);
+};
+
 const hydrateAdaptiveTables = () => {
     const scope = appMainRef.value;
     if (!scope) {
@@ -361,6 +395,7 @@ const hydrateAdaptiveTables = () => {
 
     tables.forEach((table) => {
         table.classList.add('veshop-adaptive-table');
+        ensureTableScrollWrapper(table);
 
         const headerLabels = Array.from(table.querySelectorAll('thead th')).map((th) =>
             String(th.textContent ?? '')
@@ -565,16 +600,25 @@ const doLogout = () => {
     router.post(safeRoute('logout', '/logout'));
 };
 
-const openNotifications = () => {
-    if (typeof route !== 'function') return;
+const hasNotificationsRoute = computed(() => {
+    if (typeof route !== 'function') return false;
 
     try {
-        if (route().has('notifications.index')) {
-            router.visit(route('notifications.index'));
-        }
+        return route().has('notifications.index');
     } catch {
-        // ignore when notifications route does not exist yet
+        return false;
     }
+});
+
+const isNotificationsActive = computed(() => {
+    if (!hasNotificationsRoute.value) return false;
+
+    return safeRouteCurrent('notifications.index') || safeRouteCurrent('notifications.*');
+});
+
+const openNotifications = () => {
+    if (!hasNotificationsRoute.value) return;
+    router.visit(route('notifications.index'));
 };
 </script>
 
@@ -604,7 +648,7 @@ const openNotifications = () => {
         </template>
 
         <template v-else>
-            <div class="flex min-h-screen">
+            <div class="flex min-h-screen min-w-0 md:h-screen md:overflow-hidden">
                 <aside class="relative hidden md:flex md:sticky md:top-0 md:h-screen flex-col border-r border-slate-200 bg-white shadow-lg transition-all duration-300" :class="sidebarCollapsed ? 'w-20' : 'w-72'">
                     <button type="button" class="absolute -right-3 top-6 hidden h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow transition hover:bg-slate-100 md:flex" :title="sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'" @click="toggleSidebarCollapsed">
                         <component :is="sidebarCollapsed ? ChevronRight : ChevronLeft" class="h-4 w-4" />
@@ -731,7 +775,7 @@ const openNotifications = () => {
                     </div>
                 </aside>
 
-                <div class="flex flex-1 flex-col">
+                <div class="flex min-h-0 min-w-0 flex-1 flex-col">
                     <header class="flex items-center border-b border-white/60 bg-white/80 px-4 py-4 shadow-sm backdrop-blur md:hidden">
                         <Link :href="safeRoute('home', '/home')" class="flex items-center gap-3">
                             <div class="flex h-10 w-10 items-center justify-center rounded-md bg-slate-900 text-sm font-semibold text-white">
@@ -746,7 +790,7 @@ const openNotifications = () => {
                         </Link>
                     </header>
 
-                    <main ref="appMainRef" class="flex-1 overflow-y-auto bg-slate-100/80">
+                    <main ref="appMainRef" class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-slate-100/80">
                         <div class="px-4 py-6 pb-24 sm:px-6 lg:px-8 md:pb-6">
                             <template v-if="hasHeaderSlot">
                                 <slot name="header" />
@@ -805,6 +849,23 @@ const openNotifications = () => {
                                 <component :is="link.iconComponent" class="h-4 w-4" />
                                 <span class="truncate">{{ link.label }}</span>
                             </Link>
+
+                            <button
+                                type="button"
+                                class="relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold transition"
+                                :class="isNotificationsActive ? 'text-white shadow-inner shadow-black/10' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
+                                :style="isNotificationsActive ? { background: contractorActiveGradient } : null"
+                                @click="openNotifications"
+                            >
+                                <Bell class="h-4 w-4" />
+                                <span class="truncate">Notificações</span>
+                                <span
+                                    v-if="unreadNotifications > 0"
+                                    class="absolute right-2 top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 py-0.5 text-[9px] font-semibold text-white"
+                                >
+                                    {{ unreadNotifications > 99 ? '99+' : unreadNotifications }}
+                                </span>
+                            </button>
                         </div>
                     </nav>
                 </div>
@@ -901,7 +962,7 @@ const openNotifications = () => {
 
         <button
             type="button"
-            class="fixed right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-white shadow-xl transition hover:bg-slate-800 md:bottom-5 bottom-24"
+            class="fixed right-4 bottom-5 z-30 hidden h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-white shadow-xl transition hover:bg-slate-800 md:inline-flex"
             title="Notificações"
             aria-label="Notificações"
             @click="openNotifications"

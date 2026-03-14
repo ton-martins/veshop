@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\ClientController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ServiceCatalogController;
 use App\Http\Controllers\Admin\SupplierController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -42,13 +43,19 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
                 return Inertia::render('Admin/Inventory/Index');
             })->name('inventory.index');
 
-            Route::get('/finance/payables', function () {
-                return Inertia::render('Admin/Finance/Payables');
-            })->name('finance.payables');
+            Route::get('/finance', function (Request $request) {
+                $tab = $request->query('tab');
+                if (!in_array($tab, ['payables', 'receivables'], true)) {
+                    $tab = 'payables';
+                }
 
-            Route::get('/finance/receivables', function () {
-                return Inertia::render('Admin/Finance/Receivables');
-            })->name('finance.receivables');
+                return Inertia::render('Admin/Finance/Index', [
+                    'initialTab' => $tab,
+                ]);
+            })->name('finance.index');
+
+            Route::redirect('/finance/payables', '/app/finance?tab=payables')->name('finance.payables');
+            Route::redirect('/finance/receivables', '/app/finance?tab=receivables')->name('finance.receivables');
 
             Route::get('/reports', function () {
                 return Inertia::render('Admin/Reports/Index');

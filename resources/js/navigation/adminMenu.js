@@ -78,30 +78,23 @@
         module: 'commercial',
         links: [
             {
-                key: 'admin-payables',
-                label: 'Contas a pagar',
-                route: 'admin.finance.payables',
-                match: ['admin.finance.payables'],
-                icon: 'WalletCards',
-            },
-            {
-                key: 'admin-receivables',
-                label: 'Contas a receber',
-                route: 'admin.finance.receivables',
-                match: ['admin.finance.receivables'],
+                key: 'admin-finance',
+                label: 'Contas',
+                route: 'admin.finance.index',
+                match: ['admin.finance.*'],
                 icon: 'Banknote',
             },
         ],
     },
     {
-        key: 'relatorios',
-        label: 'Relatórios',
+        key: 'administrativo',
+        label: 'Administrativo',
         icon: 'BookOpenCheck',
         module: 'commercial',
         links: [
             {
                 key: 'admin-reports',
-                label: 'Painéis e análises',
+                label: 'Relatórios',
                 route: 'admin.reports.index',
                 match: ['admin.reports.*'],
                 icon: 'PieChart',

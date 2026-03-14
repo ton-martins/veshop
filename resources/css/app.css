@@ -1115,6 +1115,46 @@
         box-shadow: 0 12px 26px -24px rgba(15, 23, 42, 0.96);
     }
 
+    .veshop-toolbar-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        min-width: 0;
+    }
+
+    .veshop-toolbar-actions > * {
+        min-width: 0;
+    }
+
+    .veshop-table-scroll {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+    }
+
+    .veshop-table-scroll > .veshop-adaptive-table {
+        width: max-content;
+        min-width: 100%;
+        table-layout: auto;
+    }
+
+    .veshop-table-scroll::-webkit-scrollbar {
+        height: 8px;
+    }
+
+    .veshop-table-scroll::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.55);
+    }
+
+    .veshop-table-scroll::-webkit-scrollbar-track {
+        background: rgba(241, 245, 249, 0.9);
+    }
+
     [data-table-view-mode='cards'] .veshop-adaptive-table thead {
         display: none;
     }
@@ -1249,6 +1289,11 @@
 }
 
 @media (max-width: 1024px) {
+    [data-table-view-mode='list'] .veshop-table-scroll > .veshop-adaptive-table th,
+    [data-table-view-mode='list'] .veshop-table-scroll > .veshop-adaptive-table td {
+        white-space: nowrap;
+    }
+
     [data-table-view-mode='cards'] .veshop-adaptive-table tbody {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1264,6 +1309,26 @@
 }
 
 @media (max-width: 640px) {
+    [data-table-view-mode='cards'] .veshop-adaptive-table tbody {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .veshop-toolbar-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: stretch;
+    }
+
+    .veshop-toolbar-actions > * {
+        width: 100%;
+    }
+
+    .veshop-toolbar-actions button,
+    .veshop-toolbar-actions a {
+        justify-content: center;
+    }
+
     .landing-hero-mini-cards {
         grid-template-columns: minmax(0, 1fr);
     }
