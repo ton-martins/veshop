@@ -46,7 +46,7 @@ class SupplierController extends Controller
         $suppliers = $query
             ->orderByDesc('is_active')
             ->orderBy('name')
-            ->paginate(12)
+            ->paginate(10)
             ->withQueryString()
             ->through(static function (Supplier $supplier): array {
                 return [

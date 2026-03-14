@@ -86,6 +86,12 @@ class HandleInertiaRequests extends Middleware
             return null;
         }
 
+        if ($user->isMaster()) {
+            $request->session()->forget('current_contractor_id');
+
+            return null;
+        }
+
         $user->loadMissing('contractors');
 
         $availableContractors = $user->contractors->values();
@@ -121,6 +127,13 @@ class HandleInertiaRequests extends Middleware
         $user = $request->user();
 
         if (! $user) {
+            return [
+                'current' => null,
+                'available' => [],
+            ];
+        }
+
+        if ($user->isMaster()) {
             return [
                 'current' => null,
                 'available' => [],

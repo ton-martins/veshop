@@ -55,7 +55,7 @@ class ProductController extends Controller
         $products = $query
             ->orderByDesc('is_active')
             ->orderBy('name')
-            ->paginate(12)
+            ->paginate(10)
             ->withQueryString()
             ->through(static function (Product $product): array {
                 return [

@@ -56,7 +56,7 @@ class UserController extends Controller
         return Inertia::render('Users/Index', [
             'users' => $query
                 ->orderByDesc('id')
-                ->paginate(12)
+                ->paginate(10)
                 ->withQueryString()
                 ->through(static function (User $user): array {
                     return [

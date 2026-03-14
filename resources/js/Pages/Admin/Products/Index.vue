@@ -240,17 +240,50 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                     </div>
                 </div>
 
-                <div class="mt-4 grid gap-4 xl:grid-cols-[1.7fr_1fr]">
-                    <div class="overflow-hidden rounded-xl border border-slate-200">
-                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                <div class="mt-4 space-y-4">
+                    <section class="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <h2 class="text-sm font-semibold text-slate-900">Categorias em destaque</h2>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button type="button" class="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-800">
+                                    Ver catalogo completo
+                                    <ChevronRight class="h-3.5 w-3.5" />
+                                </button>
+                                <Link
+                                    :href="route('admin.categories.index')"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                >
+                                    <Tags class="h-3.5 w-3.5" />
+                                    Categorias
+                                </Link>
+                            </div>
+                        </div>
+
+                        <div v-if="props.categoryHighlights.length > 0" class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <article
+                                v-for="category in props.categoryHighlights"
+                                :key="category.id"
+                                class="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                            >
+                                <p class="text-sm font-semibold text-slate-800">{{ category.name }}</p>
+                                <p class="mt-1 text-xs text-slate-500">{{ category.qty }} produtos</p>
+                            </article>
+                        </div>
+                        <div v-else class="mt-4 rounded-lg bg-white px-3 py-2 text-xs text-slate-500 ring-1 ring-slate-200">
+                            Nenhuma categoria ativa.
+                        </div>
+                    </section>
+
+                    <div class="overflow-x-auto rounded-xl border border-slate-200">
+                        <table class="w-full min-w-[980px] divide-y divide-slate-200 text-sm">
                             <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                                 <tr>
-                                    <th class="px-4 py-3">Produto</th>
-                                    <th class="px-4 py-3">Categoria</th>
-                                    <th class="px-4 py-3">Estoque</th>
-                                    <th class="px-4 py-3">Preço</th>
-                                    <th class="px-4 py-3">Status</th>
-                                    <th class="px-4 py-3">Ações</th>
+                                    <th class="px-4 py-3 whitespace-nowrap">Produto</th>
+                                    <th class="px-4 py-3 whitespace-nowrap">Categoria</th>
+                                    <th class="px-4 py-3 whitespace-nowrap">Estoque</th>
+                                    <th class="px-4 py-3 whitespace-nowrap">Preço</th>
+                                    <th class="px-4 py-3 whitespace-nowrap">Status</th>
+                                    <th class="px-4 py-3 whitespace-nowrap text-right">Ações</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 bg-white">
@@ -274,19 +307,19 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                                             </div>
                                         </div>
                                     </td>
-                                    <td class="px-4 py-3 text-slate-600">{{ product.category_name || 'Sem categoria' }}</td>
-                                    <td class="px-4 py-3 text-slate-600">{{ formatStock(product.stock_quantity, product.unit) }}</td>
-                                    <td class="px-4 py-3 font-semibold text-slate-800">{{ formatMoney(product.sale_price) }}</td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-slate-600">{{ product.category_name || 'Sem categoria' }}</td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-slate-600">{{ formatStock(product.stock_quantity, product.unit) }}</td>
+                                    <td class="px-4 py-3 whitespace-nowrap font-semibold text-slate-800">{{ formatMoney(product.sale_price) }}</td>
                                     <td class="px-4 py-3">
                                         <span
-                                            class="rounded-full px-2 py-1 text-[11px] font-semibold"
+                                            class="whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold"
                                             :class="product.status_label === 'Ativo' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'"
                                         >
                                             {{ product.status_label }}
                                         </span>
                                     </td>
-                                    <td class="px-4 py-3">
-                                        <div class="flex items-center gap-2">
+                                    <td class="px-4 py-3 text-right">
+                                        <div class="flex items-center justify-end gap-2 whitespace-nowrap">
                                             <button
                                                 type="button"
                                                 class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
@@ -310,7 +343,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         </table>
                     </div>
 
-                    <aside class="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                    <aside v-if="false" class="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
                         <h2 class="text-sm font-semibold text-slate-900">Categorias em destaque</h2>
                         <ul class="space-y-2">
                             <li

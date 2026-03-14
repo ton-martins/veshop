@@ -49,7 +49,7 @@ class CategoryController extends Controller
             ->orderByDesc('is_active')
             ->orderBy('sort_order')
             ->orderBy('name')
-            ->paginate(12)
+            ->paginate(10)
             ->withQueryString()
             ->through(static function (Category $category): array {
                 return [
@@ -213,4 +213,3 @@ class CategoryController extends Controller
             ->exists();
     }
 }
-

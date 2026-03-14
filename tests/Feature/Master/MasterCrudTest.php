@@ -171,6 +171,36 @@ class MasterCrudTest extends TestCase
         $this->assertSoftDeleted('plans', ['id' => $plan->id]);
     }
 
+    public function test_master_cannot_switch_contractor_context(): void
+    {
+        $master = $this->createMasterUser();
+
+        $contractor = Contractor::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Contratante Bloqueado',
+            'email' => 'bloqueado@empresa.com',
+            'slug' => 'contratante-bloqueado',
+            'timezone' => 'America/Sao_Paulo',
+            'brand_name' => 'Contratante Bloqueado',
+            'brand_primary_color' => '#073341',
+            'settings' => [
+                'business_niche' => Contractor::NICHE_COMMERCIAL,
+            ],
+        ]);
+
+        $master->contractors()->attach($contractor->id);
+
+        $response = $this
+            ->actingAs($master)
+            ->withSession(['two_factor_passed' => true])
+            ->post(route('contractor.switch'), [
+                'contractor_id' => $contractor->id,
+            ]);
+
+        $response->assertForbidden();
+        $this->assertSame(0, (int) session('current_contractor_id', 0));
+    }
+
     private function createMasterUser(): User
     {
         return User::factory()->create([

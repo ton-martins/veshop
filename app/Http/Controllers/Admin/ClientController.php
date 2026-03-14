@@ -47,7 +47,7 @@ class ClientController extends Controller
         $clients = $query
             ->orderByDesc('is_active')
             ->orderBy('name')
-            ->paginate(12)
+            ->paginate(10)
             ->withQueryString()
             ->through(static function (Client $client): array {
                 return [

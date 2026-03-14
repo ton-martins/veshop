@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { computed, onMounted, ref, useSlots, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import Dropdown from '@/Components/Dropdown.vue';
 import { useBranding } from '@/branding';
@@ -41,6 +41,8 @@ import {
     ChevronDown,
     ChevronLeft,
     ChevronRight,
+    List,
+    LayoutGrid,
     Palette,
     Store,
     Package,
@@ -110,7 +112,12 @@ const unreadNotifications = computed(() => {
 const contractorContext = computed(() => page.props.contractorContext ?? { current: null, available: [] });
 const currentContractor = computed(() => contractorContext.value.current ?? null);
 const availableContractors = computed(() => contractorContext.value.available ?? []);
-const canSwitchContractor = computed(() => availableContractors.value.length > 1);
+const canSwitchContractor = computed(
+    () => currentArea.value === 'admin' && availableContractors.value.length > 1,
+);
+const showContractorContext = computed(
+    () => currentArea.value === 'admin' && Boolean(currentContractor.value),
+);
 const contractorNiche = computed(() => String(currentContractor.value?.business_niche ?? 'commercial').toLowerCase());
 const contractorNicheLabel = computed(() => {
     const explicitLabel = String(currentContractor.value?.business_niche_label ?? '').trim();
@@ -142,7 +149,7 @@ const currentArea = computed(() => {
 });
 
 const systemContextLabel = computed(() => {
-    if (currentContractor.value) {
+    if (showContractorContext.value) {
         return contractorNicheLabel.value;
     }
 
@@ -236,6 +243,8 @@ const isCurrentContractorOption = (candidate) => {
 };
 
 const switchContractorTo = (contractor) => {
+    if (currentArea.value !== 'admin') return;
+
     const targetId = getContractorRouteKey(contractor);
     if (!targetId) return;
 
@@ -320,6 +329,78 @@ const sidebarOpen = ref(false);
 const sidebarCollapsed = ref(false);
 const expandedGroups = ref(new Set());
 const slots = useSlots();
+const appMainRef = ref(null);
+
+const TABLE_VIEW_STORAGE_KEY = 'veshop:table-view-mode';
+const allowedTableViewModes = new Set(['list', 'cards']);
+const tableViewMode = ref('list');
+const hasAdaptiveTables = ref(false);
+let tableMutationObserver = null;
+let tableHydrationFrame = null;
+
+const normalizeTableViewMode = (value) => {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return allowedTableViewModes.has(normalized) ? normalized : 'list';
+};
+
+const applyTableViewModeAttribute = () => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.setAttribute('data-table-view-mode', tableViewMode.value);
+};
+
+const hydrateAdaptiveTables = () => {
+    const scope = appMainRef.value;
+    if (!scope) {
+        hasAdaptiveTables.value = false;
+        return;
+    }
+
+    const tables = Array.from(scope.querySelectorAll('table'));
+    hasAdaptiveTables.value = tables.length > 0;
+
+    tables.forEach((table) => {
+        table.classList.add('veshop-adaptive-table');
+
+        const headerLabels = Array.from(table.querySelectorAll('thead th')).map((th) =>
+            String(th.textContent ?? '')
+                .replace(/\s+/g, ' ')
+                .trim(),
+        );
+
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        rows.forEach((row) => {
+            const cells = Array.from(row.querySelectorAll('td'));
+            if (!cells.length) return;
+
+            const isEmptyStateRow =
+                cells.length === 1 &&
+                cells[0].hasAttribute('colspan');
+
+            if (isEmptyStateRow) return;
+
+            cells.forEach((cell, index) => {
+                const currentLabel = String(cell.getAttribute('data-label') ?? '').trim();
+                if (currentLabel) return;
+
+                const label = headerLabels[index] || `Coluna ${index + 1}`;
+                cell.setAttribute('data-label', label);
+            });
+        });
+    });
+};
+
+const scheduleAdaptiveTablesHydration = () => {
+    if (typeof window === 'undefined') return;
+
+    if (tableHydrationFrame !== null) {
+        window.cancelAnimationFrame(tableHydrationFrame);
+    }
+
+    tableHydrationFrame = window.requestAnimationFrame(() => {
+        tableHydrationFrame = null;
+        hydrateAdaptiveTables();
+    });
+};
 
 const supportedHeaderVariants = ['compact', 'none'];
 
@@ -405,7 +486,26 @@ onMounted(() => {
         expandedGroups.value = new Set();
     }
 
+    try {
+        tableViewMode.value = normalizeTableViewMode(window.localStorage.getItem(TABLE_VIEW_STORAGE_KEY));
+    } catch {
+        tableViewMode.value = 'list';
+    }
+
     ensureExpandedGroups();
+    applyTableViewModeAttribute();
+    scheduleAdaptiveTablesHydration();
+
+    if (typeof window !== 'undefined' && window.MutationObserver && appMainRef.value) {
+        tableMutationObserver = new window.MutationObserver(() => {
+            scheduleAdaptiveTablesHydration();
+        });
+
+        tableMutationObserver.observe(appMainRef.value, {
+            childList: true,
+            subtree: true,
+        });
+    }
 });
 
 watch(sidebarCollapsed, () => {
@@ -413,6 +513,42 @@ watch(sidebarCollapsed, () => {
         window.localStorage.setItem('veshop:sidebar-collapsed', sidebarCollapsed.value ? '1' : '0');
     } catch {
         // ignore
+    }
+});
+
+watch(tableViewMode, (mode) => {
+    const normalizedMode = normalizeTableViewMode(mode);
+    if (normalizedMode !== mode) {
+        tableViewMode.value = normalizedMode;
+        return;
+    }
+
+    applyTableViewModeAttribute();
+
+    try {
+        window.localStorage.setItem(TABLE_VIEW_STORAGE_KEY, normalizedMode);
+    } catch {
+        // ignore
+    }
+});
+
+watch(
+    () => page.url,
+    () => {
+        scheduleAdaptiveTablesHydration();
+    },
+    { flush: 'post' },
+);
+
+onBeforeUnmount(() => {
+    if (tableMutationObserver) {
+        tableMutationObserver.disconnect();
+        tableMutationObserver = null;
+    }
+
+    if (typeof window !== 'undefined' && tableHydrationFrame !== null) {
+        window.cancelAnimationFrame(tableHydrationFrame);
+        tableHydrationFrame = null;
     }
 });
 
@@ -463,7 +599,7 @@ const openNotifications = () => {
                     </button>
                 </div>
             </header>
-            <main class="px-4 py-6 sm:px-6 lg:px-8"><slot /></main>
+            <main ref="appMainRef" class="px-4 py-6 sm:px-6 lg:px-8"><slot /></main>
         </template>
 
         <template v-else>
@@ -486,7 +622,7 @@ const openNotifications = () => {
                             </div>
                         </Link>
 
-                        <div v-if="currentContractor" class="mt-4 rounded-xl border border-slate-200 bg-slate-50/70" :class="sidebarCollapsed ? 'px-2 py-2' : 'px-3 py-2'">
+                        <div v-if="showContractorContext" class="mt-4 rounded-xl border border-slate-200 bg-slate-50/70" :class="sidebarCollapsed ? 'px-2 py-2' : 'px-3 py-2'">
                             <div class="flex items-center gap-3" :class="sidebarCollapsed ? 'justify-center' : ''">
                                 <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70" :style="contractorLogoUrl ? null : { background: 'var(--contractor-primary)' }">
                                     <img v-if="contractorLogoUrl" :src="contractorLogoUrl" :alt="contractorName" class="h-full w-full rounded-lg object-cover" />
@@ -609,7 +745,7 @@ const openNotifications = () => {
                         </Link>
                     </header>
 
-                    <main class="flex-1 overflow-y-auto bg-slate-100/80">
+                    <main ref="appMainRef" class="flex-1 overflow-y-auto bg-slate-100/80">
                         <div class="px-4 py-6 pb-24 sm:px-6 lg:px-8 md:pb-6">
                             <template v-if="hasHeaderSlot">
                                 <slot name="header" />
@@ -618,6 +754,29 @@ const openNotifications = () => {
                             <template v-else-if="showDefaultHeader">
                                 <h1 v-if="resolvedHeaderTitle" :class="defaultHeaderTitleClass">{{ resolvedHeaderTitle }}</h1>
                             </template>
+
+                            <div v-if="hasAdaptiveTables" class="mt-4 flex justify-end">
+                                <div class="veshop-table-view-toggle">
+                                    <button
+                                        type="button"
+                                        class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
+                                        :class="tableViewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'"
+                                        @click="tableViewMode = 'list'"
+                                    >
+                                        <List class="h-3.5 w-3.5" />
+                                        Lista
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
+                                        :class="tableViewMode === 'cards' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'"
+                                        @click="tableViewMode = 'cards'"
+                                    >
+                                        <LayoutGrid class="h-3.5 w-3.5" />
+                                        Cards
+                                    </button>
+                                </div>
+                            </div>
 
                             <div :class="showHeader ? 'mt-6' : ''"><slot /></div>
                         </div>
@@ -672,7 +831,7 @@ const openNotifications = () => {
                             </div>
                             <div class="flex-1 overflow-y-auto p-4">
                                 <div
-                                    v-if="currentContractor"
+                                    v-if="showContractorContext"
                                     class="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2"
                                 >
                                     <div class="flex items-center gap-3">

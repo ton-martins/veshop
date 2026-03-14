@@ -15,7 +15,7 @@
     },
     {
         key: 'saas',
-        label: 'Gestão SaaS',
+        label: 'Gestão',
         icon: 'Briefcase',
         links: [
             {

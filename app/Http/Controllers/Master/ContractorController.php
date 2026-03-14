@@ -61,7 +61,7 @@ class ContractorController extends Controller
         $contractors = $query
             ->orderByDesc('is_active')
             ->orderBy('name')
-            ->paginate(12)
+            ->paginate(10)
             ->withQueryString()
             ->through(function (Contractor $contractor): array {
                 $niche = $contractor->niche();

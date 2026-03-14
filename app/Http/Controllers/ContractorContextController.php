@@ -20,6 +20,7 @@ class ContractorContextController extends Controller
         $contractorId = (int) $validated['contractor_id'];
 
         abort_unless($user, 403);
+        abort_if($user->isMaster(), 403, 'Troca de contratante não permitida para usuário master.');
 
         $allowed = $user->contractors()
             ->where('contractors.id', $contractorId)

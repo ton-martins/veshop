@@ -73,7 +73,7 @@ class PlanController extends Controller
             ->orderBy('tier_rank')
             ->orderBy('sort_order')
             ->orderBy('name')
-            ->paginate(12)
+            ->paginate(10)
             ->withQueryString()
             ->through(function (Plan $plan): array {
                 $features = $this->normalizeFeatures($plan->features);
