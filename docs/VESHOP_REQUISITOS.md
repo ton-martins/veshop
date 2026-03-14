@@ -1,192 +1,169 @@
 # Veshop - Requisitos do Produto e da Plataforma
 
-Versão: v1.1  
+Versão: v1.2  
 Última atualização: 14/03/2026
 
 ## 1. Visão do produto
 
 O Veshop é um SaaS multiempresa para operação de contratantes, com foco em gestão prática e execução diária.
 
-Objetivos principais:
-- Centralizar operação comercial/serviços em uma única plataforma.
+Objetivos:
+- Centralizar operação comercial e de serviços em uma única plataforma.
 - Reduzir retrabalho entre vendas, estoque, financeiro e atendimento.
 - Permitir branding por contratante.
 - Entregar experiência simples para uso diário em desktop, tablet e celular.
 
-## 2. Papéis e acessos (escopo atual)
+## 2. Escopo funcional atual
 
-Papéis ativos no sistema:
-- `master`: dono do produto (gestão da plataforma).
-- `admin`: usuário do contratante.
+### 2.1 Papéis e acesso
 
-Não há cadastro público de contratantes/usuários.  
-O `master` é responsável por cadastrar e manter contratantes e planos.
+Papéis ativos:
+- `master`: gestão da plataforma.
+- `admin`: gestão operacional do contratante.
 
-## 3. Modelo organizacional (contractor-first)
+Regras:
+- Não há cadastro público de usuários/contratantes.
+- O `master` gerencia contratantes, planos e usuários.
 
-Padrões definidos:
-- O sistema usa o termo **contractor** (não usar “tenant” na modelagem funcional).
-- Usuário pode estar vinculado a múltiplos contratantes (relação N:N em `contractor_user`).
-- Cada contratante possui:
-  - branding própria (nome, cor primária, logo, avatar),
-  - plano ativo,
-  - nicho de negócio único.
+### 2.2 Modelo organizacional (contractor-first)
 
-Regra de negócio:
-- O nicho do contratante é definido administrativamente e **não é editável pelo admin do contratante**.
-
-## 4. Nichos e segmentação de módulos
+- Relação N:N entre usuários e contratantes (`contractor_user`).
+- Cada contratante possui branding próprio, plano ativo e nicho único.
+- Nicho não é editável pelo `admin`.
 
 Nichos ativos:
 - `commercial` (Comércio)
 - `services` (Serviços)
 
-Regra central:
-- O sistema deve exibir apenas módulos compatíveis com o nicho do contratante ativo.
+## 3. Módulos por nicho
 
-### 4.1 Módulos do nicho Comércio
+### 3.1 Comércio
 
-- Início (Visão Geral)
+- Início (Visão geral)
 - Produtos
 - Categorias
 - Clientes
 - Fornecedores
 - Pedidos
 - Estoque
-- Financeiro:
-  - Contas a pagar
-  - Contas a receber
+- Contas (abas: pagar / receber)
 - Relatórios
-- PDV (camada visual em construção dentro da visão geral)
 
-### 4.2 Módulos do nicho Serviços
+### 3.2 Serviços
 
-- Início (Visão Geral)
+- Início (Visão geral)
 - Catálogo de serviços
-- Categorias de serviços
 - Ordens de serviço
 - Agenda
 
-## 5. Navegação e padrões de layout consolidados
+## 4. O que já temos (status consolidado)
 
-### 5.1 Sidebar
+### 4.1 Backend
 
-- Bloco superior fixo do sistema: **Veshop**.
-- Ícone do sistema:
-  - usar ícone Veshop quando existir,
-  - fallback para iniciais `VS` quando não houver ícone.
-- Abaixo do nome do sistema: exibir **badge do nicho ativo**.
-- No bloco do contratante: exibir **badge do plano ativo**.
-- Menu com grupos de navegação.
-- Modo colapsado funcionando sem quebrar rodapé.
+Implementado:
+- CRUDs com paginação (10 por página): Produtos, Categorias, Clientes, Fornecedores.
+- CRUD de usuários (master), contratantes (master) e planos (master).
+- Segmentação por nicho e bloqueio de módulos por contratante ativo.
+- Relacionamento de usuários com múltiplos contratantes.
+- Soft deletes nas entidades principais do domínio.
+- Upload de avatar de usuário com validação (`png`, `jpg`, `jpeg`) e substituição do avatar anterior.
 
-### 5.2 Header de páginas internas
+Parcial/visual (sem fluxo completo de negócio):
+- Pedidos
+- Estoque
+- Contas (pagar/receber)
+- Relatórios
+- Ordens de serviço
+- Agenda
 
-Padrão atual:
-- Header simplificado: apenas título da página (sem ícones e sem fundo decorativo).
-- Rotas internas em inglês, labels de menu em pt-BR.
+### 4.2 Frontend e UX/UI
 
-### 5.3 Mobile
+Implementado:
+- Layout autenticado com sidebar, header simplificado e menu mobile inferior.
+- Modo de visualização em lista/cards para tabelas adaptativas.
+- Tabelas com scroll horizontal interno para preservar layout mobile.
+- Paginação padronizada com rótulos em pt-BR.
+- Modais padronizados para criação/edição e confirmação de exclusão.
+- Página de perfil com upload de avatar.
+- Página de branding (master/admin) com identidade visual e ativos da landing.
+- Landing page segmentada por nicho nos planos (Comércio/Serviços) e responsiva.
 
-- Topo mobile com ações essenciais.
-- Bottom navigation em estilo app.
-- Primeiro item do menu bottom: `Menu`.
+### 4.3 Padrões de busca e filtros
 
-### 5.4 Notificações
+Implementado hoje:
+- Campos de busca com:
+  - botão `Buscar`,
+  - acionamento por `Enter`,
+  - botão `x` para limpar rapidamente o texto.
+- Mantido botão `Limpar` para reset completo dos filtros.
 
-- Botão de notificações flutuante global no canto inferior direito.
-- Estilo do botão: fundo slate escuro (alinhado ao ícone/menu do Veshop).
+## 5. Funcionalidades desenvolvidas hoje
 
-## 6. Padrões de Auth
+- Ajuste de exibição de avatar no perfil e no rodapé/menu do layout autenticado.
+- Reforço de normalização de URL de avatar para evitar inconsistências de host.
+- Confirmação de troca de avatar com remoção do arquivo anterior para não acumular storage.
+- Troca de ícones no menu admin:
+  - grupo `Financeiro` para ícone de cifrão,
+  - link `Relatórios` para ícone de documento.
+- Padronização da busca nas páginas com botão explícito (`Buscar`) + `x` para limpar.
+- Atualização deste documento com status objetivo de “temos” e “falta”.
 
-- Login e páginas Auth padronizadas visualmente.
-- Botões das páginas Auth devem seguir o mesmo padrão do botão principal da tela de login.
-- Card “Ecossistema Veshop” aparece **somente** na tela de login.
+## 6. Arquitetura e banco (diagnóstico atual)
 
-## 7. Landing page (estado consolidado)
+### 6.1 Arquitetura
 
-- Conteúdo em pt-BR e UTF-8.
-- FAQ com capitalização natural (apenas primeira letra maiúscula, sem “capitalize” artificial).
-- Cards com `cursor: pointer` devem abrir modal explicativo.
-- Card Veshop Ops:
-  - interatividade interna estável,
-  - cards inferiores clicáveis em estilo carrossel,
-  - abertura de modal explicativo por card.
-- Ajustes de carregamento para reduzir efeito de tela desformatada durante bootstrap dos assets.
+Estado atual:
+- Monólito Laravel com separação por contexto de domínio e papel.
+- Estratégia multiempresa por `contractor_id` + contexto de contratante em sessão.
+- Estrutura adequada para fase atual e crescimento inicial.
 
-## 8. Home / Visão Geral
+### 6.2 MySQL para o cenário
 
-Definições consolidadas:
-- Nome de rota: `home` (inglês), label de menu: **Início**.
-- Título da página: **Visão Geral**.
-- Saudação: `Olá {nome}, acompanhe sua empresa`.
-- Sessão “Seu Catálogo Público” com visual clean/profissional.
-- Botão “Ver catálogo” seguindo cor/branding do contratante ativo.
+Resposta objetiva:
+- Sim, MySQL atende bem o cenário atual e a próxima fase do Veshop.
+- É uma escolha correta para SaaS multiempresa com o volume esperado de início.
 
-## 9. Branding do contratante
+## 7. O que falta (prioridade)
 
-- Tela de branding no padrão visual aprovado.
-- Botão “Salvar alterações” no padrão de botão global do sistema.
-- Contratante pode ajustar identidade visual, mas não altera nicho.
+### 7.1 Negócio e domínio
 
-## 10. Seeders e dados de desenvolvimento
+- Concluir backend real de:
+  - Pedidos (itens, status, regras),
+  - Estoque (movimentações e consistência),
+  - Contas a pagar/receber (ciclo financeiro),
+  - Relatórios analíticos.
+- Concluir backend operacional de serviços (ordens e agenda).
 
-Contratantes definidos:
-- Veshop Mix (nicho: comércio, perfil bazar)
-- Veshop Store (nicho: comércio, perfil roupas)
-- Veshop Services (nicho: serviços)
+### 7.2 Segurança e governança
 
-Usuários:
-- Usuário `master` (já existente no projeto).
-- Usuário `admin` Everton vinculado aos 3 contratantes.
+- Endurecer isolamento tenant-first em escopo/policies globais para reduzir risco de vazamento por erro de controller.
+- Consolidar auditoria de ações críticas (criação, edição, exclusão, troca de status).
 
-Base de dados de desenvolvimento:
-- Comércio: clientes, fornecedores, categorias e produtos por contratante.
-- Serviços: categorias e catálogo de serviços.
+### 7.3 Escalabilidade operacional
 
-## 11. Requisitos não funcionais
+Não será feito agora, mas está mapeado:
+- Migrar `session`, `cache` e `queue` para Redis (hoje estão em `database` no ambiente local).
+- Estruturar workers de fila e rotinas assíncronas.
+- Definir observabilidade (APM, logs estruturados e alertas).
+- Definir backup/restore com testes periódicos.
+- Planejar armazenamento de mídia em object storage (S3 compatível).
 
-- Aplicação 100% responsiva (desktop, tablet e celular).
-- Fluxos com boa usabilidade para público de 20 a 50 anos.
-- Linguagem clara, direta, com baixa curva de aprendizado.
-- UI diferenciada, mas sem poluição visual em fluxos transacionais.
-- Padrão de idioma da plataforma: pt-BR.
-- Codificação textual: UTF-8.
+## 8. Próxima fase sugerida
 
-## 12. Diretrizes técnicas e organização
+Ordem recomendada:
+1. Pedidos e itens de pedido.
+2. Estoque e movimentações.
+3. Contas (pagar/receber) com regras de vencimento e baixa.
+4. Relatórios consolidados.
+5. Ordens de serviço e agenda (fluxo completo).
+6. Auditoria e observabilidade.
 
-Backend:
-- Estrutura modular por domínio e por nicho.
-- Autorização por role e por módulo habilitado do contratante.
-- Validações centralizadas com Form Requests.
-- Controllers enxutos e regras em serviços quando necessário.
+## 9. Checklist de retomada
 
-Frontend:
-- Páginas por contexto de role (`Admin`, `Master`, `Auth`, `Public`).
-- Componentes reutilizáveis para header, cards, tabelas, ações e feedback.
-- Mesma linguagem visual entre módulos para reduzir curva de aprendizado.
-
-## 13. Estratégia de execução (próximo passo)
-
-Decisão vigente:
-- O frontend foi priorizado para validação de UX.
-- Próxima fase: desenvolvimento completo do backend, iniciando por **Comércio**.
-
-Ordem sugerida para backend (Comércio):
-1. Produtos e Categorias (CRUD + validações + políticas).
-2. Clientes e Fornecedores.
-3. Pedidos e itens de pedido.
-4. Estoque e movimentações.
-5. Financeiro (contas a pagar/receber).
-6. Consolidação dos indicadores da Visão Geral.
-
-## 14. Checklist de contexto para retomada em outra conta
-
-Ao retomar o projeto, considerar como verdade:
-- Sistema com dois papéis: `master` e `admin`.
-- Segmentação por nicho é mandatória.
-- Contratante vê apenas módulos do seu nicho.
-- Layout padrão já definido (sidebar, header simples, botão flutuante de notificação, mobile app-like).
-- Home principal é “Início / Visão Geral”.
-- Landing e Auth já possuem padrão visual validado e interações de modal nos cards.
-- Próxima macrofase é backend de Comércio, sem regressão de UX já aprovada.
+Ao retomar o desenvolvimento, considerar como verdade:
+- Sistema é multiempresa com `contractor-first`.
+- Nicho define módulos disponíveis.
+- `master` e `admin` são os únicos papéis ativos.
+- CRUDs principais de cadastro base já estão operacionais.
+- Fluxos transacionais centrais (pedidos, estoque, financeiro completo) ainda precisam de backend final.
+- MySQL é adequado para o estágio atual; escalabilidade futura depende de camadas de infraestrutura (Redis, filas, observabilidade e backup).
