@@ -117,9 +117,9 @@ class CommerceCatalogSeeder extends Seeder
                     ['sku' => 'BZR-010', 'name' => 'Jogo Educativo Infantil', 'category_slug' => 'brinquedos', 'sale_price' => 69.90, 'cost_price' => 34.00, 'stock_quantity' => 14, 'unit' => 'un', 'image_url' => 'https://picsum.photos/seed/bzr010/64/64'],
                 ],
                 'clients' => [
-                    ['name' => 'Cristina Nascimento', 'email' => 'cristina.nascimento@cliente.com.br', 'phone' => '71988880001', 'document' => '45678901234', 'city' => 'Salvador', 'state' => 'BA'],
+                    ['name' => 'Cristina Silva', 'email' => 'cristina.silva@cliente.com.br', 'phone' => '71988880001', 'document' => '45678901234', 'city' => 'Salvador', 'state' => 'BA'],
                     ['name' => 'Paulo Mendes', 'email' => 'paulo.mendes@cliente.com.br', 'phone' => '71988880002', 'document' => '56789012345', 'city' => 'Camaçari', 'state' => 'BA'],
-                    ['name' => 'Cakeflow Eventos', 'email' => 'contato@cakeflow.com.br', 'phone' => '71988880003', 'document' => '67890123000190', 'city' => 'Lauro de Freitas', 'state' => 'BA'],
+                    ['name' => 'João Vitor', 'email' => 'joao.vitor@cliente.com.br', 'phone' => '71988880003', 'document' => '67890123000190', 'city' => 'Lauro de Freitas', 'state' => 'BA'],
                 ],
                 'suppliers' => [
                     ['name' => 'Distribuidora Bahia Sul', 'email' => 'comercial@bahiasul.com.br', 'phone' => '7132222001', 'document' => '44444444000104', 'category' => 'Utilidades', 'lead_time_days' => 4],

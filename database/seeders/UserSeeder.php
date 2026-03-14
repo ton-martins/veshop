@@ -25,7 +25,7 @@ class UserSeeder extends Seeder
             ->all();
 
         $masterUser = User::updateOrCreate(
-            ['email' => env('VESHOP_MASTER_EMAIL', 'master@veshop.local')],
+            ['email' => env('VESHOP_MASTER_EMAIL', 'master@veshop.com.br')],
             [
                 'name' => env('VESHOP_MASTER_NAME', 'Veshop Master'),
                 'password' => Hash::make(env('VESHOP_MASTER_PASSWORD', '@veshop_2026')),
