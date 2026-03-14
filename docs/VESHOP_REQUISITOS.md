@@ -1,6 +1,6 @@
-# Veshop - Requisitos do Produto e da Plataforma
+﻿# Veshop - Requisitos do Produto e da Plataforma
 
-Versão: v1.2  
+Versão: v1.3  
 Última atualização: 14/03/2026
 
 ## 1. Visão do produto
@@ -34,6 +34,19 @@ Regras:
 Nichos ativos:
 - `commercial` (Comércio)
 - `services` (Serviços)
+
+### 2.3 Catálogo público por contratante
+
+Diretriz definida:
+- Cada contratante terá catálogo público em subdomínio no padrão `slug.veshop.com.br`.
+- O `slug` será customizável e único por contratante.
+
+Suporte adicional:
+- Contratantes sem domínio próprio usam o padrão `slug.veshop.com.br`.
+- Contratantes que desejarem podem:
+  - adquirir domínio com suporte da Veshop, ou
+  - vincular domínio próprio/existente.
+- Contratantes que já possuem loja virtual podem usar o Veshop como plataforma de gestão (backoffice), com integrações.
 
 ## 3. Módulos por nicho
 
@@ -133,6 +146,14 @@ Resposta objetiva:
   - Contas a pagar/receber (ciclo financeiro),
   - Relatórios analíticos.
 - Concluir backend operacional de serviços (ordens e agenda).
+- Implementar catálogo público por contratante com resolução por host:
+  - padrão `slug.veshop.com.br`,
+  - suporte a domínio customizado por contratante.
+- Criar fluxo de onboarding de domínio:
+  - validação de DNS,
+  - emissão/renovação de SSL,
+  - definição de domínio canônico.
+- Estruturar integrações para cenário em que a loja virtual externa permanece como vitrine e o Veshop atua na gestão.
 
 ### 7.2 Segurança e governança
 
@@ -164,6 +185,7 @@ Ao retomar o desenvolvimento, considerar como verdade:
 - Sistema é multiempresa com `contractor-first`.
 - Nicho define módulos disponíveis.
 - `master` e `admin` são os únicos papéis ativos.
+- Catálogo público seguirá padrão de subdomínio `slug.veshop.com.br`, com suporte a domínio próprio.
 - CRUDs principais de cadastro base já estão operacionais.
 - Fluxos transacionais centrais (pedidos, estoque, financeiro completo) ainda precisam de backend final.
 - MySQL é adequado para o estágio atual; escalabilidade futura depende de camadas de infraestrutura (Redis, filas, observabilidade e backup).
