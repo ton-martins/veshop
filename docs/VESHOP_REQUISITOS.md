@@ -82,6 +82,7 @@ Implementado:
 - Upload de avatar de usuário com validação (`png`, `jpg`, `jpeg`) e substituição do avatar anterior.
 
 Parcial/visual (sem fluxo completo de negócio):
+- PDV (aba na visão geral comercial)
 - Pedidos
 - Estoque
 - Contas (pagar/receber)
@@ -100,6 +101,7 @@ Implementado:
 - Página de perfil com upload de avatar.
 - Página de branding (master/admin) com identidade visual e ativos da landing.
 - Landing page segmentada por nicho nos planos (Comércio/Serviços) e responsiva.
+- Visão geral comercial com abas Operação e PDV (camada visual pronta para integração).
 
 ### 4.3 Padrões de busca e filtros
 
@@ -138,29 +140,59 @@ Resposta objetiva:
 
 ## 7. O que falta (prioridade)
 
-### 7.1 Negócio e domínio
+### 7.1 Prioridade P0 (bloqueante): base transacional comercial
 
-- Concluir backend real de:
-  - Pedidos (itens, status, regras),
-  - Estoque (movimentações e consistência),
-  - Contas a pagar/receber (ciclo financeiro),
-  - Relatórios analíticos.
-- Concluir backend operacional de serviços (ordens e agenda).
-- Implementar catálogo público por contratante com resolução por host:
+- Criar modelagem e regras para:
+  - sessões de caixa (`cash_sessions`) e movimentos de caixa (`cash_movements`),
+  - vendas (`sales`), itens de venda (`sale_items`) e pagamentos (`sale_payments`),
+  - movimentações de estoque por origem (`inventory_movements`).
+- Garantir consistência transacional:
+  - baixa de estoque na venda,
+  - lançamento financeiro vinculado ao pagamento,
+  - reversão em cancelamento/estorno.
+- Definir numeração e identificação operacional (cupom/venda/caixa).
+- Aplicar escopo tenant-first e políticas de autorização em toda a cadeia.
+
+### 7.2 Prioridade P1: PDV MVP na página de visão geral
+
+- Transformar a aba PDV em fluxo operacional real:
+  - abrir/fechar caixa com conferência,
+  - nova venda com carrinho e leitura por código,
+  - finalização por forma de pagamento (dinheiro, PIX, cartão),
+  - orçamento pendente e conversão em venda.
+- Integrar atalhos e cards do painel PDV com endpoints reais.
+- Registrar histórico de vendas recentes com dados reais do contratante.
+
+### 7.3 Prioridade P2: fechar ciclo comercial (após PDV MVP)
+
+- Concluir backend real de Pedidos (itens, status e regras).
+- Concluir backend real de Estoque (entradas, saídas, ajustes e inventário).
+- Concluir backend real de Contas (pagar/receber) com baixa e conciliação.
+- Concluir Relatórios operacionais e financeiros com indicadores consolidados.
+
+### 7.4 Prioridade P3: módulo de serviços (fluxo completo)
+
+- Concluir backend operacional de Ordens de serviço.
+- Concluir backend operacional de Agenda de serviços.
+- Conectar indicadores da visão geral de serviços com dados transacionais reais.
+
+### 7.5 Prioridade P4: catálogo público e domínio por contratante
+
+- Implementar catálogo público com resolução por host:
   - padrão `slug.veshop.com.br`,
   - suporte a domínio customizado por contratante.
-- Criar fluxo de onboarding de domínio:
+- Criar onboarding de domínio:
   - validação de DNS,
   - emissão/renovação de SSL,
-  - definição de domínio canônico.
+  - domínio canônico e redirecionamentos.
 - Estruturar integrações para cenário em que a loja virtual externa permanece como vitrine e o Veshop atua na gestão.
 
-### 7.2 Segurança e governança
+### 7.6 Prioridade P5: segurança e governança
 
 - Endurecer isolamento tenant-first em escopo/policies globais para reduzir risco de vazamento por erro de controller.
 - Consolidar auditoria de ações críticas (criação, edição, exclusão, troca de status).
 
-### 7.3 Escalabilidade operacional
+### 7.7 Prioridade P6: escalabilidade operacional
 
 Não será feito agora, mas está mapeado:
 - Migrar `session`, `cache` e `queue` para Redis (hoje estão em `database` no ambiente local).
@@ -172,12 +204,15 @@ Não será feito agora, mas está mapeado:
 ## 8. Próxima fase sugerida
 
 Ordem recomendada:
-1. Pedidos e itens de pedido.
-2. Estoque e movimentações.
-3. Contas (pagar/receber) com regras de vencimento e baixa.
-4. Relatórios consolidados.
-5. Ordens de serviço e agenda (fluxo completo).
-6. Auditoria e observabilidade.
+1. Base transacional comercial (caixa, venda, pagamento, estoque).
+2. PDV MVP na visão geral (fluxo completo de frente de caixa).
+3. Pedidos e itens de pedido.
+4. Estoque e movimentações completas.
+5. Contas (pagar/receber) com baixa e conciliação.
+6. Relatórios consolidados.
+7. Ordens de serviço e agenda (fluxo completo).
+8. Catálogo público por host + domínio customizado + onboarding DNS/SSL.
+9. Auditoria e observabilidade.
 
 ## 9. Checklist de retomada
 
@@ -187,5 +222,6 @@ Ao retomar o desenvolvimento, considerar como verdade:
 - `master` e `admin` são os únicos papéis ativos.
 - Catálogo público seguirá padrão de subdomínio `slug.veshop.com.br`, com suporte a domínio próprio.
 - CRUDs principais de cadastro base já estão operacionais.
-- Fluxos transacionais centrais (pedidos, estoque, financeiro completo) ainda precisam de backend final.
+- Aba PDV da visão geral está em camada visual; fluxo transacional ainda precisa ser implementado.
+- Fluxos transacionais centrais (PDV, pedidos, estoque, financeiro completo) ainda precisam de backend final.
 - MySQL é adequado para o estágio atual; escalabilidade futura depende de camadas de infraestrutura (Redis, filas, observabilidade e backup).
