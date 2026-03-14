@@ -335,7 +335,7 @@ watch(
 
                                 <button
                                     type="submit"
-                                    class="veshop-twofa-btn-base veshop-twofa-btn-primary w-full disabled:cursor-not-allowed disabled:opacity-70"
+                                    class="btn btn-primary veshop-login-submit veshop-twofa-btn-base veshop-twofa-btn-primary w-full disabled:cursor-not-allowed disabled:opacity-70"
                                     :disabled="form.processing"
                                 >
                                     {{ form.processing ? 'Ativando...' : 'Ativar 2FA' }}
@@ -343,7 +343,7 @@ watch(
 
                                 <button
                                     type="button"
-                                    class="veshop-twofa-btn-base veshop-twofa-btn-secondary mt-3 w-full"
+                                    class="veshop-twofa-btn-base veshop-twofa-btn-back mt-3 w-full"
                                     @click="returnToLogin"
                                 >
                                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -371,7 +371,7 @@ watch(
                             </button>
                             <button
                                 type="button"
-                                class="veshop-twofa-btn-base veshop-twofa-btn-secondary mt-3 w-full"
+                                class="veshop-twofa-btn-base veshop-twofa-btn-back mt-3 w-full"
                                 @click="returnToLogin"
                             >
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -510,6 +510,18 @@ watch(
     background-color: #0a4255;
     border-color: #0a4255;
     color: #ffffff;
+}
+
+.veshop-twofa-btn-back {
+    background-color: transparent;
+    border-color: rgba(7, 51, 65, 0.28);
+    color: #073341;
+}
+
+.veshop-twofa-btn-back:hover {
+    background-color: rgba(7, 51, 65, 0.05);
+    border-color: rgba(7, 51, 65, 0.5);
+    color: #073341;
 }
 
 .attention-pulse {
