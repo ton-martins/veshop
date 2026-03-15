@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Support\Facades\Vite;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
 
@@ -33,6 +34,15 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->assertSafeTestingDatabase();
+
+        if ((bool) config('app.force_https', false)) {
+            URL::forceScheme('https');
+
+            $appUrl = rtrim((string) config('app.url', ''), '/');
+            if ($appUrl !== '') {
+                URL::forceRootUrl($appUrl);
+            }
+        }
 
         Vite::prefetch(concurrency: 3);
     }
