@@ -3,13 +3,41 @@
 namespace App\Http\Middleware;
 
 use App\Models\SystemSetting;
+use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Middleware;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 class HandleInertiaRequests extends Middleware
 {
+    public function handle(Request $request, Closure $next): Response
+    {
+        $response = parent::handle($request, $next);
+
+        if (! $response instanceof JsonResponse) {
+            return $response;
+        }
+
+        $payload = $response->getData(true);
+        if (! is_array($payload)) {
+            return $response;
+        }
+
+        $isInertiaPayload = array_key_exists('component', $payload)
+            && array_key_exists('props', $payload)
+            && array_key_exists('url', $payload)
+            && array_key_exists('version', $payload);
+
+        if ($isInertiaPayload && ! $response->headers->has('X-Inertia')) {
+            $response->headers->set('X-Inertia', 'true');
+        }
+
+        return $response;
+    }
+
     /**
      * The root template that is loaded on the first page visit.
      *
