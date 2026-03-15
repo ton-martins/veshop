@@ -937,6 +937,41 @@ const openNotifications = () => {
                                             </span>
                                         </div>
                                     </div>
+                                    <div v-if="canSwitchContractor" class="mt-3 border-t border-slate-200 pt-2">
+                                        <p class="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                            Trocar contratante
+                                        </p>
+                                        <div class="space-y-1">
+                                            <button
+                                                v-for="contractor in availableContractors"
+                                                :key="contractor.uuid ?? contractor.id"
+                                                type="button"
+                                                class="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition"
+                                                :class="isCurrentContractorOption(contractor) ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
+                                                @click="switchContractorTo(contractor); closeSidebar()"
+                                            >
+                                                <span
+                                                    class="flex h-6 w-6 items-center justify-center overflow-hidden rounded-md text-[10px] font-semibold text-white"
+                                                    :style="contractor.brand_avatar_url ? null : { background: resolveContractorColor(contractor) }"
+                                                >
+                                                    <img
+                                                        v-if="contractor.brand_avatar_url"
+                                                        :src="contractor.brand_avatar_url"
+                                                        :alt="contractor.brand_name ?? contractor.name"
+                                                        class="h-full w-full object-cover"
+                                                    />
+                                                    <span v-else>{{ resolveContractorInitials(contractor.brand_name ?? contractor.name) }}</span>
+                                                </span>
+                                                <span class="min-w-0 flex-1 truncate">{{ contractor.brand_name ?? contractor.name }}</span>
+                                                <span
+                                                    v-if="isCurrentContractorOption(contractor)"
+                                                    class="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
+                                                >
+                                                    Atual
+                                                </span>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div v-for="group in menuGroups" :key="group.key" class="mb-3 space-y-2 border-b border-slate-100 pb-3 last:mb-0 last:border-b-0 last:pb-0">
                                     <button type="button" class="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-100" @click="toggleGroup(group.key)">

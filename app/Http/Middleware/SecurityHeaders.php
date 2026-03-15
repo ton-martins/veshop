@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Closure;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -14,6 +15,7 @@ class SecurityHeaders
     public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
+        $this->ensureInertiaHeaders($request, $response);
 
         if (! config('security.headers.enabled', true)) {
             return $response;
@@ -52,6 +54,51 @@ class SecurityHeaders
         }
 
         return $response;
+    }
+
+    private function ensureInertiaHeaders(Request $request, Response $response): void
+    {
+        if (! $request->headers->has('X-Inertia')) {
+            return;
+        }
+
+        if ($response->headers->has('X-Inertia')) {
+            return;
+        }
+
+        $payload = null;
+
+        if ($response instanceof JsonResponse) {
+            $payload = $response->getData(true);
+        } else {
+            $content = trim((string) $response->getContent());
+            if ($content !== '' && str_starts_with($content, '{')) {
+                $decoded = json_decode($content, true);
+                if (is_array($decoded)) {
+                    $payload = $decoded;
+                }
+            }
+        }
+
+        if (! is_array($payload)) {
+            return;
+        }
+
+        // Any JSON response reached through an Inertia visit must advertise itself as Inertia.
+        // Some proxies/middlewares may drop this header.
+        $response->headers->set('X-Inertia', 'true');
+
+        if (! $response->headers->has('Content-Type')) {
+            $response->headers->set('Content-Type', 'application/json');
+        }
+
+        $varyHeader = (string) $response->headers->get('Vary', '');
+        if (! str_contains(strtolower($varyHeader), 'x-inertia')) {
+            $response->headers->set(
+                'Vary',
+                trim($varyHeader) !== '' ? $varyHeader.', X-Inertia' : 'X-Inertia'
+            );
+        }
     }
 
     private function resolveContentSecurityPolicy(): string

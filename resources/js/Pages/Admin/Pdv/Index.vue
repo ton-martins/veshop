@@ -709,10 +709,10 @@ function submitCreateClient() {
             </button>
         </template>
 
-        <section class="pdv-touch-mode space-y-4 md:flex md:h-full md:min-h-0 md:flex-col">
+        <section class="pdv-touch-mode min-w-0 space-y-4 md:flex md:h-full md:min-h-0 md:flex-col">
 
-            <div class="grid gap-4 md:h-full md:min-h-0 xl:grid-cols-[1.45fr_1fr]">
-                <section class="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm md:flex md:h-full md:min-h-0 md:flex-col md:p-4">
+            <div class="grid min-w-0 gap-4 md:h-full md:min-h-0 xl:grid-cols-[1.45fr_1fr]">
+                <section class="min-w-0 rounded-2xl border border-slate-300 bg-white p-3 shadow-sm md:flex md:h-full md:min-h-0 md:flex-col md:p-4">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <h2 class="text-sm font-semibold text-slate-900">Produtos</h2>
                         <button
@@ -869,7 +869,7 @@ function submitCreateClient() {
                         </div>
                     </div>
                 </section>
-                <section class="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm md:flex md:h-full md:min-h-0 md:flex-col md:p-4">
+                <section class="min-w-0 rounded-2xl border border-slate-300 bg-white p-3 shadow-sm md:flex md:h-full md:min-h-0 md:flex-col md:p-4">
                     <h2 class="text-sm font-semibold text-slate-900">Carrinho</h2>
 
                     <div class="mt-3 space-y-2 md:max-h-44 md:overflow-y-auto md:pr-1">
@@ -918,7 +918,7 @@ function submitCreateClient() {
                     </div>
 
                     <div class="mt-4 space-y-3 border-t border-slate-200 pt-4 md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-1">
-                        <div class="grid grid-cols-[1fr_auto] gap-2">
+                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
                             <div ref="clientPickerRoot" class="relative min-w-0">
                                 <button
                                     type="button"
@@ -942,7 +942,7 @@ function submitCreateClient() {
                                 >
                                     <div
                                         v-if="clientPickerOpen"
-                                        class="absolute left-0 top-[calc(100%+0.35rem)] z-[90] w-full min-w-[15rem] rounded-xl border border-slate-200 bg-white p-2 shadow-[0_22px_50px_-32px_rgba(15,23,42,0.95)]"
+                                        class="absolute left-0 top-[calc(100%+0.35rem)] z-[90] w-full min-w-0 sm:min-w-[15rem] rounded-xl border border-slate-200 bg-white p-2 shadow-[0_22px_50px_-32px_rgba(15,23,42,0.95)]"
                                     >
                                         <div class="veshop-search-shell flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
                                             <Search class="h-4 w-4 text-slate-500" />
@@ -1014,7 +1014,7 @@ function submitCreateClient() {
 
                             <button
                                 type="button"
-                                class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                                class="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto"
                                 @click="openCreateClientModal"
                             >
                                 <UserPlus class="h-4 w-4" />
@@ -1356,6 +1356,10 @@ function submitCreateClient() {
 </template>
 
 <style scoped>
+.pdv-touch-mode {
+    overflow-x: clip;
+}
+
 @media (min-width: 1024px) {
     .pdv-touch-mode :deep(button) {
         min-height: 48px;
