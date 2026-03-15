@@ -178,11 +178,11 @@ watch(
             </div>
         </div>
 
-        <div class="relative z-10 flex min-h-screen items-center justify-center px-6 py-10">
+        <div class="relative z-10 flex min-h-screen items-start justify-center px-3 py-6 sm:items-center sm:px-4 sm:py-8 md:px-6 md:py-10">
             <div
-                class="w-full max-w-[1080px] overflow-hidden rounded-3xl border border-white/10 bg-white/95 p-5 text-slate-900 shadow-2xl backdrop-blur lg:p-6"
+                class="w-full max-w-[1080px] overflow-hidden rounded-2xl border border-white/10 bg-white/95 p-3 text-slate-900 shadow-2xl backdrop-blur sm:rounded-3xl sm:p-4 lg:p-6"
             >
-                <div class="grid gap-4 lg:grid-cols-[1.18fr_0.82fr]">
+                <div class="grid gap-3 sm:gap-4 lg:grid-cols-[1.18fr_0.82fr]">
                     <section class="space-y-3 lg:pr-1">
                         <div class="space-y-1.5">
                             <div class="flex items-center gap-2.5">
@@ -216,7 +216,7 @@ watch(
                             {{ props.status }}
                         </div>
 
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3.5">
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 sm:px-3.5 sm:py-3.5">
                             <p class="veshop-login-label mb-0">Passo a passo</p>
                             <div class="mt-3 grid gap-2.5">
                                 <div class="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
@@ -542,6 +542,47 @@ watch(
     50% {
         transform: scale(1.015);
         box-shadow: 0 0 0 6px rgba(244, 63, 94, 0.18);
+    }
+}
+
+@media (max-width: 420px) {
+    .veshop-twofa-brand-icon {
+        width: 36px;
+        height: 36px;
+    }
+
+    .veshop-twofa-brand-icon-img {
+        width: 20px;
+        height: 20px;
+    }
+
+    .veshop-login-title {
+        font-size: 2.1rem;
+        line-height: 1.15;
+        letter-spacing: -0.01em;
+    }
+
+    .veshop-login-subtitle {
+        font-size: 0.95rem;
+        line-height: 1.45;
+    }
+
+    .veshop-twofa-code-input {
+        letter-spacing: 0.22em;
+    }
+
+    .veshop-twofa-orb-left {
+        width: 290px;
+        height: 290px;
+        left: -92px;
+        top: -66px;
+    }
+
+    .veshop-twofa-orb-right {
+        width: 320px;
+        height: 320px;
+        right: -120px;
+        bottom: -110px;
     }
 }
 </style>
