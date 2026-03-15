@@ -25,7 +25,7 @@ const props = defineProps({
     products: { type: Array, default: () => [] },
 });
 
-const { normalizeHex, primaryColor, publicFaviconHref, publicFaviconType, systemIconUrl, themeStyles, withAlpha } = useBranding();
+const { normalizeHex, primaryColor, publicFaviconHref, publicFaviconType, themeStyles, withAlpha } = useBranding();
 
 const safeRoute = (name, fallback = '#') => {
     if (typeof route !== 'function') return fallback;
@@ -40,9 +40,37 @@ const loginUrl = computed(() => safeRoute('login', '/login'));
 const storeName = computed(() => String(props.contractor?.brand_name || props.contractor?.name || 'Loja'));
 const storeSlug = computed(() => String(props.contractor?.slug || 'shop'));
 const storeLogo = computed(() => props.contractor?.avatar_url || props.contractor?.logo_url || null);
+const storePrimaryColor = computed(() => normalizeHex(props.contractor?.primary_color || '', primaryColor.value));
+const storeInitials = computed(() => {
+    const safe = String(storeName.value || '').trim();
+    if (!safe) return 'LJ';
+
+    const parts = safe.split(/\s+/).filter(Boolean);
+    const first = parts[0]?.charAt(0) || '';
+    const last = parts.length > 1 ? parts[parts.length - 1].charAt(0) : '';
+
+    return `${first}${last}`.toUpperCase() || 'LJ';
+});
+const storeInitialsColor = computed(() => {
+    const normalized = storePrimaryColor.value.slice(1);
+    const red = Number.parseInt(normalized.slice(0, 2), 16);
+    const green = Number.parseInt(normalized.slice(2, 4), 16);
+    const blue = Number.parseInt(normalized.slice(4, 6), 16);
+    const luminance = ((red * 299) + (green * 587) + (blue * 114)) / 255000;
+
+    return luminance > 0.62 ? '#0f172a' : '#ffffff';
+});
+const storeIconStyle = computed(() => {
+    if (storeLogo.value) return null;
+
+    return {
+        background: storePrimaryColor.value,
+        color: storeInitialsColor.value,
+    };
+});
 
 const pageStyles = computed(() => {
-    const c = normalizeHex(props.contractor?.primary_color || '', primaryColor.value);
+    const c = storePrimaryColor.value;
     return {
         ...themeStyles.value,
         '--catalog-primary': c,
@@ -274,9 +302,9 @@ const openCartFromMenu = () => {
                     >
                         <Menu class="h-4 w-4" />
                     </button>
-                    <div class="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-slate-900 text-white">
+                    <div class="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-slate-100" :style="storeIconStyle">
                         <img v-if="storeLogo" :src="storeLogo" :alt="storeName" class="h-full w-full object-cover" />
-                        <img v-else :src="systemIconUrl" :alt="storeName" class="h-6 w-6 object-contain" />
+                        <span v-else class="text-xs font-semibold">{{ storeInitials }}</span>
                     </div>
                     <div class="min-w-0">
                         <p class="truncate text-sm font-semibold text-slate-900">{{ storeName }}</p>

@@ -98,7 +98,6 @@ class HandleInertiaRequests extends Middleware
 
         if ($currentContractor) {
             $contractorBranding = array_filter([
-                'name' => $currentContractor->brand_name ?: $currentContractor->name,
                 'logo_url' => $currentContractor->brand_logo_url,
                 'avatar_url' => $currentContractor->brand_avatar_url,
                 'primary_color' => $currentContractor->brand_primary_color,
