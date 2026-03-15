@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 
 class SecurityHeaders
@@ -57,7 +58,7 @@ class SecurityHeaders
 
     private function ensureInertiaHeaders(Request $request, Response $response): void
     {
-        if (! $request->headers->has('X-Inertia')) {
+        if (! $request->headers->has('X-Inertia') && ! $this->looksLikeInertiaResponse($response)) {
             return;
         }
 
@@ -72,6 +73,23 @@ class SecurityHeaders
                 trim($varyHeader) !== '' ? $varyHeader.', X-Inertia' : 'X-Inertia'
             );
         }
+    }
+
+    private function looksLikeInertiaResponse(Response $response): bool
+    {
+        if (! $response instanceof JsonResponse) {
+            return false;
+        }
+
+        $payload = $response->getData(true);
+        if (! is_array($payload)) {
+            return false;
+        }
+
+        return array_key_exists('component', $payload)
+            && array_key_exists('props', $payload)
+            && array_key_exists('url', $payload)
+            && array_key_exists('version', $payload);
     }
 
     private function resolveContentSecurityPolicy(): string
