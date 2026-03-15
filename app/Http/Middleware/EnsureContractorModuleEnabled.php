@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\Contractor;
 use Closure;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -18,11 +19,11 @@ class EnsureContractorModuleEnabled
         abort_unless($user, 403);
 
         $requestedModule = strtolower(trim($module));
-        abort_if(! in_array($requestedModule, Contractor::availableModules(), true), 403, 'Módulo inválido.');
+        abort_if(! in_array($requestedModule, Contractor::availableModules(), true), 403, 'Modulo invalido.');
 
         $user->loadMissing('contractors');
         $availableContractors = $user->contractors->values();
-        abort_if($availableContractors->isEmpty(), 403, 'Nenhum contratante disponível para este usuário.');
+        abort_if($availableContractors->isEmpty(), 403, 'Nenhum contratante disponivel para este usuario.');
 
         $sessionContractorId = (int) $request->session()->get('current_contractor_id', 0);
         $currentContractor = $sessionContractorId > 0
@@ -37,14 +38,22 @@ class EnsureContractorModuleEnabled
             }
         }
 
-        abort_unless($currentContractor, 403, 'Contratante ativo não encontrado.');
-        abort_unless(
-            $currentContractor->hasModule($requestedModule),
-            403,
-            'Módulo não habilitado para o contratante ativo.'
-        );
+        if (! $currentContractor) {
+            return $this->redirectToAdminHome('Contratante ativo nao encontrado.');
+        }
+
+        if (! $currentContractor->hasModule($requestedModule)) {
+            return $this->redirectToAdminHome('Modulo nao habilitado para o contratante ativo.');
+        }
 
         return $next($request);
+    }
+
+    private function redirectToAdminHome(string $statusMessage): RedirectResponse
+    {
+        return redirect()
+            ->route('admin.home')
+            ->with('status', $statusMessage);
     }
 }
 

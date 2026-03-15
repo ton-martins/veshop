@@ -3,7 +3,6 @@
 namespace App\Http\Middleware;
 
 use Closure;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -62,34 +61,8 @@ class SecurityHeaders
             return;
         }
 
-        if ($response->headers->has('X-Inertia')) {
-            return;
-        }
-
-        $payload = null;
-
-        if ($response instanceof JsonResponse) {
-            $payload = $response->getData(true);
-        } else {
-            $content = trim((string) $response->getContent());
-            if ($content !== '' && str_starts_with($content, '{')) {
-                $decoded = json_decode($content, true);
-                if (is_array($decoded)) {
-                    $payload = $decoded;
-                }
-            }
-        }
-
-        if (! is_array($payload)) {
-            return;
-        }
-
-        // Any JSON response reached through an Inertia visit must advertise itself as Inertia.
-        // Some proxies/middlewares may drop this header.
-        $response->headers->set('X-Inertia', 'true');
-
-        if (! $response->headers->has('Content-Type')) {
-            $response->headers->set('Content-Type', 'application/json');
+        if (! $response->headers->has('X-Inertia')) {
+            $response->headers->set('X-Inertia', 'true');
         }
 
         $varyHeader = (string) $response->headers->get('Vary', '');

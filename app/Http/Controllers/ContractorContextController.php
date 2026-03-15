@@ -30,6 +30,8 @@ class ContractorContextController extends Controller
 
         $request->session()->put('current_contractor_id', $contractorId);
 
-        return back()->with('status', 'Contratante alterado com sucesso.');
+        return redirect()
+            ->route('admin.home')
+            ->with('status', 'Contratante alterado com sucesso.');
     }
 }

@@ -672,7 +672,7 @@ function submitCreateClient() {
             <div class="flex w-full flex-wrap items-center gap-2 md:justify-center">
                 <span
                     v-if="hasOpenCashSession"
-                    class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700"
+                    class="inline-flex max-w-full items-center truncate rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700"
                 >
                     {{ props.cashSession.code }}
                 </span>
@@ -696,7 +696,8 @@ function submitCreateClient() {
                 @click="openCashModalOpen = true"
             >
                 <Unlock class="h-4 w-4" />
-                Abrir caixa
+                <span class="sm:hidden">Abrir</span>
+                <span class="hidden sm:inline">Abrir caixa</span>
             </button>
             <button
                 v-else
@@ -705,13 +706,14 @@ function submitCreateClient() {
                 @click="openCloseCashModal"
             >
                 <Lock class="h-4 w-4" />
-                Fechar caixa
+                <span class="sm:hidden">Fechar</span>
+                <span class="hidden sm:inline">Fechar caixa</span>
             </button>
         </template>
 
-        <section class="pdv-touch-mode min-w-0 space-y-4 md:flex md:h-full md:min-h-0 md:flex-col">
+        <section class="pdv-touch-mode min-w-0 space-y-4 overflow-x-hidden md:flex md:h-full md:min-h-0 md:flex-col">
 
-            <div class="grid min-w-0 gap-4 md:h-full md:min-h-0 xl:grid-cols-[1.45fr_1fr]">
+            <div class="grid min-w-0 gap-4 md:h-full md:min-h-0 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
                 <section class="min-w-0 rounded-2xl border border-slate-300 bg-white p-3 shadow-sm md:flex md:h-full md:min-h-0 md:flex-col md:p-4">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <h2 class="text-sm font-semibold text-slate-900">Produtos</h2>
@@ -789,12 +791,12 @@ function submitCreateClient() {
                         Nenhum produto encontrado para o filtro aplicado.
                     </div>
                     <div v-else class="mt-4 md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-1">
-                        <div class="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                             <button
                                 v-for="product in paginatedProducts"
                                 :key="'paged-product-' + product.id"
                                 type="button"
-                                class="group relative flex min-w-0 flex-col rounded-xl border border-slate-300 bg-white p-2 text-left shadow-sm transition hover:border-slate-400 hover:shadow-md"
+                                class="group relative flex min-w-0 flex-col overflow-hidden rounded-xl border border-slate-300 bg-white p-2 text-left shadow-sm transition hover:border-slate-400 hover:shadow-md"
                                 @click="addToCart(product)"
                             >
                                 <div class="h-20 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 md:h-24">
@@ -816,13 +818,14 @@ function submitCreateClient() {
                                     </p>
                                 </div>
                                 <div
-                                    class="pointer-events-none absolute inset-0 rounded-xl bg-slate-900/0 transition duration-200 group-hover:bg-slate-900/10"
+                                    class="pointer-events-none absolute inset-0 rounded-xl bg-slate-900/0 transition duration-200 group-hover:bg-slate-900/45 group-active:bg-slate-900/45"
                                 />
                                 <div
-                                    class="pointer-events-none absolute inset-x-2 bottom-2 translate-y-1 opacity-100 transition duration-200 md:translate-y-3 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100"
+                                    class="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition duration-200 group-hover:opacity-100 group-active:opacity-100"
                                 >
-                                    <span class="inline-flex w-full items-center justify-center rounded-md bg-slate-900 px-2 py-2 text-[11px] font-semibold text-white">
-                                        Clique para adicionar
+                                    <span class="inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-[11px] font-semibold text-slate-900 shadow">
+                                        <Plus class="h-3.5 w-3.5" />
+                                        Adicionar
                                     </span>
                                 </div>
                             </button>
