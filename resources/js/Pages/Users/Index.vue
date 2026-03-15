@@ -59,7 +59,7 @@ const filterRoleOptions = computed(() => ([
 ]));
 
 const filterStatusOptions = [
-    { value: '', label: 'Todos status' },
+    { value: '', label: 'Todos os status' },
     { value: 'active', label: 'Ativos' },
     { value: 'inactive', label: 'Inativos' },
 ];
@@ -132,29 +132,29 @@ const buildAddressDefaults = () => ({
 const brazilStates = [
     { code: 'AC', name: 'Acre' },
     { code: 'AL', name: 'Alagoas' },
-    { code: 'AP', name: 'AmapÃ¡' },
+    { code: 'AP', name: 'Amapá' },
     { code: 'AM', name: 'Amazonas' },
     { code: 'BA', name: 'Bahia' },
-    { code: 'CE', name: 'CearÃ¡' },
+    { code: 'CE', name: 'Ceará' },
     { code: 'DF', name: 'Distrito Federal' },
-    { code: 'ES', name: 'EspÃ­rito Santo' },
-    { code: 'GO', name: 'GoiÃ¡s' },
-    { code: 'MA', name: 'MaranhÃ£o' },
+    { code: 'ES', name: 'Espírito Santo' },
+    { code: 'GO', name: 'Goiás' },
+    { code: 'MA', name: 'Maranhão' },
     { code: 'MT', name: 'Mato Grosso' },
     { code: 'MS', name: 'Mato Grosso do Sul' },
     { code: 'MG', name: 'Minas Gerais' },
-    { code: 'PA', name: 'ParÃ¡' },
-    { code: 'PB', name: 'ParaÃ­ba' },
-    { code: 'PR', name: 'ParanÃ¡' },
+    { code: 'PA', name: 'Pará' },
+    { code: 'PB', name: 'Paraíba' },
+    { code: 'PR', name: 'Paraná' },
     { code: 'PE', name: 'Pernambuco' },
-    { code: 'PI', name: 'PiauÃ­' },
+    { code: 'PI', name: 'Piauí' },
     { code: 'RJ', name: 'Rio de Janeiro' },
     { code: 'RN', name: 'Rio Grande do Norte' },
     { code: 'RS', name: 'Rio Grande do Sul' },
-    { code: 'RO', name: 'RondÃ´nia' },
+    { code: 'RO', name: 'Rondônia' },
     { code: 'RR', name: 'Roraima' },
     { code: 'SC', name: 'Santa Catarina' },
-    { code: 'SP', name: 'SÃ£o Paulo' },
+    { code: 'SP', name: 'São Paulo' },
     { code: 'SE', name: 'Sergipe' },
     { code: 'TO', name: 'Tocantins' },
 ];
@@ -168,10 +168,10 @@ const stateOptions = computed(() => ([
 ]));
 
 const wizardSteps = [
-    { id: 1, label: 'Dados bÃ¡sicos', icon: UserRound },
+    { id: 1, label: 'Dados básicos', icon: UserRound },
     { id: 2, label: 'Acesso', icon: ShieldCheck },
-    { id: 3, label: 'EndereÃ§o e avatar', icon: MapPinHouse },
-    { id: 4, label: 'RevisÃ£o', icon: CheckCircle2 },
+    { id: 3, label: 'Endereço e avatar', icon: MapPinHouse },
+    { id: 4, label: 'Revisão', icon: CheckCircle2 },
 ];
 
 const showModal = ref(false);
@@ -446,7 +446,7 @@ const lookupCep = async () => {
     if (!cep) return;
 
     if (cep.length !== 8) {
-        cepLookupError.value = 'CEP invÃ¡lido. Digite os 8 nÃºmeros.';
+        cepLookupError.value = 'CEP inválido. Digite os 8 números.';
         return;
     }
 
@@ -461,7 +461,7 @@ const lookupCep = async () => {
         const payload = await response.json();
 
         if (payload?.erro) {
-            cepLookupError.value = 'CEP nÃ£o encontrado.';
+            cepLookupError.value = 'CEP não encontrado.';
             return;
         }
 
@@ -474,7 +474,7 @@ const lookupCep = async () => {
             addressForm.value.complement = String(payload.complemento ?? '').trim();
         }
     } catch {
-        cepLookupError.value = 'NÃ£o foi possÃ­vel consultar o ViaCEP agora.';
+        cepLookupError.value = 'Não foi possível consultar o ViaCEP agora.';
     } finally {
         cepLookupLoading.value = false;
     }
@@ -488,7 +488,7 @@ const submitUser = () => {
         userForm.address = buildAddressPayload();
         userForm.preferences = null;
     } catch {
-        jsonError.value = 'NÃ£o foi possÃ­vel montar os dados de endereÃ§o.';
+        jsonError.value = 'Não foi possível montar os dados de endereço.';
         return;
     }
 
@@ -562,9 +562,9 @@ const destroyUser = () => {
 </script>
 
 <template>
-    <Head title="UsuÃ¡rios" />
+    <Head title="Usuários" />
 
-    <AuthenticatedLayout area="master" header-variant="compact" header-title="UsuÃ¡rios">
+    <AuthenticatedLayout area="master" header-variant="compact" header-title="Usuários">
         <section class="space-y-4">
             <div v-if="flashStatus" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
                 {{ flashStatus }}
@@ -635,7 +635,7 @@ const destroyUser = () => {
                             @click="openCreate"
                         >
                             <Plus class="h-3.5 w-3.5" />
-                            Novo usuÃ¡rio
+                            Novo usuário
                         </button>
                     </div>
                 </div>
@@ -650,7 +650,7 @@ const destroyUser = () => {
                                     <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Perfil</th>
                                     <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Contratantes</th>
                                     <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
-                                    <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">AÃ§Ãµes</th>
+                                    <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Ações</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 bg-white">
@@ -701,7 +701,7 @@ const destroyUser = () => {
                                 </tr>
                                 <tr v-if="!users.data.length">
                                     <td colspan="6" class="px-4 py-8 text-center text-sm text-slate-500">
-                                        Nenhum usuÃ¡rio encontrado.
+                                        Nenhum usuário encontrado.
                                     </td>
                                 </tr>
                             </tbody>
@@ -718,7 +718,7 @@ const destroyUser = () => {
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                         <h3 class="text-lg font-semibold text-slate-900">
-                            {{ isEditing ? 'Editar usuÃ¡rio' : 'Novo usuÃ¡rio' }}
+                            {{ isEditing ? 'Editar usuário' : 'Novo usuário' }}
                         </h3>
                         <p class="text-sm text-slate-500">Preencha por etapas para manter o cadastro padronizado.</p>
                     </div>
@@ -780,7 +780,7 @@ const destroyUser = () => {
                             v-model="userForm.cpf"
                             type="text"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="Somente nÃºmeros"
+                            placeholder="Somente números"
                         >
                         <InputError :message="userForm.errors.cpf" class="mt-1" />
                     </div>
@@ -828,7 +828,7 @@ const destroyUser = () => {
                             v-model="userForm.password"
                             type="password"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="MÃ­nimo 8 caracteres"
+                            placeholder="Mínimo 8 caracteres"
                         >
                         <InputError :message="userForm.errors.password" class="mt-1" />
                     </div>
@@ -847,7 +847,7 @@ const destroyUser = () => {
 
                     <div class="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                         <label class="flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
-                            <span>UsuÃ¡rio ativo</span>
+                            <span>Usuário ativo</span>
                             <input v-model="userForm.is_active" type="checkbox" class="rounded border-slate-300">
                         </label>
                         <InputError :message="userForm.errors.is_active" class="mt-1" />
@@ -857,7 +857,7 @@ const destroyUser = () => {
                                 <section v-show="currentStep === 3" class="space-y-4">
                     <div class="grid gap-3 md:grid-cols-2">
                         <div class="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Avatar do usuÃ¡rio</p>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Avatar do usuário</p>
                             <div class="mt-3 flex items-center gap-3">
                                 <div class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white text-base font-semibold text-slate-700 shadow-sm">
                                     <img
@@ -985,7 +985,7 @@ const destroyUser = () => {
 
                     <div class="rounded-2xl border border-slate-200 bg-white p-4">
                         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">EndereÃ§o com ViaCEP</p>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Endereço com ViaCEP</p>
                             <span v-if="cepLookupLoading" class="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
                                 Consultando CEP...
                             </span>
@@ -1026,7 +1026,7 @@ const destroyUser = () => {
                             </div>
 
                             <div>
-                                <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">NÃºmero</label>
+                                <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Número</label>
                                 <input
                                     v-model="addressForm.number"
                                     type="text"
@@ -1101,7 +1101,7 @@ const destroyUser = () => {
                         </article>
 
                         <article class="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">EndereÃ§o</p>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Endereço</p>
                             <p class="mt-2 text-sm text-slate-700">
                                 {{ addressForm.street || '-' }}, {{ addressForm.number || 's/n' }}
                                 <span v-if="addressForm.complement">- {{ addressForm.complement }}</span>
@@ -1114,7 +1114,7 @@ const destroyUser = () => {
                     </div>
 
                     <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                        PreferÃªncias avanÃ§adas estÃ£o desativadas por enquanto e serÃ£o definidas em outra etapa do sistema.
+                        Preferências avançadas estão desativadas por enquanto e serão definidas em outra etapa do sistema.
                     </div>
                 </section>
 
@@ -1149,7 +1149,7 @@ const destroyUser = () => {
                             :disabled="!canAdvance"
                             @click="goNextStep"
                         >
-                            PrÃ³ximo
+                            Próximo
                             <ChevronRight class="h-3.5 w-3.5" />
                         </button>
 
@@ -1160,7 +1160,7 @@ const destroyUser = () => {
                             :disabled="userForm.processing"
                             @click="submitUser"
                         >
-                            {{ userForm.processing ? 'Salvando...' : 'Salvar usuÃ¡rio' }}
+                            {{ userForm.processing ? 'Salvando...' : 'Salvar usuário' }}
                         </button>
                     </div>
                 </div>
@@ -1169,9 +1169,9 @@ const destroyUser = () => {
 
         <DeleteConfirmModal
             :show="showDeleteModal"
-            title="Excluir usuÃ¡rio"
-            message="Tem certeza que deseja excluir este usuÃ¡rio?"
-            :item-label="userToDelete?.name ? `UsuÃ¡rio: ${userToDelete.name}` : ''"
+            title="Excluir usuário"
+            message="Tem certeza que deseja excluir este usuário?"
+            :item-label="userToDelete?.name ? `Usuário: ${userToDelete.name}` : ''"
             :processing="deleteForm.processing"
             @close="closeDeleteModal"
             @confirm="destroyUser"

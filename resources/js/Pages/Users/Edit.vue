@@ -58,7 +58,7 @@ const submit = () => {
         form.address = parseJsonOrNull(addressJson.value);
         form.preferences = parseJsonOrNull(preferencesJson.value);
     } catch {
-        jsonError.value = 'Address e Preferences precisam estar em JSON válido.';
+        jsonError.value = 'Endereço e preferências precisam estar em JSON válido.';
         return;
     }
 
@@ -147,7 +147,7 @@ const submit = () => {
                 </div>
 
                 <div class="space-y-1 md:col-span-2">
-                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Address (JSON)</label>
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Endereço (JSON)</label>
                     <textarea
                         v-model="addressJson"
                         rows="3"
@@ -158,7 +158,7 @@ const submit = () => {
                 </div>
 
                 <div class="space-y-1 md:col-span-2">
-                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Preferences (JSON)</label>
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Preferências (JSON)</label>
                     <textarea
                         v-model="preferencesJson"
                         rows="3"
