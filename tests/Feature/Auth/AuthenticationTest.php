@@ -4,6 +4,7 @@ namespace Tests\Feature\Auth;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class AuthenticationTest extends TestCase
@@ -50,5 +51,28 @@ class AuthenticationTest extends TestCase
 
         $this->assertGuest();
         $response->assertRedirect('/');
+    }
+
+    public function test_login_is_blocked_after_max_attempts_even_with_correct_password_during_lockout(): void
+    {
+        Cache::clear();
+
+        $user = User::factory()->create();
+
+        foreach (range(1, 5) as $_) {
+            $this->post('/login', [
+                'email' => $user->email,
+                'password' => 'wrong-password',
+            ]);
+        }
+
+        $blockedResponse = $this->from('/login')->post('/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ]);
+
+        $blockedResponse->assertRedirect('/login');
+        $blockedResponse->assertSessionHasErrors('email');
+        $this->assertGuest();
     }
 }

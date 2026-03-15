@@ -48,6 +48,7 @@ Route::middleware('auth')->group(function () {
         ->name('two-factor.challenge');
 
     Route::post('two-factor/challenge', [TwoFactorChallengeController::class, 'store'])
+        ->middleware('throttle:6,1')
         ->name('two-factor.verify');
 
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
