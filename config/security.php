@@ -5,7 +5,7 @@ return [
         'enabled' => (bool) env('SECURITY_HEADERS_ENABLED', true),
         'csp' => (string) env(
             'SECURITY_CSP',
-            "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: http: ws: wss:;"
+            "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https:; script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' blob: https:; style-src 'self' 'unsafe-inline' https: data: blob:; style-src-elem 'self' 'unsafe-inline' https: data: blob:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: http: ws: wss:;"
         ),
     ],
     'hsts' => [
@@ -15,4 +15,3 @@ return [
         'preload' => (bool) env('HSTS_PRELOAD', false),
     ],
 ];
-
