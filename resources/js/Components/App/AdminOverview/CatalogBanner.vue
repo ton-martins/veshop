@@ -1,5 +1,6 @@
 ﻿<script setup>
 import { computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import { Store, ChevronRight } from 'lucide-vue-next';
 import { useBranding } from '@/branding';
 
@@ -14,7 +15,13 @@ defineProps({
     },
 });
 
-const { primaryColor, contractorActiveGradient, withAlpha } = useBranding();
+const page = usePage();
+const { primaryColor, withAlpha, normalizeHex } = useBranding();
+
+const currentContractor = computed(() => page.props.contractorContext?.current ?? null);
+const contractorPrimaryColor = computed(() =>
+    normalizeHex(currentContractor.value?.brand_primary_color, primaryColor.value),
+);
 
 const panelStyle = computed(() => ({
     borderColor: withAlpha(primaryColor.value, 0.18),
@@ -37,8 +44,9 @@ const catalogLinkStyle = computed(() => ({
 }));
 
 const catalogButtonStyle = computed(() => ({
-    backgroundImage: contractorActiveGradient.value,
-    boxShadow: `0 12px 28px -18px ${withAlpha(primaryColor.value, 0.55)}`,
+    backgroundImage: `linear-gradient(145deg, ${withAlpha(contractorPrimaryColor.value, 0.98)} 0%, ${withAlpha(contractorPrimaryColor.value, 0.86)} 100%)`,
+    border: `1px solid ${withAlpha(contractorPrimaryColor.value, 0.62)}`,
+    boxShadow: `0 12px 28px -18px ${withAlpha(contractorPrimaryColor.value, 0.55)}`,
 }));
 </script>
 
