@@ -163,7 +163,7 @@ const systemContextLabel = computed(() => {
 const {
     brandName,
     systemIconUrl,
-    contractorActiveGradient,
+    withAlpha,
     publicFaviconHref,
     publicFaviconType,
     userAvatarUrl,
@@ -173,6 +173,16 @@ const {
 } = useBranding();
 
 const systemBrandName = computed(() => String(brandName.value || 'Veshop'));
+const activeMenuBackground = computed(() => {
+    const baseColor = resolveContractorColor(currentContractor.value);
+
+    return {
+        background: `linear-gradient(145deg, ${withAlpha(baseColor, 0.96)} 0%, ${withAlpha(baseColor, 0.86)} 55%, ${withAlpha(baseColor, 0.8)} 100%)`,
+        border: `1px solid ${withAlpha(baseColor, 0.62)}`,
+        boxShadow: `inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(15, 23, 42, 0.18), 0 8px 18px ${withAlpha(baseColor, 0.24)}, 0 2px 6px rgba(15, 23, 42, 0.14)`,
+        transform: 'translateY(-1px)',
+    };
+});
 
 const contractorName = computed(() => currentContractor.value?.brand_name || currentContractor.value?.name || '');
 const contractorLogoUrl = computed(() => currentContractor.value?.brand_avatar_url || currentContractor.value?.brand_logo_url || '');
@@ -716,7 +726,7 @@ const openNotifications = () => {
                     <div class="flex-1 overflow-y-auto">
                         <nav :class="sidebarCollapsed ? 'flex flex-col items-center gap-3 p-3' : 'space-y-3 p-4'">
                             <template v-if="sidebarCollapsed">
-                                <Link v-for="link in collapsedLinks" :key="link.key" :href="safeRoute(link.route, '#')" class="flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition" :class="isLinkActive(link) ? 'text-white shadow-inner shadow-black/10' : 'hover:bg-slate-100 hover:text-slate-900'" :style="isLinkActive(link) ? { background: contractorActiveGradient } : null" :title="link.label" :aria-label="link.label">
+                                <Link v-for="link in collapsedLinks" :key="link.key" :href="safeRoute(link.route, '#')" class="flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition" :class="isLinkActive(link) ? 'text-white' : 'hover:bg-slate-100 hover:text-slate-900'" :style="isLinkActive(link) ? activeMenuBackground : null" :title="link.label" :aria-label="link.label">
                                     <component :is="link.iconComponent" class="h-4 w-4 opacity-90" />
                                 </Link>
                             </template>
@@ -732,7 +742,7 @@ const openNotifications = () => {
                                     <transition name="fade">
                                         <ul v-show="isGroupExpanded(group.key)" class="mt-2 space-y-1 pl-2">
                                             <li v-for="link in group.links" :key="link.key">
-                                                <Link :href="safeRoute(link.route, '#')" class="group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition" :class="isLinkActive(link) ? 'text-white shadow-inner shadow-black/10' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'" :style="isLinkActive(link) ? { background: contractorActiveGradient } : null">
+                                                <Link :href="safeRoute(link.route, '#')" class="group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition" :class="isLinkActive(link) ? 'text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'" :style="isLinkActive(link) ? activeMenuBackground : null">
                                                     <component :is="link.iconComponent" class="h-4 w-4 opacity-90" />
                                                     <span class="text-sm">{{ link.label }}</span>
                                                 </Link>
@@ -877,8 +887,8 @@ const openNotifications = () => {
                                 :key="`mobile-${link.key}`"
                                 :href="safeRoute(link.route, '#')"
                                 class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold transition"
-                                :class="isLinkActive(link) ? 'text-white shadow-inner shadow-black/10' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
-                                :style="isLinkActive(link) ? { background: contractorActiveGradient } : null"
+                                :class="isLinkActive(link) ? 'text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
+                                :style="isLinkActive(link) ? activeMenuBackground : null"
                             >
                                 <component :is="link.iconComponent" class="h-4 w-4" />
                                 <span class="truncate">{{ link.label }}</span>
@@ -887,8 +897,8 @@ const openNotifications = () => {
                             <button
                                 type="button"
                                 class="relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold transition"
-                                :class="isNotificationsActive ? 'text-white shadow-inner shadow-black/10' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
-                                :style="isNotificationsActive ? { background: contractorActiveGradient } : null"
+                                :class="isNotificationsActive ? 'text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
+                                :style="isNotificationsActive ? activeMenuBackground : null"
                                 @click="openNotifications"
                             >
                                 <Bell class="h-4 w-4" />
@@ -1002,7 +1012,7 @@ const openNotifications = () => {
                                     <transition name="fade">
                                         <ul v-show="isGroupExpanded(group.key)" class="mt-2 space-y-1 pl-3">
                                             <li v-for="link in group.links" :key="link.key">
-                                                <Link :href="safeRoute(link.route, '#')" class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition" :class="isLinkActive(link) ? 'text-white shadow-inner shadow-black/10' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'" :style="isLinkActive(link) ? { background: contractorActiveGradient } : null" @click="closeSidebar">
+                                                <Link :href="safeRoute(link.route, '#')" class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition" :class="isLinkActive(link) ? 'text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'" :style="isLinkActive(link) ? activeMenuBackground : null" @click="closeSidebar">
                                                     <component :is="link.iconComponent" class="h-4 w-4 opacity-90" />
                                                     {{ link.label }}
                                                 </Link>
