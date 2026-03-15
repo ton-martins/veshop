@@ -241,6 +241,18 @@ onBeforeUnmount(() => {
     #navbar.nav-sticky .navbar-toggler {
         color: #073341 !important;
     }
+
+    #navbar .landing-navbar-mobile .nav-link,
+    #navbar.nav-sticky .landing-navbar-mobile .nav-link {
+        color: #073341 !important;
+    }
+
+    #navbar .landing-navbar-mobile .nav-link:hover,
+    #navbar .landing-navbar-mobile .nav-link:focus,
+    #navbar.nav-sticky .landing-navbar-mobile .nav-link:hover,
+    #navbar.nav-sticky .landing-navbar-mobile .nav-link:focus {
+        color: #0a4254 !important;
+    }
 }
 
 @media (min-width: 992px) {
