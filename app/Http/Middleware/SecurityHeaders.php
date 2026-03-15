@@ -28,6 +28,7 @@ class SecurityHeaders
         $this->setHeaderIfMissing($response, 'X-Permitted-Cross-Domain-Policies', 'none');
         $this->setHeaderIfMissing($response, 'Cross-Origin-Opener-Policy', 'same-origin');
         $this->setHeaderIfMissing($response, 'Cross-Origin-Resource-Policy', 'same-origin');
+        $this->setHeaderIfMissing($response, 'Access-Control-Expose-Headers', 'X-Inertia, X-Inertia-Location, X-Inertia-Version');
         $csp = $this->resolveContentSecurityPolicy();
         $this->setHeaderIfMissing(
             $response,

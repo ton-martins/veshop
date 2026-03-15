@@ -7,6 +7,32 @@ import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Veshop';
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+if (typeof document !== 'undefined') {
+    document.addEventListener('inertia:invalid', (event) => {
+        const response = event?.detail?.response ?? null;
+        const payload = response?.data ?? null;
+
+        const looksLikeInertiaPayload = isObject(payload)
+            && typeof payload.component === 'string'
+            && isObject(payload.props)
+            && typeof payload.url === 'string'
+            && Object.prototype.hasOwnProperty.call(payload, 'version');
+
+        if (!looksLikeInertiaPayload) {
+            return;
+        }
+
+        event.preventDefault();
+
+        // Fail-safe for proxies/CDNs stripping X-Inertia response header.
+        const targetUrl = String(payload.url || response?.request?.responseURL || window.location.href);
+        if (targetUrl) {
+            window.location.assign(targetUrl);
+        }
+    });
+}
 
 createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
