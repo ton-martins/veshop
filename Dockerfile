@@ -55,6 +55,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+# Ziggy é importado a partir de vendor no build do Vite.
+COPY --from=vendor /var/www/vendor /app/vendor
 RUN npm run build
 
 FROM php-base AS app
