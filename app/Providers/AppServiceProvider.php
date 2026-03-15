@@ -38,9 +38,15 @@ class AppServiceProvider extends ServiceProvider
         if ((bool) config('app.force_https', false)) {
             URL::forceScheme('https');
 
-            $appUrl = rtrim((string) config('app.url', ''), '/');
-            if ($appUrl !== '') {
-                URL::forceRootUrl($appUrl);
+            // Avoid cross-origin Inertia visits caused by forced host mismatches
+            // (e.g. veshop.com.br -> www.veshop.com.br). Force root URL only
+            // when explicitly requested.
+            $forceRootUrl = filter_var(env('APP_FORCE_ROOT_URL', false), FILTER_VALIDATE_BOOL);
+            if ($forceRootUrl) {
+                $appUrl = rtrim((string) config('app.url', ''), '/');
+                if ($appUrl !== '') {
+                    URL::forceRootUrl($appUrl);
+                }
             }
         }
 
