@@ -1,240 +1,205 @@
-﻿# Veshop - Requisitos do Produto e da Plataforma
+# Veshop - Requisitos do Produto e da Plataforma
 
-Versão: v1.4  
-Última atualização: 14/03/2026
+Versão: v1.5  
+Última atualização: 15/03/2026
 
 ## 1. Visão do produto
 
-O Veshop é um SaaS multiempresa para operação de contratantes, com foco em gestão prática e execução diária.
+O Veshop é um SaaS multiempresa para gestão operacional de contratantes, com foco em uso diário e execução rápida.
 
 Objetivos:
 - Centralizar operação comercial e de serviços em uma única plataforma.
 - Reduzir retrabalho entre vendas, estoque, financeiro e atendimento.
-- Permitir branding por contratante.
-- Entregar experiência simples para uso diário em desktop, tablet e celular.
+- Permitir identidade visual por contratante.
+- Entregar experiência consistente em desktop, tablet e celular.
 
-## 2. Escopo funcional atual
+## 2. Estado atual do sistema (implementado)
 
-### 2.1 Papéis e acesso
+### 2.1 Base da plataforma
 
-Papéis ativos:
-- `master`: gestão da plataforma.
-- `admin`: gestão operacional do contratante.
-
-Regras:
-- Não há cadastro público de usuários/contratantes.
-- O `master` gerencia contratantes, planos e usuários.
-
-### 2.2 Modelo organizacional (contractor-first)
-
+- Arquitetura monolítica em Laravel + Inertia + Vue.
+- Estratégia multiempresa por `contractor_id` (contractor-first).
+- Papéis ativos:
+- `master`
+- `admin`
 - Relação N:N entre usuários e contratantes (`contractor_user`).
-- Cada contratante possui branding próprio, plano ativo e nicho único.
-- Nicho não é editável pelo `admin`.
+- Autenticação com 2FA obrigatório no fluxo autenticado.
+- Testes bloqueados para uso exclusivo de SQLite em memória:
+- `DB_CONNECTION=sqlite`
+- `DB_DATABASE=:memory:`
+- Trava aplicada no `AppServiceProvider`, `tests/TestCase.php`, `.env.testing` e `phpunit.xml`.
 
-Nichos ativos:
+### 2.2 Módulo Master
+
+- CRUD de usuários (modal padrão do sistema).
+- Upload de avatar de usuário (`png`, `jpg`, `jpeg`) com substituição do arquivo anterior.
+- CRUD de contratantes.
+- CRUD de planos.
+- Planos segmentados por nicho:
 - `commercial` (Comércio)
 - `services` (Serviços)
+- Página de branding da plataforma (cores, logo, ícone e imagens da landing).
 
-### 2.3 Catálogo público por contratante
+### 2.3 Módulo Admin (Comércio)
 
-Diretriz definida:
-- Cada contratante terá catálogo público em subdomínio no padrão `slug.veshop.com.br`.
-- O `slug` será customizável e único por contratante.
+- Dashboard com visão operacional e PDV.
+- CRUD de Produtos.
+- CRUD de Categorias.
+- CRUD de Clientes.
+- CRUD de Fornecedores.
+- Página única de Contas com abas:
+- Contas a pagar
+- Contas a receber
+- Pagamentos
+- Aba Pagamentos com CRUD funcional de:
+- Gateways de pagamento (`payment_gateways`)
+- Formas de pagamento (`payment_methods`)
+- Página de pedidos (camada de interface disponível, sem fluxo completo de e-commerce).
+- Página de estoque (camada de interface disponível, sem ciclo completo de inventário geral).
+- Página de relatórios (camada de interface disponível).
 
-Suporte adicional:
-- Contratantes sem domínio próprio usam o padrão `slug.veshop.com.br`.
-- Contratantes que desejarem podem:
-  - adquirir domínio com suporte da Veshop, ou
-  - vincular domínio próprio/existente.
-- Contratantes que já possuem loja virtual podem usar o Veshop como plataforma de gestão (backoffice), com integrações.
+### 2.4 PDV (MVP transacional já funcional)
 
-## 3. Módulos por nicho
+- Abertura e fechamento de caixa.
+- Controle de sessão de caixa (`cash_sessions`) e movimentos (`cash_movements`).
+- Carrinho no PDV com busca e categorias.
+- Cadastro rápido de cliente dentro do PDV.
+- Definição dos Top 12 produtos prioritários do PDV.
+- Fechamento de venda com:
+- Itens
+- Desconto
+- Acréscimo
+- Forma de pagamento
+- Valor pago em dinheiro e troco
+- Persistência transacional de:
+- `sales`
+- `sale_items`
+- `sale_payments`
+- Baixa automática de estoque na venda.
+- Geração de movimentação de estoque (`inventory_movements`) vinculada à venda.
+- Registro de entrada de caixa para pagamento em dinheiro.
+- Testes de fluxo PDV cobrindo abertura de caixa, venda e baixa de estoque.
 
-### 3.1 Comércio
+### 2.5 Experiência pública (Landing + Loja)
 
-- Início (Visão geral)
-- Produtos
-- Categorias
-- Clientes
-- Fornecedores
-- Pedidos
-- Estoque
-- Contas (abas: pagar / receber)
-- Relatórios
+- Landing page componentizada e responsiva.
+- Sessão de planos segmentada por nicho (Comércio e Serviços).
+- Loja pública por contratante via rota:
+- `/shop/{slug}`
+- Página de detalhes de produto:
+- `/shop/{slug}/produto/{product}`
+- Redirecionamento legado:
+- `/catalogo/{slug}`
+- `/catalogo/{slug}/produto/{product}`
+- Loja pública com:
+- Busca de produtos
+- Filtro por categoria
+- Ordenação
+- Paginação
+- Favoritos em `localStorage`
+- Carrinho em `localStorage`
+- Checkout atual via WhatsApp (MVP).
 
-### 3.2 Serviços
+### 2.6 Padrões de UX/UI adotados
 
-- Início (Visão geral)
-- Catálogo de serviços
-- Ordens de serviço
-- Agenda
+- Paginação padronizada em pt-BR.
+- Tabelas com scroll horizontal interno (evita quebrar o layout da página em mobile).
+- Modo de exibição lista/cards nas telas principais.
+- Inputs de busca com botão de limpar (`x`) e fluxo consistente.
+- Selects customizados do sistema (`UiSelect`) nas páginas migradas.
+- Modais padronizados para criação/edição.
+- Confirmação de exclusão no padrão anterior do sistema.
+- Navegação mobile inferior no app autenticado e na loja pública.
 
-## 4. O que já temos (status consolidado)
+## 3. Regras já definidas de catálogo público e domínio
 
-### 4.1 Backend
+- Estratégia principal de publicação: `slug.veshop.com.br`.
+- Contratantes sem domínio próprio usam o padrão de subdomínio.
+- Contratantes com domínio próprio poderão vincular domínio externo.
+- Contratantes com loja virtual existente poderão usar Veshop como backoffice.
+- Em ambiente local, a navegação atual está operando por rota (`/shop/{slug}`).
 
-Implementado:
-- CRUDs com paginação (10 por página): Produtos, Categorias, Clientes, Fornecedores.
-- CRUD de usuários (master), contratantes (master) e planos (master).
-- CRUD admin de configuração de pagamentos por contratante:
-  - gateways (`payment_gateways`),
-  - formas de pagamento (`payment_methods`).
-- Segmentação por nicho e bloqueio de módulos por contratante ativo.
-- Relacionamento de usuários com múltiplos contratantes.
-- Soft deletes nas entidades principais do domínio.
-- Upload de avatar de usuário com validação (`png`, `jpg`, `jpeg`) e substituição do avatar anterior.
+## 4. Pontos ainda pendentes (por prioridade)
 
-Parcial/visual (sem fluxo completo de negócio):
-- PDV (aba na visão geral comercial com métricas reais e ações ainda em evolução)
-- Pedidos
-- Estoque
-- Contas (pagar/receber)
-- Relatórios
-- Ordens de serviço
-- Agenda
+### 4.1 P0 - Fechamento do fluxo de pedido online (prioridade máxima)
 
-### 4.2 Frontend e UX/UI
+- Persistir pedido do catálogo público no backend (não apenas checkout por WhatsApp).
+- Criar lifecycle de pedido:
+- `novo`
+- `aguardando_confirmação`
+- `confirmado`
+- `rejeitado`
+- `aguardando_pagamento`
+- `pago`
+- `cancelado`
+- Notificar admin no painel e por canal externo (ex.: WhatsApp).
+- Permitir decisão do admin (aceitar/rejeitar) com motivo.
+- Gerar cobrança digital para o cliente (PIX/link) após confirmação.
 
-Implementado:
-- Layout autenticado com sidebar, header simplificado e menu mobile inferior.
-- Modo de visualização em lista/cards para tabelas adaptativas.
-- Tabelas com scroll horizontal interno para preservar layout mobile.
-- Paginação padronizada com rótulos em pt-BR.
-- Modais padronizados para criação/edição e confirmação de exclusão.
-- Página de perfil com upload de avatar.
-- Página de branding (master/admin) com identidade visual e ativos da landing.
-- Landing page segmentada por nicho nos planos (Comércio/Serviços) e responsiva.
-- Visão geral comercial com abas Operação e PDV (camada visual pronta para integração).
+### 4.2 P1 - Integração real de pagamentos e conciliação
 
-### 4.3 Padrões de busca e filtros
+- Integrar gateways (ex.: Mercado Pago) para cobrança real.
+- Gerar QR Code PIX dinâmico por transação.
+- Processar webhook para confirmação de pagamento.
+- Atualizar status do pedido/venda automaticamente por evento do gateway.
+- Tratar estorno/cancelamento com reversões financeiras e de estoque.
 
-Implementado hoje:
-- Campos de busca com:
-  - botão `Buscar`,
-  - acionamento por `Enter`,
-  - botão `x` para limpar rapidamente o texto.
-- Mantido botão `Limpar` para reset completo dos filtros.
+### 4.3 P2 - Fechar ciclo comercial completo
 
-## 5. Funcionalidades desenvolvidas hoje
+- Evoluir módulo de Pedidos para operação completa no painel.
+- Evoluir módulo de Estoque para entradas, saídas, ajustes e inventário geral.
+- Evoluir Contas a pagar/receber para fluxo transacional completo.
+- Conciliação financeira ponta a ponta (caixa, venda, contas e pagamento).
+- Relatórios gerenciais e financeiros com dados consolidados reais.
 
-- Ajuste de exibição de avatar no perfil e no rodapé/menu do layout autenticado.
-- Reforço de normalização de URL de avatar para evitar inconsistências de host.
-- Confirmação de troca de avatar com remoção do arquivo anterior para não acumular storage.
-- Troca de ícones no menu admin:
-  - grupo `Financeiro` para ícone de cifrão,
-  - link `Relatórios` para ícone de documento.
-- Padronização da busca nas páginas com botão explícito (`Buscar`) + `x` para limpar.
-- Atualização deste documento com status objetivo de “temos” e “falta”.
+### 4.4 P3 - Catálogo público multi-tenant por host
 
-## 6. Arquitetura e banco (diagnóstico atual)
+- Resolver contratante por host (subdomínio/domínio customizado) em produção.
+- Fluxo de onboarding de domínio:
+- Validação DNS
+- SSL
+- Redirecionamentos canônicos
 
-### 6.1 Arquitetura
+### 4.5 P4 - Módulo de integrações
 
-Estado atual:
-- Monólito Laravel com separação por contexto de domínio e papel.
-- Estratégia multiempresa por `contractor_id` + contexto de contratante em sessão.
-- Estrutura adequada para fase atual e crescimento inicial.
+- Área dedicada de integrações por contratante.
+- Gestão segura de credenciais de gateway.
+- Health-check de integração.
+- Integrações com e-commerce externo (sincronização de pedidos, estoque e financeiro).
 
-### 6.2 MySQL para o cenário
+### 4.6 P5 - Módulo de serviços (fluxo transacional)
 
-Resposta objetiva:
-- Sim, MySQL atende bem o cenário atual e a próxima fase do Veshop.
-- É uma escolha correta para SaaS multiempresa com o volume esperado de início.
+- Concluir catálogo de serviços com backend final.
+- Concluir ordens de serviço com status e histórico.
+- Concluir agenda operacional integrada a ordens.
 
-## 7. O que falta (prioridade)
+### 4.7 P6 - Auditoria e governança
 
-### 7.1 Prioridade P0 (bloqueante): base transacional comercial
+- Implementar trilha de auditoria de ações críticas.
+- Padronizar eventos auditáveis por entidade.
+- Endurecer validações tenant-first em toda a aplicação.
 
-- Criar modelagem e regras para:
-  - sessões de caixa (`cash_sessions`) e movimentos de caixa (`cash_movements`),
-  - vendas (`sales`), itens de venda (`sale_items`) e pagamentos (`sale_payments`),
-  - movimentações de estoque por origem (`inventory_movements`).
-- Garantir consistência transacional:
-  - baixa de estoque na venda,
-  - lançamento financeiro vinculado ao pagamento,
-  - reversão em cancelamento/estorno.
-- Definir numeração e identificação operacional (cupom/venda/caixa).
-- Aplicar escopo tenant-first e políticas de autorização em toda a cadeia.
+### 4.8 P7 - Escalabilidade e operação
 
-### 7.2 Prioridade P1: PDV MVP na página de visão geral
+- Redis para cache, sessão e filas.
+- Workers e jobs assíncronos de produção.
+- Observabilidade (logs estruturados, métricas, alertas).
+- Estratégia de backup/restore validada.
+- Evolução de armazenamento de mídia para object storage quando necessário.
 
-- Transformar a aba PDV em fluxo operacional real:
-  - abrir/fechar caixa com conferência,
-  - nova venda com carrinho e leitura por código,
-  - finalização por forma de pagamento (dinheiro, PIX, cartão),
-  - orçamento pendente e conversão em venda.
-- Integrar atalhos e cards do painel PDV com endpoints reais.
-- Registrar histórico de vendas recentes com dados reais do contratante.
-- Evoluir a configuração de pagamentos já criada:
-  - incluir credenciais seguras por gateway,
-  - validar conexão e health-check do provedor,
-  - concluir fluxo online (autorização/captura/estorno) por integração.
+## 5. Decisão atual para identidade do comprador no catálogo
 
-### 7.3 Prioridade P2: fechar ciclo comercial (após PDV MVP)
+- No modelo atual, o cliente comprador é tratado por contratante (isolamento por loja).
+- Conta global única de comprador entre múltiplas lojas ainda não foi implementada.
+- Se necessário, será evoluído para modelo híbrido:
+- conta global do comprador
+- perfil e histórico por loja/contratante
 
-- Concluir backend real de Pedidos (itens, status e regras).
-- Concluir backend real de Estoque (entradas, saídas, ajustes e inventário).
-- Concluir backend real de Contas (pagar/receber) com baixa e conciliação.
-- Concluir Relatórios operacionais e financeiros com indicadores consolidados.
+## 6. Próxima entrega recomendada
 
-### 7.4 Prioridade P3: módulo de serviços (fluxo completo)
-
-- Concluir backend operacional de Ordens de serviço.
-- Concluir backend operacional de Agenda de serviços.
-- Conectar indicadores da visão geral de serviços com dados transacionais reais.
-
-### 7.5 Prioridade P4: catálogo público e domínio por contratante
-
-- Implementar catálogo público com resolução por host:
-  - padrão `slug.veshop.com.br`,
-  - suporte a domínio customizado por contratante.
-- Criar onboarding de domínio:
-  - validação de DNS,
-  - emissão/renovação de SSL,
-  - domínio canônico e redirecionamentos.
-- Estruturar integrações para cenário em que a loja virtual externa permanece como vitrine e o Veshop atua na gestão.
-
-### 7.6 Prioridade P7: módulo de integrações
-
-- Implementar módulo de integrações para conectores externos.
-- Incluir integração de pagamentos (gateways) como trilha formal do produto.
-- Incluir integração com loja virtual existente do contratante para sincronização operacional (pedidos, estoque e financeiro).
-
-### 7.7 Prioridade P5: segurança e governança
-
-- Endurecer isolamento tenant-first em escopo/policies globais para reduzir risco de vazamento por erro de controller.
-- Consolidar auditoria de ações críticas (criação, edição, exclusão, troca de status).
-
-### 7.8 Prioridade P6: escalabilidade operacional
-
-Não será feito agora, mas está mapeado:
-- Migrar `session`, `cache` e `queue` para Redis (hoje estão em `database` no ambiente local).
-- Estruturar workers de fila e rotinas assíncronas.
-- Definir observabilidade (APM, logs estruturados e alertas).
-- Definir backup/restore com testes periódicos.
-- Planejar armazenamento de mídia em object storage (S3 compatível).
-
-## 8. Próxima fase sugerida
-
-Ordem recomendada:
-1. Base transacional comercial (caixa, venda, pagamento, estoque).
-2. PDV MVP na visão geral (fluxo completo de frente de caixa).
-3. Pedidos e itens de pedido.
-4. Estoque e movimentações completas.
-5. Contas (pagar/receber) com baixa e conciliação.
-6. Relatórios consolidados.
-7. Ordens de serviço e agenda (fluxo completo).
-8. Catálogo público por host + domínio customizado + onboarding DNS/SSL.
-9. Auditoria e observabilidade.
-
-## 9. Checklist de retomada
-
-Ao retomar o desenvolvimento, considerar como verdade:
-- Sistema é multiempresa com `contractor-first`.
-- Nicho define módulos disponíveis.
-- `master` e `admin` são os únicos papéis ativos.
-- Catálogo público seguirá padrão de subdomínio `slug.veshop.com.br`, com suporte a domínio próprio.
-- CRUDs principais de cadastro base já estão operacionais.
-- Aba PDV da visão geral está em camada visual; fluxo transacional ainda precisa ser implementado.
-- Fluxos transacionais centrais (PDV, pedidos, estoque, financeiro completo) ainda precisam de backend final.
-- MySQL é adequado para o estágio atual; escalabilidade futura depende de camadas de infraestrutura (Redis, filas, observabilidade e backup).
+Ordem sugerida para a próxima etapa:
+1. Checkout transacional do catálogo público criando pedido no backend.
+2. Fluxo de confirmação/rejeição de pedido no painel do admin.
+3. Integração de pagamento com geração de PIX QR Code/link.
+4. Webhook de confirmação de pagamento com atualização automática de status.
+5. Conciliação entre pedido, venda, estoque e financeiro.
