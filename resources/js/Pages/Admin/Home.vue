@@ -21,11 +21,17 @@ const currentNiche = computed(() => String(currentContractor.value?.business_nic
 
 const catalogUrl = computed(() => {
     const slug = String(currentContractor.value?.slug ?? '').trim();
-    if (slug) {
-        return `https://${slug}.veshop.com.br`;
+    if (!slug) return '/';
+
+    if (typeof route === 'function') {
+        try {
+            return route('shop.show', { slug });
+        } catch {
+            return `/shop/${slug}`;
+        }
     }
 
-    return 'https://www.veshop.com.br';
+    return `/shop/${slug}`;
 });
 
 const activeTab = ref('operations');

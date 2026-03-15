@@ -3,6 +3,7 @@
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ContractorContextController;
 use App\Http\Controllers\DashboardRedirectController;
+use App\Http\Controllers\PublicShopController;
 use App\Models\Plan;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -84,6 +85,21 @@ Route::get('/', function () {
 Route::get('/home', DashboardRedirectController::class)
     ->middleware(['auth', '2fa', 'verified'])
     ->name('home');
+
+Route::get('/shop/{slug}', [PublicShopController::class, 'show'])
+    ->name('shop.show');
+
+Route::get('/shop/{slug}/produto/{product}', [PublicShopController::class, 'product'])
+    ->whereNumber('product')
+    ->name('shop.product.show');
+
+Route::get('/catalogo/{slug}', static function (string $slug) {
+    return redirect()->route('shop.show', ['slug' => $slug], 301);
+})->name('catalog.show');
+
+Route::get('/catalogo/{slug}/produto/{product}', static function (string $slug, int $product) {
+    return redirect()->route('shop.product.show', ['slug' => $slug, 'product' => $product], 301);
+})->whereNumber('product')->name('catalog.product.show');
 
 Route::redirect('/dashboard', '/home');
 

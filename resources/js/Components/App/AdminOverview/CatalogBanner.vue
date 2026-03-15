@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed } from 'vue';
 import { Store, ChevronRight } from 'lucide-vue-next';
 import { useBranding } from '@/branding';
@@ -50,7 +50,7 @@ const catalogButtonStyle = computed(() => ({
                     <Store class="h-4 w-4" />
                 </span>
                 <div>
-                    <p class="text-sm font-semibold text-slate-900">Seu Catálogo Público</p>
+                    <p class="text-sm font-semibold text-slate-900">Sua loja pública</p>
                     <p class="text-[11px] text-slate-500">Loja ativa: {{ contractorName }}</p>
                     <a :href="catalogUrl" target="_blank" rel="noopener noreferrer" class="text-xs hover:underline" :style="catalogLinkStyle">
                         {{ catalogUrl }}
@@ -65,9 +65,10 @@ const catalogButtonStyle = computed(() => ({
                 class="inline-flex items-center gap-2 self-start rounded-xl px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 md:self-auto"
                 :style="catalogButtonStyle"
             >
-                Ver Catálogo
+                Ver minha loja
                 <ChevronRight class="h-3.5 w-3.5" />
             </a>
         </div>
     </div>
 </template>
+
