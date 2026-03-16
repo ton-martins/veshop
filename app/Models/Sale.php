@@ -22,11 +22,27 @@ class Sale extends Model
 
     public const STATUS_DRAFT = 'draft';
 
+    public const STATUS_NEW = 'new';
+
+    public const STATUS_PENDING_CONFIRMATION = 'pending_confirmation';
+
+    public const STATUS_CONFIRMED = 'confirmed';
+
+    public const STATUS_REJECTED = 'rejected';
+
+    public const STATUS_AWAITING_PAYMENT = 'awaiting_payment';
+
+    public const STATUS_PAID = 'paid';
+
     public const STATUS_COMPLETED = 'completed';
 
     public const STATUS_CANCELLED = 'cancelled';
 
     public const STATUS_REFUNDED = 'refunded';
+
+    public const SHIPPING_MODE_PICKUP = 'pickup';
+
+    public const SHIPPING_MODE_DELIVERY = 'delivery';
 
     /**
      * @var list<string>
@@ -35,6 +51,7 @@ class Sale extends Model
         'contractor_id',
         'cash_session_id',
         'client_id',
+        'shop_customer_id',
         'user_id',
         'code',
         'source',
@@ -45,6 +62,10 @@ class Sale extends Model
         'total_amount',
         'paid_amount',
         'change_amount',
+        'shipping_mode',
+        'shipping_amount',
+        'shipping_estimate_days',
+        'shipping_address',
         'notes',
         'completed_at',
         'cancelled_at',
@@ -63,6 +84,9 @@ class Sale extends Model
             'total_amount' => 'decimal:2',
             'paid_amount' => 'decimal:2',
             'change_amount' => 'decimal:2',
+            'shipping_amount' => 'decimal:2',
+            'shipping_estimate_days' => 'integer',
+            'shipping_address' => 'array',
             'completed_at' => 'datetime',
             'cancelled_at' => 'datetime',
             'metadata' => 'array',
@@ -84,6 +108,11 @@ class Sale extends Model
         return $this->belongsTo(Client::class);
     }
 
+    public function shopCustomer(): BelongsTo
+    {
+        return $this->belongsTo(ShopCustomer::class);
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
@@ -99,4 +128,3 @@ class Sale extends Model
         return $this->hasMany(SalePayment::class);
     }
 }
-

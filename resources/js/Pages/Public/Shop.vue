@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, onMounted, ref, watch } from 'vue';
 import {
     ChevronLeft,
@@ -23,23 +23,31 @@ const props = defineProps({
     contractor: { type: Object, required: true },
     categories: { type: Array, default: () => [] },
     products: { type: Array, default: () => [] },
+    storefront: { type: Object, default: () => ({}) },
+    payment_methods: { type: Array, default: () => [] },
+    shipping_config: { type: Object, default: () => ({}) },
+    shop_auth: { type: Object, default: () => ({ authenticated: false, customer: null }) },
 });
 
 const { normalizeHex, primaryColor, publicFaviconHref, publicFaviconType, themeStyles, withAlpha } = useBranding();
 
-const safeRoute = (name, fallback = '#') => {
-    if (typeof route !== 'function') return fallback;
-    try {
-        return route(name);
-    } catch {
-        return fallback;
-    }
-};
-
-const loginUrl = computed(() => safeRoute('login', '/login'));
 const storeName = computed(() => String(props.contractor?.brand_name || props.contractor?.name || 'Loja'));
 const storeSlug = computed(() => String(props.contractor?.slug || 'shop'));
+const loginUrl = computed(() => `/shop/${storeSlug.value}/entrar`);
+const accountUrl = computed(() => `/shop/${storeSlug.value}/conta`);
+const verifyEmailUrl = computed(() => `/shop/${storeSlug.value}/verificar-email`);
+const isShopAuthenticated = computed(() => Boolean(props.shop_auth?.authenticated));
+const requiresEmailVerification = computed(() => Boolean(props.shop_auth?.requires_email_verification ?? true));
+const isShopEmailVerified = computed(() => Boolean(props.shop_auth?.email_verified ?? false));
+const shopCustomer = computed(() => props.shop_auth?.customer ?? null);
+const accountOrLoginUrl = computed(() => {
+    if (!isShopAuthenticated.value) return loginUrl.value;
+    if (requiresEmailVerification.value && !isShopEmailVerified.value) return verifyEmailUrl.value;
+
+    return accountUrl.value;
+});
 const storeLogo = computed(() => props.contractor?.avatar_url || props.contractor?.logo_url || null);
+const checkoutUrl = computed(() => `/shop/${storeSlug.value}/checkout`);
 const storePrimaryColor = computed(() => normalizeHex(props.contractor?.primary_color || '', primaryColor.value));
 const storeInitials = computed(() => {
     const safe = String(storeName.value || '').trim();
@@ -79,6 +87,74 @@ const pageStyles = computed(() => {
         '--catalog-primary-strong': withAlpha(c, 0.92),
         '--catalog-gradient': `linear-gradient(135deg, ${withAlpha(c, 0.16)} 0%, rgba(255,255,255,0.96) 54%, ${withAlpha(c, 0.05)} 100%)`,
     };
+});
+
+const storefront = computed(() => {
+    const raw = props.storefront ?? {};
+    const blocksRaw = raw.blocks ?? {};
+    const heroRaw = raw.hero ?? {};
+    const promotionsRaw = raw.promotions ?? {};
+    const catalogRaw = raw.catalog ?? {};
+
+    return {
+        template: String(raw.template || 'comercio'),
+        blocks: {
+            hero: Boolean(blocksRaw.hero ?? true),
+            promotions: Boolean(blocksRaw.promotions ?? true),
+            categories: Boolean(blocksRaw.categories ?? true),
+            catalog: Boolean(blocksRaw.catalog ?? true),
+        },
+        hero: {
+            title: String(heroRaw.title || '').trim(),
+            subtitle: String(heroRaw.subtitle || '').trim(),
+            cta_label: String(heroRaw.cta_label || '').trim(),
+        },
+        promotions: {
+            title: String(promotionsRaw.title || '').trim(),
+            subtitle: String(promotionsRaw.subtitle || '').trim(),
+            product_ids: Array.isArray(promotionsRaw.product_ids)
+                ? Array.from(new Set(promotionsRaw.product_ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)))
+                : [],
+        },
+        catalog: {
+            title: String(catalogRaw.title || '').trim(),
+            subtitle: String(catalogRaw.subtitle || '').trim(),
+        },
+    };
+});
+
+const storefrontBlocks = computed(() => storefront.value.blocks);
+const storefrontHeroTitle = computed(() => storefront.value.hero.title || `Compre em ${storeName.value}`);
+const storefrontHeroSubtitle = computed(() => storefront.value.hero.subtitle || 'Confira os destaques e finalize seu pedido com rapidez.');
+const storefrontPromotionsTitle = computed(() => storefront.value.promotions.title || 'Promoções da semana');
+const storefrontPromotionsSubtitle = computed(() => storefront.value.promotions.subtitle || 'Itens selecionados para você.');
+const storefrontCatalogTitle = computed(() => {
+    if (storefront.value.catalog.title) return storefront.value.catalog.title;
+    if (storefront.value.template === 'servicos') return 'Catálogo de serviços';
+    if (storefront.value.template === 'hibrido') return 'Catálogo completo';
+    return 'Catálogo de produtos';
+});
+const storefrontCatalogSubtitle = computed(() =>
+    storefront.value.catalog.subtitle || 'Use os filtros para encontrar o que precisa.',
+);
+const searchPlaceholder = computed(() => (
+    storefront.value.template === 'servicos'
+        ? 'Buscar serviço, código ou categoria'
+        : 'Buscar produto, SKU ou categoria'
+));
+const catalogItemLabel = computed(() => (storefront.value.template === 'servicos' ? 'serviço(s)' : 'produto(s)'));
+
+const promotionProducts = computed(() => {
+    const available = props.products.filter((product) => Number(product.stock_quantity || 0) > 0);
+    if (!available.length) return [];
+
+    const ids = storefront.value.promotions.product_ids;
+    if (!ids.length) {
+        return available.slice(0, 8);
+    }
+
+    const selected = available.filter((product) => ids.includes(Number(product.id)));
+    return (selected.length ? selected : available).slice(0, 8);
 });
 
 const normalize = (value) =>
@@ -138,6 +214,15 @@ watch([search, selectedCategory, sortMode], () => {
 watch(totalPages, (v) => {
     if (currentPage.value > v) currentPage.value = v;
 });
+watch(
+    () => storefrontBlocks.value.categories,
+    (enabled) => {
+        if (!enabled) {
+            selectedCategory.value = 'all';
+        }
+    },
+    { immediate: true },
+);
 
 const currency = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const productImage = (product) => {
@@ -151,6 +236,69 @@ const favoritesStorageKey = computed(() => `veshop:shop-favorites:${storeSlug.va
 const cartItems = ref([]);
 const favoriteProductIds = ref([]);
 const favoriteProductIdSet = computed(() => new Set(favoriteProductIds.value));
+const favoriteSyncingIds = ref([]);
+const favoriteCount = computed(() => favoriteProductIds.value.length);
+
+const normalizeFavoriteIds = (values) => {
+    if (!Array.isArray(values)) return [];
+
+    return Array.from(new Set(
+        values
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id) && id > 0 && productMap.value.has(id)),
+    ));
+};
+
+const serverFavoriteProductIds = computed(() =>
+    normalizeFavoriteIds(props.shop_auth?.favorite_product_ids ?? []),
+);
+
+const loadFavoriteIdsFromStorage = () => {
+    if (typeof window === 'undefined') return;
+
+    try {
+        const rawFavorites = window.localStorage.getItem(favoritesStorageKey.value);
+        if (!rawFavorites) {
+            favoriteProductIds.value = [];
+            return;
+        }
+
+        favoriteProductIds.value = normalizeFavoriteIds(JSON.parse(rawFavorites));
+    } catch {
+        favoriteProductIds.value = [];
+    }
+};
+
+const setFavoriteSyncing = (productId, syncing) => {
+    const safeProductId = Number(productId);
+    const next = new Set(favoriteSyncingIds.value);
+
+    if (syncing) {
+        next.add(safeProductId);
+    } else {
+        next.delete(safeProductId);
+    }
+
+    favoriteSyncingIds.value = Array.from(next);
+};
+
+const isFavoriteSyncing = (productId) => new Set(favoriteSyncingIds.value).has(Number(productId));
+
+const persistFavoriteOnServer = async (productId, shouldFavorite) => {
+    if (typeof window === 'undefined' || !window.axios) return false;
+
+    const endpoint = `/shop/${storeSlug.value}/favoritos/${productId}`;
+
+    try {
+        const response = shouldFavorite
+            ? await window.axios.post(endpoint)
+            : await window.axios.delete(endpoint);
+
+        return response?.data?.ok === true;
+    } catch {
+        return false;
+    }
+};
 
 onMounted(() => {
     if (typeof window === 'undefined') return;
@@ -166,20 +314,50 @@ onMounted(() => {
         cartItems.value = [];
     }
 
-    try {
-        const rawFavorites = window.localStorage.getItem(favoritesStorageKey.value);
-        if (!rawFavorites) return;
+    if (isShopAuthenticated.value) {
+        favoriteProductIds.value = serverFavoriteProductIds.value;
+    } else {
+        loadFavoriteIdsFromStorage();
+    }
 
-        const parsedFavorites = JSON.parse(rawFavorites);
-        if (!Array.isArray(parsedFavorites)) return;
-
-        favoriteProductIds.value = parsedFavorites
-            .map((id) => Number(id))
-            .filter((id) => Number.isFinite(id) && id > 0 && productMap.value.has(id));
-    } catch {
-        favoriteProductIds.value = [];
+    const favoriteFilter = new URLSearchParams(window.location.search).get('favoritos');
+    if (favoriteFilter === '1' || favoriteFilter === 'true') {
+        favoritesOnly.value = true;
     }
 });
+
+watch(
+    [isShopAuthenticated, serverFavoriteProductIds],
+    ([authenticated]) => {
+        if (authenticated) {
+            favoriteProductIds.value = serverFavoriteProductIds.value;
+            return;
+        }
+
+        loadFavoriteIdsFromStorage();
+    },
+    { immediate: true },
+);
+
+watch(
+    shopCustomer,
+    (customer) => {
+        if (!customer) return;
+
+        if (!String(checkoutForm.customer_name ?? '').trim()) {
+            checkoutForm.customer_name = String(customer.name ?? '');
+        }
+
+        if (!String(checkoutForm.customer_phone ?? '').trim()) {
+            checkoutForm.customer_phone = String(customer.phone ?? '');
+        }
+
+        if (!String(checkoutForm.customer_email ?? '').trim()) {
+            checkoutForm.customer_email = String(customer.email ?? '');
+        }
+    },
+    { immediate: true },
+);
 
 watch(
     cartItems,
@@ -194,6 +372,7 @@ watch(
     favoriteProductIds,
     (value) => {
         if (typeof window === 'undefined') return;
+        if (isShopAuthenticated.value) return;
         window.localStorage.setItem(favoritesStorageKey.value, JSON.stringify(value));
     },
     { deep: true },
@@ -211,6 +390,99 @@ const cartDetailed = computed(() =>
 
 const cartCount = computed(() => cartDetailed.value.reduce((acc, i) => acc + Number(i.quantity || 0), 0));
 const cartSubtotal = computed(() => cartDetailed.value.reduce((acc, i) => acc + Number(i.line_total || 0), 0));
+const shippingConfig = computed(() => {
+    const raw = props.shipping_config ?? {};
+
+    return {
+        pickup_enabled: Boolean(raw.pickup_enabled ?? true),
+        delivery_enabled: Boolean(raw.delivery_enabled ?? true),
+        fixed_fee: Number(raw.fixed_fee ?? 0),
+        free_over: Number(raw.free_over ?? 0),
+        estimated_days: raw.estimated_days ? Number(raw.estimated_days) : null,
+    };
+});
+const paymentMethodOptions = computed(() => (props.payment_methods ?? []).map((method) => ({
+    value: String(method.id),
+    label: method.name,
+})));
+
+const checkoutForm = useForm({
+    customer_name: String(shopCustomer.value?.name ?? ''),
+    customer_phone: String(shopCustomer.value?.phone ?? ''),
+    customer_email: String(shopCustomer.value?.email ?? ''),
+    payment_method_id: '',
+    delivery_mode: shippingConfig.value.delivery_enabled && !shippingConfig.value.pickup_enabled ? 'delivery' : 'pickup',
+    shipping_postal_code: '',
+    shipping_street: '',
+    shipping_number: '',
+    shipping_complement: '',
+    shipping_district: '',
+    shipping_city: '',
+    shipping_state: '',
+    notes: '',
+    items: [],
+});
+
+const shippingFee = computed(() => {
+    if (checkoutForm.delivery_mode !== 'delivery') return 0;
+
+    const freeOver = Number(shippingConfig.value.free_over || 0);
+    if (freeOver > 0 && cartSubtotal.value >= freeOver) {
+        return 0;
+    }
+
+    return Number(shippingConfig.value.fixed_fee || 0);
+});
+
+const orderTotal = computed(() => Number(cartSubtotal.value || 0) + Number(shippingFee.value || 0));
+const checkoutErrorMessage = computed(() =>
+    checkoutForm.errors.customer_name
+    || checkoutForm.errors.customer_phone
+    || checkoutForm.errors.customer_email
+    || checkoutForm.errors.payment_method_id
+    || checkoutForm.errors.delivery_mode
+    || checkoutForm.errors.shipping_postal_code
+    || checkoutForm.errors.shipping_street
+    || checkoutForm.errors.shipping_number
+    || checkoutForm.errors.shipping_district
+    || checkoutForm.errors.shipping_city
+    || checkoutForm.errors.shipping_state
+    || checkoutForm.errors.items
+    || checkoutForm.errors.order,
+);
+
+watch(
+    shippingConfig,
+    (config) => {
+        if (checkoutForm.delivery_mode === 'delivery' && !config.delivery_enabled) {
+            checkoutForm.delivery_mode = config.pickup_enabled ? 'pickup' : 'delivery';
+        }
+
+        if (checkoutForm.delivery_mode === 'pickup' && !config.pickup_enabled && config.delivery_enabled) {
+            checkoutForm.delivery_mode = 'delivery';
+        }
+    },
+    { immediate: true },
+);
+
+const canSubmitCheckout = computed(() => {
+    if (!isShopAuthenticated.value) return false;
+    if (requiresEmailVerification.value && !isShopEmailVerified.value) return false;
+
+    const name = String(checkoutForm.customer_name ?? '').trim();
+    const hasContact = Boolean(String(checkoutForm.customer_phone ?? '').trim() || String(checkoutForm.customer_email ?? '').trim());
+    const needsAddress = checkoutForm.delivery_mode === 'delivery';
+    const hasAddress = !needsAddress || (
+        String(checkoutForm.shipping_postal_code ?? '').trim() !== ''
+        && String(checkoutForm.shipping_street ?? '').trim() !== ''
+        && String(checkoutForm.shipping_number ?? '').trim() !== ''
+        && String(checkoutForm.shipping_district ?? '').trim() !== ''
+        && String(checkoutForm.shipping_city ?? '').trim() !== ''
+        && String(checkoutForm.shipping_state ?? '').trim().length === 2
+    );
+
+    return cartDetailed.value.length > 0 && name !== '' && hasContact && hasAddress;
+});
 
 const productDetailsUrl = (productId) => {
     if (typeof route === 'function') {
@@ -241,35 +513,46 @@ const removeFromCart = (id) => {
 
 const isFavorite = (productId) => favoriteProductIdSet.value.has(Number(productId));
 
-const toggleFavorite = (productId) => {
+const toggleFavorite = async (productId) => {
     const targetId = Number(productId);
     if (!targetId) return;
+    if (isShopAuthenticated.value && isFavoriteSyncing(targetId)) return;
 
-    if (isFavorite(targetId)) {
-        favoriteProductIds.value = favoriteProductIds.value.filter((id) => Number(id) !== targetId);
+    const wasFavorite = isFavorite(targetId);
+    const previous = [...favoriteProductIds.value];
+    favoriteProductIds.value = wasFavorite
+        ? favoriteProductIds.value.filter((id) => Number(id) !== targetId)
+        : normalizeFavoriteIds([...favoriteProductIds.value, targetId]);
+
+    if (!isShopAuthenticated.value) return;
+
+    setFavoriteSyncing(targetId, true);
+    const saved = await persistFavoriteOnServer(targetId, !wasFavorite);
+    setFavoriteSyncing(targetId, false);
+
+    if (!saved) {
+        favoriteProductIds.value = previous;
         return;
     }
-
-    favoriteProductIds.value = [...favoriteProductIds.value, targetId];
 };
 
-const whatsappUrl = computed(() => {
-    const digitsRaw = String(props.contractor?.phone || '').replace(/\D/g, '');
-    const digits = digitsRaw.length === 10 || digitsRaw.length === 11 ? `55${digitsRaw}` : digitsRaw;
-    if (!digits || !cartDetailed.value.length) return null;
-    const lines = [
-        `Olá! Quero finalizar um pedido na loja ${storeName.value}.`,
-        '',
-        ...cartDetailed.value.map((i) => `${i.quantity}x ${i.product.name} - ${currency(i.line_total)}`),
-        '',
-        `Subtotal: ${currency(cartSubtotal.value)}`,
-    ];
-    return `https://wa.me/${digits}?text=${encodeURIComponent(lines.join('\n'))}`;
-});
-
 const checkout = () => {
-    if (!whatsappUrl.value || typeof window === 'undefined') return;
-    window.open(whatsappUrl.value, '_blank', 'noopener,noreferrer');
+    if (!canSubmitCheckout.value) return;
+
+    checkoutForm.clearErrors();
+    checkoutForm.items = cartDetailed.value.map((item) => ({
+        product_id: Number(item.product.id),
+        quantity: Number(item.quantity),
+    }));
+
+    checkoutForm.post(checkoutUrl.value, {
+        preserveScroll: true,
+        onSuccess: () => {
+            cartItems.value = [];
+            checkoutForm.reset('payment_method_id', 'notes', 'items');
+            cartOpen.value = false;
+        },
+    });
 };
 
 const scrollTop = () => {
@@ -287,7 +570,7 @@ const openCartFromMenu = () => {
 </script>
 
 <template>
-    <Head :title="`${storeName} | Shop`">
+    <Head :title="`${storeName}`">
         <link v-if="publicFaviconHref" rel="icon" :href="publicFaviconHref" :type="publicFaviconType" />
     </Head>
 
@@ -312,24 +595,35 @@ const openCartFromMenu = () => {
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
-                    <Link :href="loginUrl" class="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:inline-flex">
+                    <button
+                        type="button"
+                        class="hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition sm:inline-flex"
+                        :class="favoritesOnly ? 'border-transparent text-white shadow-inner shadow-black/10' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                        :style="favoritesOnly ? { background: 'var(--catalog-primary-strong)' } : null"
+                        @click="favoritesOnly = !favoritesOnly"
+                    >
+                        <Heart class="h-3.5 w-3.5" />
+                        {{ favoritesOnly ? 'Mostrar todos' : `Favoritos (${favoriteCount})` }}
+                    </button>
+                    <Link :href="accountOrLoginUrl" class="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:inline-flex">
                         <LogIn class="h-3.5 w-3.5" />
-                        Entrar
+                        {{ isShopAuthenticated ? 'Minha conta' : 'Entrar' }}
                     </Link>
                 </div>
             </div>
         </header>
 
         <main class="mx-auto w-full max-w-7xl px-4 pb-24 pt-5 sm:px-6 lg:px-8 lg:pb-10">
-            <section class="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+            <section v-if="storefrontBlocks.hero" class="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
                 <div class="pointer-events-none absolute inset-0 opacity-90" style="background: var(--catalog-gradient)"></div>
                 <div class="relative grid gap-3 md:grid-cols-[1fr,220px] md:items-center">
                     <div class="space-y-3">
-                        <h1 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Compre em {{ storeName }}</h1>
+                        <h1 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{{ storefrontHeroTitle }}</h1>
+                        <p class="max-w-2xl text-sm text-slate-700">{{ storefrontHeroSubtitle }}</p>
                         <div class="flex flex-col gap-2 sm:flex-row">
                             <label class="veshop-search-shell flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
                                 <Search class="veshop-search-icon h-4 w-4 text-slate-400" />
-                                <input v-model="search" type="search" class="veshop-search-input text-sm text-slate-700" placeholder="Buscar produto, SKU ou categoria" />
+                                <input v-model="search" type="search" class="veshop-search-input text-sm text-slate-700" :placeholder="searchPlaceholder" />
                             </label>
                             <select v-model="sortMode" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm sm:w-[210px]">
                                 <option value="featured">Relevância</option>
@@ -347,10 +641,64 @@ const openCartFromMenu = () => {
                 </div>
             </section>
 
-            <section ref="categorySectionRef" class="mt-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <section v-if="storefrontBlocks.catalog && !storefrontBlocks.hero" class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <div class="grid gap-3 md:grid-cols-[1fr,220px] md:items-center">
+                    <div class="space-y-2">
+                        <h1 class="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{{ storefrontCatalogTitle }}</h1>
+                        <p class="text-sm text-slate-600">{{ storefrontCatalogSubtitle }}</p>
+                        <div class="flex flex-col gap-2 sm:flex-row">
+                            <label class="veshop-search-shell flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                                <Search class="veshop-search-icon h-4 w-4 text-slate-400" />
+                                <input v-model="search" type="search" class="veshop-search-input text-sm text-slate-700" :placeholder="searchPlaceholder" />
+                            </label>
+                            <select v-model="sortMode" class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm sm:w-[210px]">
+                                <option value="featured">Relevância</option>
+                                <option value="name">Nome (A-Z)</option>
+                                <option value="price_asc">Menor preço</option>
+                                <option value="price_desc">Maior preço</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">No carrinho</p>
+                        <p class="mt-1 text-xl font-bold text-slate-900">{{ cartCount }} item(ns)</p>
+                        <button type="button" class="mt-2 inline-flex w-full items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold text-white shadow-sm" style="background: var(--catalog-primary-strong)" @click="cartOpen = true">Ver carrinho</button>
+                    </div>
+                </div>
+            </section>
+
+            <section v-if="storefrontBlocks.promotions && promotionProducts.length" class="mt-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <div class="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-sm font-semibold text-slate-900">{{ storefrontPromotionsTitle }}</h2>
+                        <p class="text-xs text-slate-500">{{ storefrontPromotionsSubtitle }}</p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                    <Link
+                        v-for="product in promotionProducts"
+                        :key="`promo-${product.id}`"
+                        :href="productDetailsUrl(product.id)"
+                        class="group block overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                    >
+                        <div class="relative aspect-square overflow-hidden bg-slate-100">
+                            <img :src="productImage(product)" :alt="product.name" class="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
+                            <span class="absolute left-2 top-2 inline-flex rounded-full bg-white/90 px-2 py-1 text-[10px] font-semibold text-slate-700">
+                                Destaque
+                            </span>
+                        </div>
+                        <div class="space-y-1.5 p-3">
+                            <h3 class="min-h-[2.25rem] text-sm font-semibold leading-tight text-slate-900">{{ product.name }}</h3>
+                            <p class="text-sm font-bold text-slate-900">{{ currency(product.sale_price) }}</p>
+                        </div>
+                    </Link>
+                </div>
+            </section>
+
+            <section v-if="storefrontBlocks.categories" ref="categorySectionRef" class="mt-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <div class="mb-3 flex items-center justify-between gap-3">
                     <h2 class="text-sm font-semibold text-slate-900">Categorias</h2>
-                    <p class="text-xs text-slate-500">{{ filteredProducts.length }} produto(s)</p>
+                    <p class="text-xs text-slate-500">{{ filteredProducts.length }} {{ catalogItemLabel }}</p>
                 </div>
                 <div class="catalog-chip-scroll flex gap-2 overflow-x-auto pb-1">
                     <button
@@ -369,7 +717,14 @@ const openCartFromMenu = () => {
                 </div>
             </section>
 
-            <section class="mt-6">
+            <section v-if="storefrontBlocks.catalog" class="mt-6">
+                <div class="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-sm font-semibold text-slate-900">{{ storefrontCatalogTitle }}</h2>
+                        <p class="text-xs text-slate-500">{{ storefrontCatalogSubtitle }}</p>
+                    </div>
+                    <p class="text-xs text-slate-500">{{ filteredProducts.length }} {{ catalogItemLabel }}</p>
+                </div>
                 <div v-if="paginatedProducts.length" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                     <Link
                         v-for="product in paginatedProducts"
@@ -381,8 +736,9 @@ const openCartFromMenu = () => {
                             <img :src="productImage(product)" :alt="product.name" class="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
                             <button
                                 type="button"
-                                class="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition"
+                                class="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60"
                                 :class="isFavorite(product.id) ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'"
+                                :disabled="isFavoriteSyncing(product.id)"
                                 @click.stop.prevent="toggleFavorite(product.id)"
                             >
                                 <Heart class="h-4 w-4" />
@@ -398,7 +754,7 @@ const openCartFromMenu = () => {
                         </div>
                     </Link>
                 </div>
-                <div v-else class="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-12 text-center text-sm text-slate-500">Nenhum produto encontrado para os filtros informados.</div>
+                <div v-else class="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-12 text-center text-sm text-slate-500">Nenhum item encontrado para os filtros informados.</div>
 
                 <div class="mt-6 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
                     <p class="text-xs text-slate-500">Mostrando {{ rangeText }}</p>
@@ -414,6 +770,10 @@ const openCartFromMenu = () => {
                         </button>
                     </div>
                 </div>
+            </section>
+
+            <section v-else class="mt-6 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-500">
+                Catálogo indisponível no momento.
             </section>
         </main>
 
@@ -431,11 +791,17 @@ const openCartFromMenu = () => {
                     <Heart class="h-4 w-4" />
                     Favoritos
                 </button>
-                <button type="button" class="relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold text-white shadow-inner shadow-black/10" style="background: var(--catalog-primary-strong)" @click="cartOpen = true">
+                <button
+                    type="button"
+                    class="relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold transition"
+                    :class="cartOpen ? 'text-white shadow-inner shadow-black/10' : 'text-slate-600 hover:bg-slate-100'"
+                    :style="cartOpen ? { background: 'var(--catalog-primary-strong)' } : null"
+                    @click="cartOpen = true"
+                >
                     <ShoppingCart class="h-4 w-4" />Carrinho
                     <span v-if="cartCount > 0" class="absolute right-2 top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-white px-1 py-0.5 text-[9px] font-bold text-slate-900">{{ cartCount }}</span>
                 </button>
-                <Link :href="loginUrl" class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"><UserCircle2 class="h-4 w-4" />Conta</Link>
+                <Link :href="accountOrLoginUrl" class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"><UserCircle2 class="h-4 w-4" />Conta</Link>
             </div>
         </nav>
         <transition name="menu-overlay">
@@ -463,21 +829,37 @@ const openCartFromMenu = () => {
                                 <Home class="h-3.5 w-3.5" />
                                 Início
                             </button>
-                            <button type="button" class="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="leftMenuOpen = false; scrollCategories()">
+                            <button v-if="storefrontBlocks.categories" type="button" class="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="leftMenuOpen = false; scrollCategories()">
                                 <Tags class="h-3.5 w-3.5" />
                                 Categorias
                             </button>
-                            <button type="button" class="inline-flex items-center justify-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-sm" style="background: var(--catalog-primary-strong)" @click="openCartFromMenu">
+                            <button
+                                type="button"
+                                class="inline-flex items-center justify-center gap-1 rounded-xl border px-3 py-2 text-xs font-semibold transition"
+                                :class="cartOpen ? 'border-transparent text-white shadow-inner shadow-black/10' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                                :style="cartOpen ? { background: 'var(--catalog-primary-strong)' } : null"
+                                @click="openCartFromMenu"
+                            >
                                 <ShoppingCart class="h-3.5 w-3.5" />
                                 Carrinho
                             </button>
-                            <Link :href="loginUrl" class="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="leftMenuOpen = false">
+                            <button
+                                type="button"
+                                class="inline-flex items-center justify-center gap-1 rounded-xl border px-3 py-2 text-xs font-semibold transition"
+                                :class="favoritesOnly ? 'border-transparent text-white shadow-inner shadow-black/10' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                                :style="favoritesOnly ? { background: 'var(--catalog-primary-strong)' } : null"
+                                @click="favoritesOnly = !favoritesOnly; leftMenuOpen = false"
+                            >
+                                <Heart class="h-3.5 w-3.5" />
+                                {{ favoritesOnly ? 'Mostrar todos' : 'Favoritos' }}
+                            </button>
+                            <Link :href="accountOrLoginUrl" class="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="leftMenuOpen = false">
                                 <UserCircle2 class="h-3.5 w-3.5" />
                                 Conta
                             </Link>
                         </div>
 
-                        <div class="space-y-2">
+                        <div v-if="storefrontBlocks.categories" class="space-y-2">
                             <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Categorias</p>
                             <div class="grid gap-2">
                                 <button
@@ -528,8 +910,153 @@ const openCartFromMenu = () => {
                         </article>
                     </div>
                     <footer class="space-y-3 border-t border-slate-200 p-4">
-                        <div class="flex items-center justify-between text-sm"><span class="text-slate-500">Subtotal</span><span class="text-base font-bold text-slate-900">{{ currency(cartSubtotal) }}</span></div>
-                        <button type="button" class="inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40" style="background: var(--catalog-primary-strong)" :disabled="!whatsappUrl" @click="checkout">Finalizar pedido</button>
+                        <div
+                            v-if="!isShopAuthenticated"
+                            class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700"
+                        >
+                            Faça login para finalizar seu pedido.
+                            <Link :href="loginUrl" class="ml-1 underline decoration-dotted underline-offset-2">Entrar agora</Link>
+                        </div>
+                        <div
+                            v-else-if="requiresEmailVerification && !isShopEmailVerified"
+                            class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700"
+                        >
+                            Confirme seu e-mail para finalizar pedidos.
+                            <Link :href="verifyEmailUrl" class="ml-1 underline decoration-dotted underline-offset-2">Verificar e-mail</Link>
+                        </div>
+
+                        <div class="grid gap-2">
+                            <div class="grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    class="rounded-xl border px-3 py-2 text-xs font-semibold transition"
+                                    :class="checkoutForm.delivery_mode === 'pickup' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                                    :disabled="!shippingConfig.pickup_enabled"
+                                    @click="checkoutForm.delivery_mode = 'pickup'"
+                                >
+                                    Retirada
+                                </button>
+                                <button
+                                    type="button"
+                                    class="rounded-xl border px-3 py-2 text-xs font-semibold transition"
+                                    :class="checkoutForm.delivery_mode === 'delivery' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                                    :disabled="!shippingConfig.delivery_enabled"
+                                    @click="checkoutForm.delivery_mode = 'delivery'"
+                                >
+                                    Entrega
+                                </button>
+                            </div>
+
+                            <input
+                                v-model="checkoutForm.customer_name"
+                                type="text"
+                                class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                placeholder="Seu nome"
+                            >
+                            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <input
+                                    v-model="checkoutForm.customer_phone"
+                                    type="text"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="WhatsApp"
+                                >
+                                <input
+                                    v-model="checkoutForm.customer_email"
+                                    type="email"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="E-mail"
+                                >
+                            </div>
+
+                            <div v-if="checkoutForm.delivery_mode === 'delivery'" class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <input
+                                    v-model="checkoutForm.shipping_postal_code"
+                                    type="text"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="CEP"
+                                >
+                                <input
+                                    v-model="checkoutForm.shipping_state"
+                                    type="text"
+                                    maxlength="2"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm uppercase text-slate-700"
+                                    placeholder="UF"
+                                >
+                                <input
+                                    v-model="checkoutForm.shipping_street"
+                                    type="text"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 sm:col-span-2"
+                                    placeholder="Rua"
+                                >
+                                <input
+                                    v-model="checkoutForm.shipping_number"
+                                    type="text"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="Número"
+                                >
+                                <input
+                                    v-model="checkoutForm.shipping_complement"
+                                    type="text"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="Complemento (opcional)"
+                                >
+                                <input
+                                    v-model="checkoutForm.shipping_district"
+                                    type="text"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="Bairro"
+                                >
+                                <input
+                                    v-model="checkoutForm.shipping_city"
+                                    type="text"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="Cidade"
+                                >
+                            </div>
+
+                            <select
+                                v-model="checkoutForm.payment_method_id"
+                                class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            >
+                                <option value="">Forma de pagamento (opcional)</option>
+                                <option
+                                    v-for="method in paymentMethodOptions"
+                                    :key="`checkout-payment-${method.value}`"
+                                    :value="method.value"
+                                >
+                                    {{ method.label }}
+                                </option>
+                            </select>
+                            <textarea
+                                v-model="checkoutForm.notes"
+                                rows="2"
+                                class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                placeholder="Observações (opcional)"
+                            />
+                            <p v-if="checkoutErrorMessage" class="text-xs font-semibold text-rose-600">{{ checkoutErrorMessage }}</p>
+                        </div>
+
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Subtotal</span>
+                            <span class="text-base font-bold text-slate-900">{{ currency(cartSubtotal) }}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Frete</span>
+                            <span class="text-base font-semibold text-slate-900">{{ currency(shippingFee) }}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Total</span>
+                            <span class="text-base font-bold text-slate-900">{{ currency(orderTotal) }}</span>
+                        </div>
+                        <button
+                            type="button"
+                            class="inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                            style="background: var(--catalog-primary-strong)"
+                            :disabled="checkoutForm.processing || !canSubmitCheckout"
+                            @click="checkout"
+                        >
+                            {{ checkoutForm.processing ? 'Enviando pedido...' : 'Finalizar pedido' }}
+                        </button>
                     </footer>
                 </aside>
             </div>
@@ -562,8 +1089,3 @@ const openCartFromMenu = () => {
     opacity: 0;
 }
 </style>
-
-
-
-
-

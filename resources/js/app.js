@@ -6,7 +6,6 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Veshop';
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 if (typeof document !== 'undefined') {
@@ -35,7 +34,7 @@ if (typeof document !== 'undefined') {
 }
 
 createInertiaApp({
-    title: (title) => (title ? `${title} - ${appName}` : appName),
+    title: (title) => String(title ?? '').trim(),
     resolve: (name) =>
         resolvePageComponent(
             `./Pages/${name}.vue`,

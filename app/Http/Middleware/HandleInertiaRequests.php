@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\SystemSetting;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Middleware;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -61,7 +62,7 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $currentContractor = $this->resolveCurrentContractor($request);
-        $authenticatedUser = $request->user();
+        $authenticatedUser = Auth::guard('web')->user();
 
         if ($authenticatedUser) {
             $authenticatedUser->avatar_url = $this->resolveSharedUserAvatarUrl($authenticatedUser);
@@ -75,6 +76,7 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'status' => fn () => $request->session()->get('status'),
             ],
+            'notifications' => fn () => $this->resolveNotificationsSummary($authenticatedUser),
             'contractorContext' => fn () => $this->resolveContractorContext($request, $currentContractor),
             'systemBranding' => fn () => $this->resolveSystemBranding($request, $currentContractor),
         ];
@@ -133,9 +135,44 @@ class HandleInertiaRequests extends Middleware
         }
     }
 
+    /**
+     * @return array{unread_count: int, items: array<int, array<string, string|null>>}
+     */
+    private function resolveNotificationsSummary(mixed $user): array
+    {
+        if (! $user) {
+            return [
+                'unread_count' => 0,
+                'items' => [],
+            ];
+        }
+
+        return [
+            'unread_count' => (int) $user->unreadNotifications()->count(),
+            'items' => $user->notifications()
+                ->latest('created_at')
+                ->limit(20)
+                ->get()
+                ->map(static function ($notification): array {
+                    $data = is_array($notification->data) ? $notification->data : [];
+
+                    return [
+                        'id' => (string) $notification->id,
+                        'title' => (string) ($data['title'] ?? 'Notificação'),
+                        'message' => (string) ($data['message'] ?? ''),
+                        'target_url' => (string) ($data['target_url'] ?? ''),
+                        'read_at' => optional($notification->read_at)?->toIso8601String(),
+                        'created_at' => optional($notification->created_at)?->format('d/m/Y H:i'),
+                    ];
+                })
+                ->values()
+                ->all(),
+        ];
+    }
+
     private function resolveCurrentContractor(Request $request): mixed
     {
-        $user = $request->user();
+        $user = Auth::guard('web')->user();
 
         if (! $user) {
             return null;
@@ -179,7 +216,7 @@ class HandleInertiaRequests extends Middleware
      */
     private function resolveContractorContext(Request $request, mixed $currentContractor = null): array
     {
-        $user = $request->user();
+        $user = Auth::guard('web')->user();
 
         if (! $user) {
             return [

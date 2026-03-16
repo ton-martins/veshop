@@ -5,6 +5,7 @@ import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
+import BrandingImageUploader from '@/Components/BrandingImageUploader.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import { Box, Boxes, CircleDollarSign, AlertTriangle, Plus, Search, Filter, ChevronRight, Tags, Pencil, Trash2 } from 'lucide-vue-next';
@@ -130,6 +131,9 @@ const productForm = useForm({
     stock_quantity: 0,
     unit: props.units?.[0] ?? 'un',
     image_url: '',
+    image_file: null,
+    remove_image: false,
+    image_preview: '',
     is_active: true,
 });
 const deleteForm = useForm({});
@@ -142,6 +146,9 @@ const openCreate = () => {
     productForm.clearErrors();
     productForm.stock_quantity = 0;
     productForm.unit = props.units?.[0] ?? 'un';
+    productForm.image_file = null;
+    productForm.remove_image = false;
+    productForm.image_preview = '';
     productForm.is_active = true;
     showModal.value = true;
 };
@@ -157,6 +164,9 @@ const openEdit = (product) => {
     productForm.stock_quantity = Number.parseInt(product.stock_quantity ?? 0, 10) || 0;
     productForm.unit = product.unit ?? (props.units?.[0] ?? 'un');
     productForm.image_url = product.image_url ?? '';
+    productForm.image_file = null;
+    productForm.remove_image = false;
+    productForm.image_preview = product.image_url ?? '';
     productForm.is_active = Boolean(product.is_active);
     productForm.clearErrors();
     showModal.value = true;
@@ -167,18 +177,48 @@ const closeModal = () => {
     editingProduct.value = null;
 };
 
+const handleProductImageChange = ({ file, preview }) => {
+    productForm.image_file = file ?? null;
+    productForm.image_preview = preview ?? '';
+    productForm.remove_image = false;
+
+    if (productForm.image_file) {
+        productForm.image_url = '';
+    }
+};
+
+const removeProductImage = () => {
+    productForm.image_file = null;
+    productForm.image_preview = '';
+    productForm.image_url = '';
+    productForm.remove_image = true;
+};
+
 const submitProduct = () => {
     if (isEditing.value) {
-        productForm.put(route('admin.products.update', editingProduct.value.id), {
+        productForm.transform((data) => ({
+            ...data,
+            _method: 'put',
+            image_url: String(data.image_url ?? '').trim(),
+            image_file: data.image_file ?? null,
+            remove_image: Boolean(data.remove_image),
+        })).post(route('admin.products.update', editingProduct.value.id), {
             preserveScroll: true,
+            forceFormData: true,
             onSuccess: closeModal,
         });
 
         return;
     }
 
-    productForm.post(route('admin.products.store'), {
+    productForm.transform((data) => ({
+        ...data,
+        image_url: String(data.image_url ?? '').trim(),
+        image_file: data.image_file ?? null,
+        remove_image: Boolean(data.remove_image),
+    })).post(route('admin.products.store'), {
         preserveScroll: true,
+        forceFormData: true,
         onSuccess: closeModal,
     });
 };
@@ -483,7 +523,23 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                     </div>
 
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Imagem (URL)</label>
+                        <BrandingImageUploader
+                            label="Imagem do produto"
+                            help-text="Envie JPG, PNG ou WEBP."
+                            :initial-preview="productForm.image_preview || productForm.image_url"
+                            :aspect-ratio="1"
+                            @change="handleProductImageChange"
+                        />
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                                @click="removeProductImage"
+                            >
+                                Remover imagem
+                            </button>
+                        </div>
+                        <label class="mt-3 block text-xs font-semibold uppercase tracking-wide text-slate-500">URL externa (opcional)</label>
                         <input
                             v-model="productForm.image_url"
                             type="url"
@@ -491,6 +547,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                             placeholder="https://..."
                         >
                         <p v-if="productForm.errors.image_url" class="mt-1 text-xs text-rose-600">{{ productForm.errors.image_url }}</p>
+                        <p v-if="productForm.errors.image_file" class="mt-1 text-xs text-rose-600">{{ productForm.errors.image_file }}</p>
                     </div>
 
                     <div>

@@ -1,6 +1,6 @@
 ﻿<script setup>
 import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
-import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import Dropdown from '@/Components/Dropdown.vue';
 import { useBranding } from '@/branding';
 import { masterMenuGroups } from '@/navigation/masterMenu';
@@ -112,6 +112,10 @@ const unreadNotifications = computed(() => {
     if (!Number.isFinite(raw) || raw < 0) return 0;
 
     return Math.floor(raw);
+});
+const notificationItems = computed(() => {
+    const items = page.props.notifications?.items;
+    return Array.isArray(items) ? items : [];
 });
 const contractorContext = computed(() => page.props.contractorContext ?? { current: null, available: [] });
 const currentContractor = computed(() => contractorContext.value.current ?? null);
@@ -366,10 +370,12 @@ const mobileQuickLinks = computed(() => {
 });
 
 const sidebarOpen = ref(false);
+const notificationsPanelOpen = ref(false);
 const sidebarCollapsed = ref(false);
 const expandedGroups = ref(new Set());
 const slots = useSlots();
 const appMainRef = ref(null);
+const markNotificationsForm = useForm({ id: '' });
 
 const TABLE_VIEW_STORAGE_KEY = 'veshop:table-view-mode';
 const allowedTableViewModes = new Set(['list', 'cards']);
@@ -561,6 +567,10 @@ onMounted(() => {
             subtree: true,
         });
     }
+
+    if (typeof window !== 'undefined') {
+        window.addEventListener('keydown', handleGlobalKeydown);
+    }
 });
 
 watch(sidebarCollapsed, () => {
@@ -605,6 +615,10 @@ onBeforeUnmount(() => {
         window.cancelAnimationFrame(tableHydrationFrame);
         tableHydrationFrame = null;
     }
+
+    if (typeof window !== 'undefined') {
+        window.removeEventListener('keydown', handleGlobalKeydown);
+    }
 });
 
 const toggleSidebarCollapsed = () => {
@@ -615,29 +629,88 @@ const closeSidebar = () => {
     sidebarOpen.value = false;
 };
 
+const closeNotificationsPanel = () => {
+    notificationsPanelOpen.value = false;
+};
+
 const doLogout = () => {
     router.post(safeRoute('logout', '/logout'));
 };
 
-const hasNotificationsRoute = computed(() => {
+const hasNotificationsActions = computed(() => {
     if (typeof route !== 'function') return false;
 
     try {
-        return route().has('notifications.index');
+        return route().has('notifications.read');
     } catch {
         return false;
     }
 });
 
 const isNotificationsActive = computed(() => {
-    if (!hasNotificationsRoute.value) return false;
+    if (notificationsPanelOpen.value) return true;
 
     return safeRouteCurrent('notifications.index') || safeRouteCurrent('notifications.*');
 });
 
 const openNotifications = () => {
-    if (!hasNotificationsRoute.value) return;
-    router.visit(route('notifications.index'));
+    if (!hasNotificationsActions.value) return;
+    notificationsPanelOpen.value = true;
+};
+
+const markAllNotificationsAsRead = () => {
+    if (!hasNotificationsActions.value || unreadNotifications.value <= 0) return;
+
+    markNotificationsForm.transform(() => ({ id: '' })).post(route('notifications.read'), {
+        preserveScroll: true,
+        preserveState: true,
+    });
+};
+
+const markOneNotificationAsRead = (id) => {
+    if (!hasNotificationsActions.value || !id) return;
+
+    markNotificationsForm.transform(() => ({ id: String(id) })).post(route('notifications.read'), {
+        preserveScroll: true,
+        preserveState: true,
+    });
+};
+
+const openNotificationTarget = (item) => {
+    if (!item) return;
+
+    const targetUrl = String(item.target_url ?? '').trim();
+    if (!targetUrl) return;
+
+    const notificationId = String(item.id ?? '').trim();
+    const isUnread = !item.read_at;
+
+    if (hasNotificationsActions.value && isUnread && notificationId) {
+        markNotificationsForm.transform(() => ({ id: notificationId })).post(route('notifications.read'), {
+            preserveScroll: true,
+            preserveState: true,
+            onFinish: () => {
+                closeNotificationsPanel();
+                router.visit(targetUrl);
+            },
+        });
+        return;
+    }
+
+    closeNotificationsPanel();
+    router.visit(targetUrl);
+};
+
+const handleGlobalKeydown = (event) => {
+    if (event.key !== 'Escape') return;
+
+    if (notificationsPanelOpen.value) {
+        closeNotificationsPanel();
+    }
+
+    if (sidebarOpen.value) {
+        closeSidebar();
+    }
 };
 </script>
 
@@ -1052,6 +1125,101 @@ const openNotifications = () => {
             </div>
         </template>
 
+        <transition name="drawer">
+            <div
+                v-if="notificationsPanelOpen"
+                class="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm"
+                @click.self="closeNotificationsPanel"
+            >
+                <aside class="notifications-drawer absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
+                    <div class="border-b border-slate-200 px-4 py-4 sm:px-5">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">Notificações</p>
+                                <p class="mt-1 text-xs text-slate-500">{{ unreadNotifications }} não lida(s)</p>
+                            </div>
+                            <button
+                                type="button"
+                                class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
+                                title="Fechar notificações"
+                                aria-label="Fechar notificações"
+                                @click="closeNotificationsPanel"
+                            >
+                                <X class="h-4 w-4" />
+                            </button>
+                        </div>
+                        <button
+                            type="button"
+                            class="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="markNotificationsForm.processing || unreadNotifications <= 0"
+                            @click="markAllNotificationsAsRead"
+                        >
+                            Marcar todas como lidas
+                        </button>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+                        <div v-if="notificationItems.length" class="space-y-3">
+                            <article
+                                v-for="item in notificationItems"
+                                :key="item.id"
+                                class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                                :class="!item.read_at ? 'ring-1 ring-blue-100' : ''"
+                            >
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="text-sm font-semibold text-slate-900">{{ item.title }}</p>
+                                        <p v-if="item.message" class="mt-1 text-sm text-slate-600">{{ item.message }}</p>
+                                        <p class="mt-2 text-xs text-slate-400">{{ item.created_at }}</p>
+                                    </div>
+                                    <span
+                                        v-if="!item.read_at"
+                                        class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700"
+                                    >
+                                        Nova
+                                    </span>
+                                </div>
+
+                                <div class="mt-3 flex flex-wrap items-center gap-2">
+                                    <button
+                                        v-if="item.target_url"
+                                        type="button"
+                                        class="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+                                        :disabled="markNotificationsForm.processing"
+                                        @click="openNotificationTarget(item)"
+                                    >
+                                        Abrir
+                                    </button>
+                                    <button
+                                        v-if="!item.read_at"
+                                        type="button"
+                                        class="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                        :disabled="markNotificationsForm.processing"
+                                        @click="markOneNotificationAsRead(item.id)"
+                                    >
+                                        Marcar como lida
+                                    </button>
+                                    <span
+                                        v-else
+                                        class="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700"
+                                    >
+                                        Lida
+                                    </span>
+                                </div>
+                            </article>
+                        </div>
+
+                        <div
+                            v-else
+                            class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500"
+                        >
+                            Você ainda não possui notificações.
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </transition>
+
         <button
             type="button"
             class="fixed right-4 bottom-5 z-30 hidden h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-white shadow-xl transition hover:bg-slate-800 md:inline-flex"
@@ -1079,5 +1247,26 @@ const openNotifications = () => {
 .fade-enter-from,
 .fade-leave-to {
     opacity: 0;
+}
+
+.drawer-enter-active,
+.drawer-leave-active {
+    transition: background-color 180ms ease, backdrop-filter 180ms ease;
+}
+
+.drawer-enter-from,
+.drawer-leave-to {
+    background-color: rgba(15, 23, 42, 0);
+    backdrop-filter: blur(0);
+}
+
+.notifications-drawer {
+    transform: translateX(0);
+    transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.drawer-enter-from .notifications-drawer,
+.drawer-leave-to .notifications-drawer {
+    transform: translateX(100%);
 }
 </style>

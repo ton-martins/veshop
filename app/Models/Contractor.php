@@ -79,6 +79,16 @@ class Contractor extends Model
         return $this->hasMany(Client::class);
     }
 
+    public function shopCustomers(): HasMany
+    {
+        return $this->hasMany(ShopCustomer::class);
+    }
+
+    public function shopCustomerFavorites(): HasMany
+    {
+        return $this->hasMany(ShopCustomerFavorite::class);
+    }
+
     public function suppliers(): HasMany
     {
         return $this->hasMany(Supplier::class);
@@ -204,6 +214,13 @@ class Contractor extends Model
     public function hasModule(string $module): bool
     {
         return in_array($module, $this->enabledModules(), true);
+    }
+
+    public function requiresEmailVerification(): bool
+    {
+        $settings = is_array($this->settings) ? $this->settings : [];
+
+        return (bool) ($settings['require_email_verification'] ?? true);
     }
 
     private function normalizeNiche(mixed $value): string

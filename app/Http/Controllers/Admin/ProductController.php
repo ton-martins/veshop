@@ -10,6 +10,7 @@ use App\Models\Contractor;
 use App\Models\Product;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -156,6 +157,7 @@ class ProductController extends Controller
         $this->assertCategoryBelongsToContractor($contractor, $data['category_id'] ?? null);
         $this->assertUniqueSkuForContractor($contractor, $data['sku'] ?? null);
 
+        $data = $this->resolveProductImagePayload($request, $contractor, null, $data);
         $data['contractor_id'] = $contractor->id;
 
         Product::query()->create($data);
@@ -177,6 +179,7 @@ class ProductController extends Controller
         $this->assertCategoryBelongsToContractor($contractor, $data['category_id'] ?? null);
         $this->assertUniqueSkuForContractor($contractor, $data['sku'] ?? null, $product->id);
 
+        $data = $this->resolveProductImagePayload($request, $contractor, $product, $data);
         $product->fill($data)->save();
 
         return back()->with('status', 'Produto atualizado com sucesso.');
@@ -191,6 +194,7 @@ class ProductController extends Controller
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
 
         $product = $this->resolveOwnedProduct($contractor, $product);
+        $this->deleteProductImage($contractor, $product->image_url);
         $product->delete();
 
         return back()->with('status', 'Produto removido com sucesso.');
@@ -271,5 +275,92 @@ class ProductController extends Controller
         throw ValidationException::withMessages([
             'sku' => 'Já existe um produto com este SKU para o contratante ativo.',
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function resolveProductImagePayload(
+        Request $request,
+        Contractor $contractor,
+        ?Product $product,
+        array $data
+    ): array {
+        $currentImageUrl = $product?->image_url;
+        $currentStoragePath = $this->normalizeProductStoragePath($contractor, $currentImageUrl);
+        $removeImage = (bool) ($data['remove_image'] ?? false);
+        $submittedImageUrl = trim((string) ($data['image_url'] ?? ''));
+        $uploadedImage = $request->file('image_file');
+
+        if ($uploadedImage) {
+            if ($currentStoragePath) {
+                $this->deleteProductImage($contractor, $currentStoragePath);
+            }
+
+            $storedPath = $uploadedImage->store("contractors/{$contractor->id}/products", 'public');
+            $data['image_url'] = Storage::disk('public')->url($storedPath);
+        } elseif ($removeImage) {
+            if ($currentStoragePath) {
+                $this->deleteProductImage($contractor, $currentStoragePath);
+            }
+
+            $data['image_url'] = null;
+        } elseif ($submittedImageUrl !== '') {
+            $submittedStoragePath = $this->normalizeProductStoragePath($contractor, $submittedImageUrl);
+
+            if (! $submittedStoragePath && $currentStoragePath) {
+                $this->deleteProductImage($contractor, $currentStoragePath);
+            } elseif ($submittedStoragePath && $currentStoragePath && $submittedStoragePath !== $currentStoragePath) {
+                $this->deleteProductImage($contractor, $currentStoragePath);
+            }
+        } elseif ($product) {
+            $data['image_url'] = $product->image_url;
+        }
+
+        unset($data['image_file'], $data['remove_image']);
+
+        return $data;
+    }
+
+    private function normalizeProductStoragePath(Contractor $contractor, mixed $value): ?string
+    {
+        $raw = trim((string) ($value ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        $path = parse_url($raw, PHP_URL_PATH);
+        $candidate = is_string($path) && $path !== '' ? $path : $raw;
+
+        if (str_starts_with($candidate, '/storage/')) {
+            $candidate = substr($candidate, strlen('/storage/'));
+        } elseif (str_starts_with($candidate, 'storage/')) {
+            $candidate = substr($candidate, strlen('storage/'));
+        }
+
+        $candidate = ltrim($candidate, '/');
+        if ($candidate === '') {
+            return null;
+        }
+
+        $prefix = "contractors/{$contractor->id}/products/";
+        if (! str_starts_with($candidate, $prefix)) {
+            return null;
+        }
+
+        return $candidate;
+    }
+
+    private function deleteProductImage(Contractor $contractor, ?string $value): void
+    {
+        $path = $this->normalizeProductStoragePath($contractor, $value);
+        if (! $path) {
+            return;
+        }
+
+        if (Storage::disk('public')->exists($path)) {
+            Storage::disk('public')->delete($path);
+        }
     }
 }

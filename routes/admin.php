@@ -2,10 +2,12 @@
 
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FinanceController;
+use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\PaymentGatewayController;
 use App\Http\Controllers\Admin\PaymentMethodController;
 use App\Http\Controllers\Admin\PdvController;
 use App\Http\Controllers\Admin\ContractorBrandingController;
+use App\Http\Controllers\Admin\StorefrontController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\ClientController;
 use App\Http\Controllers\Admin\ProductController;
@@ -24,6 +26,8 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
 
         Route::get('/branding', [ContractorBrandingController::class, 'edit'])->name('branding.index');
         Route::put('/branding', [ContractorBrandingController::class, 'update'])->name('branding.update');
+        Route::get('/storefront', [StorefrontController::class, 'edit'])->name('storefront.index');
+        Route::put('/storefront', [StorefrontController::class, 'update'])->name('storefront.update');
 
         Route::middleware('contractor.module:commercial')->group(function (): void {
             Route::resource('products', ProductController::class)
@@ -38,9 +42,11 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
             Route::resource('suppliers', SupplierController::class)
                 ->except(['show', 'create', 'edit']);
 
-            Route::get('/orders', function () {
-                return Inertia::render('Admin/Orders/Index');
-            })->name('orders.index');
+            Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
+            Route::post('/orders/{sale}/confirm', [OrderController::class, 'confirm'])->name('orders.confirm');
+            Route::post('/orders/{sale}/reject', [OrderController::class, 'reject'])->name('orders.reject');
+            Route::post('/orders/{sale}/paid', [OrderController::class, 'markAsPaid'])->name('orders.paid');
+            Route::post('/orders/{sale}/cancel', [OrderController::class, 'cancel'])->name('orders.cancel');
 
             Route::get('/pdv', [PdvController::class, 'index'])->name('pdv.index');
             Route::post('/pdv/cash/open', [PdvController::class, 'openCashSession'])->name('pdv.cash.open');

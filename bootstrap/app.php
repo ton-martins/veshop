@@ -30,10 +30,17 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);
 
+        $middleware->validateCsrfTokens(except: [
+            'shop/*/pagamentos/webhook/*',
+        ]);
+
         $middleware->alias([
             '2fa' => \App\Http\Middleware\EnsureTwoFactorAuthenticated::class,
             'role' => \App\Http\Middleware\EnsureUserRole::class,
             'contractor.module' => \App\Http\Middleware\EnsureContractorModuleEnabled::class,
+            'shop.auth' => \App\Http\Middleware\EnsureShopAuthenticated::class,
+            'shop.contractor' => \App\Http\Middleware\EnsureShopCustomerMatchesContractor::class,
+            'shop.verified' => \App\Http\Middleware\EnsureShopEmailIsVerified::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

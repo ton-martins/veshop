@@ -24,6 +24,7 @@ class ContractorBrandingController extends Controller
 
         $settings = (array) ($contractor->settings ?? []);
         $storageLimitGb = $this->resolveStorageLimitGb($settings);
+        $shopShipping = is_array($settings['shop_shipping'] ?? null) ? $settings['shop_shipping'] : [];
 
         return Inertia::render('Admin/Branding/Index', [
             'profileContractor' => [
@@ -42,6 +43,13 @@ class ContractorBrandingController extends Controller
                 'require_2fa' => (bool) ($settings['require_2fa'] ?? true),
                 'require_email_verification' => (bool) ($settings['require_email_verification'] ?? true),
                 'email_notifications_enabled' => (bool) ($settings['email_notifications_enabled'] ?? true),
+            ],
+            'shopShipping' => [
+                'pickup_enabled' => (bool) ($shopShipping['pickup_enabled'] ?? true),
+                'delivery_enabled' => (bool) ($shopShipping['delivery_enabled'] ?? true),
+                'fixed_fee' => (float) ($shopShipping['fixed_fee'] ?? 0),
+                'free_over' => (float) ($shopShipping['free_over'] ?? 0),
+                'estimated_days' => (int) ($shopShipping['estimated_days'] ?? 2),
             ],
             'niches' => [
                 'current' => $contractor->niche(),
@@ -101,12 +109,28 @@ class ContractorBrandingController extends Controller
             'require_2fa' => ['required', 'boolean'],
             'require_email_verification' => ['required', 'boolean'],
             'email_notifications_enabled' => ['required', 'boolean'],
+            'shipping_pickup_enabled' => ['required', 'boolean'],
+            'shipping_delivery_enabled' => ['required', 'boolean'],
+            'shipping_fixed_fee' => ['required', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_free_over' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_estimated_days' => ['nullable', 'integer', 'min:1', 'max:60'],
         ]);
 
         $settings = (array) ($contractor->settings ?? []);
         $settings['require_2fa'] = (bool) $validated['require_2fa'];
         $settings['require_email_verification'] = (bool) $validated['require_email_verification'];
         $settings['email_notifications_enabled'] = (bool) $validated['email_notifications_enabled'];
+        $settings['shop_shipping'] = [
+            'pickup_enabled' => (bool) $validated['shipping_pickup_enabled'],
+            'delivery_enabled' => (bool) $validated['shipping_delivery_enabled'],
+            'fixed_fee' => round((float) $validated['shipping_fixed_fee'], 2),
+            'free_over' => isset($validated['shipping_free_over'])
+                ? round((float) $validated['shipping_free_over'], 2)
+                : 0,
+            'estimated_days' => isset($validated['shipping_estimated_days'])
+                ? (int) $validated['shipping_estimated_days']
+                : 2,
+        ];
 
         if (($validated['remove_brand_logo'] ?? false) === true) {
             $this->deleteStoredFileFromPublicUrl($contractor->brand_logo_url);

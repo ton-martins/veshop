@@ -45,4 +45,9 @@ class Client extends Model
     {
         return $this->hasMany(Sale::class);
     }
+
+    public function shopCustomers(): HasMany
+    {
+        return $this->hasMany(ShopCustomer::class);
+    }
 }

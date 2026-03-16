@@ -13,6 +13,7 @@ import { LayoutDashboard, BarChart3, UserX, UserCheck } from 'lucide-vue-next';
 const props = defineProps({
     profileContractor: { type: Object, default: () => ({}) },
     security: { type: Object, default: () => ({}) },
+    shopShipping: { type: Object, default: () => ({}) },
     niches: { type: Object, default: () => ({ current: 'commercial', options: [] }) },
     defaults: { type: Object, default: () => ({}) },
     timezones: { type: Array, default: () => [] },
@@ -36,6 +37,11 @@ const form = useForm({
     require_2fa: true,
     require_email_verification: true,
     email_notifications_enabled: true,
+    shipping_pickup_enabled: true,
+    shipping_delivery_enabled: true,
+    shipping_fixed_fee: 0,
+    shipping_free_over: '',
+    shipping_estimated_days: 2,
 });
 
 const logoPreview = ref('');
@@ -69,6 +75,11 @@ const hydrate = () => {
     form.require_2fa = props.security?.require_2fa ?? true;
     form.require_email_verification = props.security?.require_email_verification ?? true;
     form.email_notifications_enabled = props.security?.email_notifications_enabled ?? true;
+    form.shipping_pickup_enabled = props.shopShipping?.pickup_enabled ?? true;
+    form.shipping_delivery_enabled = props.shopShipping?.delivery_enabled ?? true;
+    form.shipping_fixed_fee = props.shopShipping?.fixed_fee ?? 0;
+    form.shipping_free_over = props.shopShipping?.free_over ?? '';
+    form.shipping_estimated_days = props.shopShipping?.estimated_days ?? 2;
     form.brand_logo = null;
     form.brand_avatar = null;
     form.remove_brand_logo = false;
@@ -336,6 +347,58 @@ const submitSupportConfirmation = () => {
                                 <span>Ativar notificações via email</span>
                                 <input v-model="form.email_notifications_enabled" type="checkbox" class="rounded border-slate-300">
                             </label>
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Frete da loja virtual</p>
+                        <div class="mt-3 space-y-3 text-sm text-slate-700">
+                            <label class="flex items-center justify-between gap-4">
+                                <span>Permitir retirada na loja</span>
+                                <input v-model="form.shipping_pickup_enabled" type="checkbox" class="rounded border-slate-300">
+                            </label>
+                            <label class="flex items-center justify-between gap-4">
+                                <span>Permitir entrega</span>
+                                <input v-model="form.shipping_delivery_enabled" type="checkbox" class="rounded border-slate-300">
+                            </label>
+                            <div class="grid gap-3 md:grid-cols-3">
+                                <div>
+                                    <label class="text-xs font-medium uppercase tracking-wide text-slate-500">Taxa fixa (R$)</label>
+                                    <input
+                                        v-model="form.shipping_fixed_fee"
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        class="mt-1 w-full rounded-md border border-emerald-100 px-3 py-2 text-sm"
+                                        placeholder="0,00"
+                                    >
+                                    <p v-if="form.errors.shipping_fixed_fee" class="mt-1 text-[11px] text-rose-600">{{ form.errors.shipping_fixed_fee }}</p>
+                                </div>
+                                <div>
+                                    <label class="text-xs font-medium uppercase tracking-wide text-slate-500">Frete grátis acima (R$)</label>
+                                    <input
+                                        v-model="form.shipping_free_over"
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        class="mt-1 w-full rounded-md border border-emerald-100 px-3 py-2 text-sm"
+                                        placeholder="0,00"
+                                    >
+                                    <p v-if="form.errors.shipping_free_over" class="mt-1 text-[11px] text-rose-600">{{ form.errors.shipping_free_over }}</p>
+                                </div>
+                                <div>
+                                    <label class="text-xs font-medium uppercase tracking-wide text-slate-500">Prazo (dias)</label>
+                                    <input
+                                        v-model="form.shipping_estimated_days"
+                                        type="number"
+                                        min="1"
+                                        max="60"
+                                        class="mt-1 w-full rounded-md border border-emerald-100 px-3 py-2 text-sm"
+                                        placeholder="2"
+                                    >
+                                    <p v-if="form.errors.shipping_estimated_days" class="mt-1 text-[11px] text-rose-600">{{ form.errors.shipping_estimated_days }}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 

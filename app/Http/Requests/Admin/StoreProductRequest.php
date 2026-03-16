@@ -25,6 +25,7 @@ class StoreProductRequest extends FormRequest
             'sku' => $this->normalizeNullableText($this->input('sku')),
             'description' => $this->normalizeNullableText($this->input('description')),
             'image_url' => $this->normalizeNullableText($this->input('image_url')),
+            'remove_image' => $this->boolean('remove_image'),
             'category_id' => $this->normalizeNullableInteger($this->input('category_id')),
             'stock_quantity' => $this->normalizeInteger($this->input('stock_quantity')),
             'is_active' => $this->boolean('is_active', true),
@@ -48,6 +49,8 @@ class StoreProductRequest extends FormRequest
             'stock_quantity' => ['required', 'integer', 'min:0'],
             'unit' => ['required', Rule::in(Product::UNITS)],
             'image_url' => ['nullable', 'url', 'max:2048'],
+            'image_file' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
+            'remove_image' => ['nullable', 'boolean'],
             'is_active' => ['required', 'boolean'],
         ];
     }
@@ -77,4 +80,3 @@ class StoreProductRequest extends FormRequest
         return max(0, $parsed);
     }
 }
-

@@ -70,4 +70,9 @@ class Product extends Model
     {
         return $this->hasMany(InventoryMovement::class);
     }
+
+    public function shopFavorites(): HasMany
+    {
+        return $this->hasMany(ShopCustomerFavorite::class);
+    }
 }

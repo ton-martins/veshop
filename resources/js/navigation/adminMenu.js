@@ -150,6 +150,13 @@
         icon: 'Cog',
         links: [
             {
+                key: 'admin-storefront',
+                label: 'Loja virtual',
+                route: 'admin.storefront.index',
+                match: ['admin.storefront.*'],
+                icon: 'Store',
+            },
+            {
                 key: 'admin-branding',
                 label: 'Branding',
                 route: 'admin.branding.index',

@@ -8,21 +8,25 @@ const props = defineProps({
     contractor: { type: Object, required: true },
     product: { type: Object, required: true },
     related_products: { type: Array, default: () => [] },
+    shop_auth: { type: Object, default: () => ({ authenticated: false, customer: null }) },
 });
 
 const { normalizeHex, primaryColor, publicFaviconHref, publicFaviconType, themeStyles, withAlpha } = useBranding();
 
-const safeRoute = (name, fallback = '#') => {
-    if (typeof route !== 'function') return fallback;
-    try {
-        return route(name);
-    } catch {
-        return fallback;
-    }
-};
-
 const storeName = computed(() => String(props.contractor?.brand_name || props.contractor?.name || 'Loja'));
 const storeSlug = computed(() => String(props.contractor?.slug || 'shop'));
+const loginUrl = computed(() => `/shop/${storeSlug.value}/entrar`);
+const accountUrl = computed(() => `/shop/${storeSlug.value}/conta`);
+const verifyEmailUrl = computed(() => `/shop/${storeSlug.value}/verificar-email`);
+const isShopAuthenticated = computed(() => Boolean(props.shop_auth?.authenticated));
+const requiresEmailVerification = computed(() => Boolean(props.shop_auth?.requires_email_verification ?? true));
+const isShopEmailVerified = computed(() => Boolean(props.shop_auth?.email_verified ?? false));
+const accountOrLoginUrl = computed(() => {
+    if (!isShopAuthenticated.value) return loginUrl.value;
+    if (requiresEmailVerification.value && !isShopEmailVerified.value) return verifyEmailUrl.value;
+
+    return accountUrl.value;
+});
 const storeLogo = computed(() => props.contractor?.avatar_url || props.contractor?.logo_url || null);
 const storePrimaryColor = computed(() => normalizeHex(props.contractor?.primary_color || '', primaryColor.value));
 const storeInitials = computed(() => {
@@ -52,7 +56,6 @@ const storeIconStyle = computed(() => {
         color: storeInitialsColor.value,
     };
 });
-const loginUrl = computed(() => safeRoute('login', '/login'));
 const shopUrl = computed(() => {
     if (typeof route === 'function') {
         try {
@@ -93,6 +96,68 @@ const cartStorageKey = computed(() => `veshop:shop-cart:${storeSlug.value}`);
 const favoritesStorageKey = computed(() => `veshop:shop-favorites:${storeSlug.value}`);
 const favoriteProductIds = ref([]);
 const favoriteProductIdSet = computed(() => new Set(favoriteProductIds.value));
+const favoriteSyncingIds = ref([]);
+
+const normalizeFavoriteIds = (values) => {
+    if (!Array.isArray(values)) return [];
+
+    return Array.from(new Set(
+        values
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id) && id > 0),
+    ));
+};
+
+const serverFavoriteProductIds = computed(() =>
+    normalizeFavoriteIds(props.shop_auth?.favorite_product_ids ?? []),
+);
+
+const loadFavoritesFromStorage = () => {
+    if (typeof window === 'undefined') return;
+
+    try {
+        const raw = window.localStorage.getItem(favoritesStorageKey.value);
+        if (!raw) {
+            favoriteProductIds.value = [];
+            return;
+        }
+
+        favoriteProductIds.value = normalizeFavoriteIds(JSON.parse(raw));
+    } catch {
+        favoriteProductIds.value = [];
+    }
+};
+
+const setFavoriteSyncing = (productId, syncing) => {
+    const safeProductId = Number(productId);
+    const next = new Set(favoriteSyncingIds.value);
+
+    if (syncing) {
+        next.add(safeProductId);
+    } else {
+        next.delete(safeProductId);
+    }
+
+    favoriteSyncingIds.value = Array.from(next);
+};
+
+const isFavoriteSyncing = (productId) => new Set(favoriteSyncingIds.value).has(Number(productId));
+
+const persistFavoriteOnServer = async (productId, shouldFavorite) => {
+    if (typeof window === 'undefined' || !window.axios) return false;
+
+    const endpoint = `/shop/${storeSlug.value}/favoritos/${productId}`;
+
+    try {
+        const response = shouldFavorite
+            ? await window.axios.post(endpoint)
+            : await window.axios.delete(endpoint);
+
+        return response?.data?.ok === true;
+    } catch {
+        return false;
+    }
+};
 
 const loadCartCount = () => {
     if (typeof window === 'undefined') return;
@@ -117,26 +182,10 @@ const loadCartCount = () => {
 };
 
 const loadFavorites = () => {
-    if (typeof window === 'undefined') return;
-
-    try {
-        const raw = window.localStorage.getItem(favoritesStorageKey.value);
-        if (!raw) {
-            favoriteProductIds.value = [];
-            return;
-        }
-
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed)) {
-            favoriteProductIds.value = [];
-            return;
-        }
-
-        favoriteProductIds.value = parsed
-            .map((id) => Number(id))
-            .filter((id) => Number.isFinite(id) && id > 0);
-    } catch {
-        favoriteProductIds.value = [];
+    if (isShopAuthenticated.value) {
+        favoriteProductIds.value = serverFavoriteProductIds.value;
+    } else {
+        loadFavoritesFromStorage();
     }
 };
 
@@ -146,9 +195,23 @@ onMounted(() => {
 });
 
 watch(
+    [isShopAuthenticated, serverFavoriteProductIds],
+    ([authenticated]) => {
+        if (authenticated) {
+            favoriteProductIds.value = serverFavoriteProductIds.value;
+            return;
+        }
+
+        loadFavoritesFromStorage();
+    },
+    { immediate: true },
+);
+
+watch(
     favoriteProductIds,
     (value) => {
         if (typeof window === 'undefined') return;
+        if (isShopAuthenticated.value) return;
         window.localStorage.setItem(favoritesStorageKey.value, JSON.stringify(value));
     },
     { deep: true },
@@ -156,16 +219,27 @@ watch(
 
 const isFavorite = (productId) => favoriteProductIdSet.value.has(Number(productId));
 
-const toggleFavorite = (productId) => {
+const toggleFavorite = async (productId) => {
     const targetId = Number(productId);
     if (!targetId) return;
+    if (isShopAuthenticated.value && isFavoriteSyncing(targetId)) return;
 
-    if (isFavorite(targetId)) {
-        favoriteProductIds.value = favoriteProductIds.value.filter((id) => Number(id) !== targetId);
+    const wasFavorite = isFavorite(targetId);
+    const previous = [...favoriteProductIds.value];
+    favoriteProductIds.value = wasFavorite
+        ? favoriteProductIds.value.filter((id) => Number(id) !== targetId)
+        : normalizeFavoriteIds([...favoriteProductIds.value, targetId]);
+
+    if (!isShopAuthenticated.value) return;
+
+    setFavoriteSyncing(targetId, true);
+    const saved = await persistFavoriteOnServer(targetId, !wasFavorite);
+    setFavoriteSyncing(targetId, false);
+
+    if (!saved) {
+        favoriteProductIds.value = previous;
         return;
     }
-
-    favoriteProductIds.value = [...favoriteProductIds.value, targetId];
 };
 
 const relatedProducts = computed(() => {
@@ -264,11 +338,11 @@ const hasStock = computed(() => Number(props.product?.stock_quantity || 0) > 0);
                         {{ cartCount }}
                     </span>
                     <Link
-                        :href="loginUrl"
+                        :href="accountOrLoginUrl"
                         class="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:inline-flex"
                     >
                         <LogIn class="h-3.5 w-3.5" />
-                        Entrar
+                        {{ isShopAuthenticated ? 'Minha conta' : 'Entrar' }}
                     </Link>
                 </div>
             </div>
@@ -290,8 +364,9 @@ const hasStock = computed(() => Number(props.product?.stock_quantity || 0) > 0);
                             </div>
                             <button
                                 type="button"
-                                class="inline-flex h-10 w-10 items-center justify-center rounded-full border shadow-sm transition"
+                                class="inline-flex h-10 w-10 items-center justify-center rounded-full border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60"
                                 :class="isFavorite(product.id) ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'"
+                                :disabled="isFavoriteSyncing(product.id)"
                                 @click="toggleFavorite(product.id)"
                             >
                                 <Heart class="h-5 w-5" />
@@ -380,8 +455,9 @@ const hasStock = computed(() => Number(props.product?.stock_quantity || 0) > 0);
                             <img :src="productImage(item)" :alt="item.name" class="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
                             <button
                                 type="button"
-                                class="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition"
+                                class="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60"
                                 :class="isFavorite(item.id) ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'"
+                                :disabled="isFavoriteSyncing(item.id)"
                                 @click.stop.prevent="toggleFavorite(item.id)"
                             >
                                 <Heart class="h-4 w-4" />
@@ -413,11 +489,11 @@ const hasStock = computed(() => Number(props.product?.stock_quantity || 0) > 0);
                     <Heart class="h-4 w-4" />
                     Favoritos
                 </button>
-                <Link :href="shopUrl" class="relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold text-white shadow-inner shadow-black/10" style="background: var(--catalog-primary-strong)">
+                <Link :href="shopUrl" class="relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold text-slate-600 hover:bg-slate-100">
                     <ShoppingCart class="h-4 w-4" />Carrinho
-                    <span v-if="cartCount > 0" class="absolute right-2 top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-white px-1 py-0.5 text-[9px] font-bold text-slate-900">{{ cartCount }}</span>
+                    <span v-if="cartCount > 0" class="absolute right-2 top-1 inline-flex min-w-[16px] items-center justify-center rounded-full px-1 py-0.5 text-[9px] font-bold text-white" style="background: var(--catalog-primary-strong)">{{ cartCount }}</span>
                 </Link>
-                <Link :href="loginUrl" class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"><UserCircle2 class="h-4 w-4" />Conta</Link>
+                <Link :href="accountOrLoginUrl" class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"><UserCircle2 class="h-4 w-4" />Conta</Link>
             </div>
         </nav>
 
@@ -450,11 +526,11 @@ const hasStock = computed(() => Number(props.product?.stock_quantity || 0) > 0);
                                 <Heart class="h-3.5 w-3.5" />
                                 Favoritos
                             </button>
-                            <Link :href="shopUrl" class="inline-flex items-center justify-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-sm" style="background: var(--catalog-primary-strong)" @click="leftMenuOpen = false">
+                            <Link :href="shopUrl" class="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="leftMenuOpen = false">
                                 <ShoppingCart class="h-3.5 w-3.5" />
                                 Carrinho
                             </Link>
-                            <Link :href="loginUrl" class="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="leftMenuOpen = false">
+                            <Link :href="accountOrLoginUrl" class="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="leftMenuOpen = false">
                                 <UserCircle2 class="h-3.5 w-3.5" />
                                 Conta
                             </Link>

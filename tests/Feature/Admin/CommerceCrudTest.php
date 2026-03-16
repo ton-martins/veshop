@@ -5,9 +5,12 @@ namespace Tests\Feature\Admin;
 use App\Models\Category;
 use App\Models\Client;
 use App\Models\Contractor;
+use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -172,6 +175,85 @@ class CommerceCrudTest extends TestCase
         ]);
     }
 
+    public function test_admin_can_replace_product_image_and_old_file_is_removed(): void
+    {
+        Storage::fake('public');
+
+        $contractor = $this->createContractor('contratante-produto-imagem', Contractor::NICHE_COMMERCIAL);
+        $category = Category::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Padaria',
+            'slug' => 'padaria',
+            'description' => null,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $user = $this->createAdminUser([$contractor]);
+
+        $createResponse = $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->post(route('admin.products.store'), [
+                'name' => 'Pão Integral',
+                'sku' => 'PAO-001',
+                'category_id' => $category->id,
+                'description' => 'Produto com imagem',
+                'cost_price' => 3.5,
+                'sale_price' => 6.9,
+                'stock_quantity' => 12,
+                'unit' => 'un',
+                'image_file' => UploadedFile::fake()->image('produto-1.jpg'),
+                'image_url' => '',
+                'remove_image' => false,
+                'is_active' => true,
+            ]);
+
+        $createResponse->assertRedirect();
+
+        $product = Product::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('sku', 'PAO-001')
+            ->firstOrFail();
+
+        $firstPath = $this->extractPublicStoragePath($product->image_url);
+        $this->assertNotNull($firstPath);
+        Storage::disk('public')->assertExists($firstPath);
+
+        $updateResponse = $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->put(route('admin.products.update', $product->id), [
+                'name' => 'Pão Integral',
+                'sku' => 'PAO-001',
+                'category_id' => $category->id,
+                'description' => 'Produto com imagem atualizada',
+                'cost_price' => 3.5,
+                'sale_price' => 6.9,
+                'stock_quantity' => 10,
+                'unit' => 'un',
+                'image_file' => UploadedFile::fake()->image('produto-2.jpg'),
+                'image_url' => '',
+                'remove_image' => false,
+                'is_active' => true,
+            ]);
+
+        $updateResponse->assertRedirect();
+
+        $product->refresh();
+        $secondPath = $this->extractPublicStoragePath($product->image_url);
+
+        $this->assertNotNull($secondPath);
+        $this->assertNotSame($firstPath, $secondPath);
+        Storage::disk('public')->assertExists($secondPath);
+        Storage::disk('public')->assertMissing($firstPath);
+    }
+
     public function test_admin_can_update_and_delete_client_for_current_contractor(): void
     {
         $contractor = $this->createContractor('contratante-clientes', Contractor::NICHE_COMMERCIAL);
@@ -301,5 +383,27 @@ class CommerceCrudTest extends TestCase
                 'email_notifications_enabled' => true,
             ],
         ]);
+    }
+
+    private function extractPublicStoragePath(?string $url): ?string
+    {
+        if (! $url) {
+            return null;
+        }
+
+        $path = parse_url($url, PHP_URL_PATH);
+        if (! is_string($path) || $path === '') {
+            return null;
+        }
+
+        if (str_starts_with($path, '/storage/')) {
+            return ltrim(substr($path, strlen('/storage/')), '/');
+        }
+
+        if (str_starts_with($path, 'storage/')) {
+            return ltrim(substr($path, strlen('storage/')), '/');
+        }
+
+        return null;
     }
 }
