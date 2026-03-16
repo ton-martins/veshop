@@ -4,13 +4,21 @@ namespace App\Notifications\Shop;
 
 use App\Models\ShopCustomer;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\URL;
 
-class VerifyShopCustomerEmailNotification extends Notification
+class VerifyShopCustomerEmailNotification extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    public function __construct()
+    {
+        $this->connection = (string) config('queue.workloads.mail.connection', config('queue.default'));
+        $this->queue = (string) config('queue.workloads.mail.queue', 'emails');
+        $this->afterCommit = true;
+    }
 
     /**
      * @return list<string>

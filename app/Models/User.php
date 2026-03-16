@@ -107,6 +107,11 @@ class User extends Authenticatable
         return $this->hasMany(Sale::class);
     }
 
+    public function requestedReportExports(): HasMany
+    {
+        return $this->hasMany(ReportExport::class, 'requested_by_user_id');
+    }
+
     public function inventoryMovements(): HasMany
     {
         return $this->hasMany(InventoryMovement::class);

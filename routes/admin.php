@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\PaymentGatewayController;
 use App\Http\Controllers\Admin\PaymentMethodController;
 use App\Http\Controllers\Admin\PdvController;
+use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\ContractorBrandingController;
 use App\Http\Controllers\Admin\StorefrontController;
 use App\Http\Controllers\Admin\CategoryController;
@@ -71,9 +72,11 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
             Route::put('/finance/methods/{paymentMethod}', [PaymentMethodController::class, 'update'])->name('finance.methods.update');
             Route::delete('/finance/methods/{paymentMethod}', [PaymentMethodController::class, 'destroy'])->name('finance.methods.destroy');
 
-            Route::get('/reports', function () {
-                return Inertia::render('Admin/Reports/Index');
-            })->name('reports.index');
+            Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+            Route::post('/reports/exports/sales', [ReportController::class, 'exportSales'])
+                ->name('reports.exports.sales');
+            Route::get('/reports/exports/{reportExport}/download', [ReportController::class, 'download'])
+                ->name('reports.exports.download');
         });
 
         Route::middleware('contractor.module:services')->prefix('services')->name('services.')->group(function (): void {

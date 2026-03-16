@@ -4,9 +4,10 @@ namespace App\Notifications;
 
 use App\Models\Sale;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
 
-class OrderStatusNotification extends Notification
+class OrderStatusNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
@@ -16,6 +17,9 @@ class OrderStatusNotification extends Notification
         private readonly string $message,
         private readonly string $targetUrl,
     ) {
+        $this->connection = (string) config('queue.workloads.notifications.connection', config('queue.default'));
+        $this->queue = (string) config('queue.workloads.notifications.queue', 'default');
+        $this->afterCommit = true;
     }
 
     /**

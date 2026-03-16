@@ -129,6 +129,11 @@ class Contractor extends Model
         return $this->hasMany(Sale::class);
     }
 
+    public function reportExports(): HasMany
+    {
+        return $this->hasMany(ReportExport::class);
+    }
+
     public function saleItems(): HasMany
     {
         return $this->hasMany(SaleItem::class);

@@ -41,7 +41,7 @@ return [
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
             'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
-            'after_commit' => false,
+            'after_commit' => (bool) env('DB_QUEUE_AFTER_COMMIT', false),
         ],
 
         'beanstalkd' => [
@@ -50,7 +50,7 @@ return [
             'queue' => env('BEANSTALKD_QUEUE', 'default'),
             'retry_after' => (int) env('BEANSTALKD_QUEUE_RETRY_AFTER', 90),
             'block_for' => 0,
-            'after_commit' => false,
+            'after_commit' => (bool) env('BEANSTALKD_QUEUE_AFTER_COMMIT', false),
         ],
 
         'sqs' => [
@@ -61,7 +61,7 @@ return [
             'queue' => env('SQS_QUEUE', 'default'),
             'suffix' => env('SQS_SUFFIX'),
             'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
-            'after_commit' => false,
+            'after_commit' => (bool) env('SQS_QUEUE_AFTER_COMMIT', false),
         ],
 
         'redis' => [
@@ -69,8 +69,8 @@ return [
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
             'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
-            'block_for' => null,
-            'after_commit' => false,
+            'block_for' => env('REDIS_QUEUE_BLOCK_FOR'),
+            'after_commit' => (bool) env('REDIS_QUEUE_AFTER_COMMIT', false),
         ],
 
         'deferred' => [
@@ -124,6 +124,31 @@ return [
         'driver' => env('QUEUE_FAILED_DRIVER', 'database-uuids'),
         'database' => env('DB_CONNECTION', 'sqlite'),
         'table' => 'failed_jobs',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Workload Queues
+    |--------------------------------------------------------------------------
+    |
+    | Queues can be split by workload so workers can process critical tasks
+    | independently (for example, e-mails and exports).
+    |
+    */
+
+    'workloads' => [
+        'mail' => [
+            'connection' => env('QUEUE_MAIL_CONNECTION', env('QUEUE_CONNECTION', 'sync')),
+            'queue' => env('QUEUE_MAIL', 'emails'),
+        ],
+        'exports' => [
+            'connection' => env('QUEUE_EXPORTS_CONNECTION', env('QUEUE_CONNECTION', 'sync')),
+            'queue' => env('QUEUE_EXPORTS', 'exports'),
+        ],
+        'notifications' => [
+            'connection' => env('QUEUE_NOTIFICATIONS_CONNECTION', env('QUEUE_CONNECTION', 'sync')),
+            'queue' => env('QUEUE_NOTIFICATIONS', 'default'),
+        ],
     ],
 
 ];

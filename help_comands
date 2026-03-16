@@ -6,3 +6,9 @@ php artisan optimize:clear
 php artisan config:clear
 php artisan optimize
 npm run dev
+
+-- Filas Redis / background jobs
+
+php artisan queue:work redis --queue=emails,exports,default --sleep=1 --tries=3 --timeout=300
+php artisan queue:failed
+php artisan queue:retry all
