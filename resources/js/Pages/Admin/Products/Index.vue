@@ -513,23 +513,16 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                     </div>
 
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Categoria</label>
-                        <UiSelect
-                            v-model="productForm.category_id"
-                            :options="productCategoryOptions"
-                            button-class="mt-1 w-full text-sm"
-                        />
-                        <p v-if="productForm.errors.category_id" class="mt-1 text-xs text-rose-600">{{ productForm.errors.category_id }}</p>
-                    </div>
-
-                    <div>
-                        <BrandingImageUploader
-                            label="Imagem do produto"
-                            help-text="Envie JPG, PNG ou WEBP."
-                            :initial-preview="productForm.image_preview || productForm.image_url"
-                            :aspect-ratio="1"
-                            @change="handleProductImageChange"
-                        />
+                        <div class="w-full max-w-[220px] md:max-w-[320px]">
+                            <BrandingImageUploader
+                                label="Imagem do produto"
+                                help-text="Envie JPG, PNG ou WEBP."
+                                :initial-preview="productForm.image_preview || productForm.image_url"
+                                :aspect-ratio="1"
+                                :desktop-aspect-ratio="3.2"
+                                @change="handleProductImageChange"
+                            />
+                        </div>
                         <div class="mt-2 flex flex-wrap gap-2">
                             <button
                                 type="button"
@@ -548,6 +541,16 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         >
                         <p v-if="productForm.errors.image_url" class="mt-1 text-xs text-rose-600">{{ productForm.errors.image_url }}</p>
                         <p v-if="productForm.errors.image_file" class="mt-1 text-xs text-rose-600">{{ productForm.errors.image_file }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Categoria</label>
+                        <UiSelect
+                            v-model="productForm.category_id"
+                            :options="productCategoryOptions"
+                            button-class="mt-1 w-full text-sm"
+                        />
+                        <p v-if="productForm.errors.category_id" class="mt-1 text-xs text-rose-600">{{ productForm.errors.category_id }}</p>
                     </div>
 
                     <div>

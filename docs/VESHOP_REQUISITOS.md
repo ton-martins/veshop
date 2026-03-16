@@ -1,130 +1,110 @@
 # Veshop - Requisitos do Produto e da Plataforma
 
-Versão: v1.5  
-Última atualização: 15/03/2026
+Versão: v1.6
+Última atualização: 16/03/2026
 
 ## 1. Visão do produto
 
-O Veshop é um SaaS multiempresa para gestão operacional de contratantes, com foco em uso diário e execução rápida.
+O Veshop é um SaaS multiempresa para gestão operacional de contratantes, com foco em execução diária rápida para:
+- Comércio: lojas, bazares, mercados, padarias e similares.
+- Serviços: contabilidade, barbearia, autoelétrica e similares.
 
-Objetivos:
+Objetivos de produto:
 - Centralizar operação comercial e de serviços em uma única plataforma.
 - Reduzir retrabalho entre vendas, estoque, financeiro e atendimento.
 - Permitir identidade visual por contratante.
 - Entregar experiência consistente em desktop, tablet e celular.
 
-## 2. Estado atual do sistema (implementado)
+## 2. Status atual (implementado)
 
 ### 2.1 Base da plataforma
 
-- Arquitetura monolítica em Laravel + Inertia + Vue.
-- Estratégia multiempresa por `contractor_id` (contractor-first).
-- Papéis ativos:
-- `master`
-- `admin`
+- Stack: Laravel + Inertia + Vue.
+- Estratégia multiempresa por `contractor_id`.
+- Perfis ativos: `master` e `admin`.
 - Relação N:N entre usuários e contratantes (`contractor_user`).
-- Autenticação com 2FA obrigatório no fluxo autenticado.
-- Testes bloqueados para uso exclusivo de SQLite em memória:
-- `DB_CONNECTION=sqlite`
-- `DB_DATABASE=:memory:`
-- Trava aplicada no `AppServiceProvider`, `tests/TestCase.php`, `.env.testing` e `phpunit.xml`.
+- Fluxo autenticado com 2FA.
+- Testes configurados para SQLite em memória.
 
 ### 2.2 Módulo Master
 
-- CRUD de usuários (modal padrão do sistema).
-- Upload de avatar de usuário (`png`, `jpg`, `jpeg`) com substituição do arquivo anterior.
+- CRUD de usuários.
+- Upload de avatar de usuário com substituição do arquivo anterior.
 - CRUD de contratantes.
 - CRUD de planos.
 - Planos segmentados por nicho:
 - `commercial` (Comércio)
 - `services` (Serviços)
-- Página de branding da plataforma (cores, logo, ícone e imagens da landing).
+- Branding da plataforma (cores, logo, ícone e imagens da landing).
 
 ### 2.3 Módulo Admin (Comércio)
 
-- Dashboard com visão operacional e PDV.
-- CRUD de Produtos.
-- CRUD de Categorias.
-- CRUD de Clientes.
-- CRUD de Fornecedores.
-- Página única de Contas com abas:
-- Contas a pagar
-- Contas a receber
-- Pagamentos
-- Aba Pagamentos com CRUD funcional de:
-- Gateways de pagamento (`payment_gateways`)
-- Formas de pagamento (`payment_methods`)
-- Página de pedidos (camada de interface disponível, sem fluxo completo de e-commerce).
-- Página de estoque (camada de interface disponível, sem ciclo completo de inventário geral).
-- Página de relatórios (camada de interface disponível).
+- Dashboard operacional.
+- CRUD de produtos.
+- CRUD de categorias.
+- CRUD de clientes.
+- CRUD de fornecedores.
+- Página de Contas com abas de pagar/receber/pagamentos.
+- CRUD de gateways e formas de pagamento na aba Pagamentos.
 
-### 2.4 PDV (MVP transacional já funcional)
+### 2.4 PDV (MVP funcional)
 
 - Abertura e fechamento de caixa.
-- Controle de sessão de caixa (`cash_sessions`) e movimentos (`cash_movements`).
-- Carrinho no PDV com busca e categorias.
-- Cadastro rápido de cliente dentro do PDV.
-- Definição dos Top 12 produtos prioritários do PDV.
-- Fechamento de venda com:
-- Itens
-- Desconto
-- Acréscimo
-- Forma de pagamento
-- Valor pago em dinheiro e troco
-- Persistência transacional de:
-- `sales`
-- `sale_items`
-- `sale_payments`
-- Baixa automática de estoque na venda.
-- Geração de movimentação de estoque (`inventory_movements`) vinculada à venda.
-- Registro de entrada de caixa para pagamento em dinheiro.
-- Testes de fluxo PDV cobrindo abertura de caixa, venda e baixa de estoque.
+- Controle de sessão de caixa e movimentos.
+- Carrinho PDV com busca e categorias.
+- Cadastro rápido de cliente no PDV.
+- Top 12 produtos prioritários no PDV.
+- Fechamento de venda com desconto/acréscimo, forma de pagamento e troco.
+- Persistência transacional de `sales`, `sale_items` e `sale_payments`.
+- Baixa automática de estoque e movimentação de inventário.
+- Registro automático de entrada de caixa para venda em dinheiro.
+- Cálculo do dashboard PDV ajustado para dia de negócio no fuso do contratante (vendas do dia e ticket médio).
 
-### 2.5 Experiência pública (Landing + Loja)
+### 2.5 Loja virtual pública do contratante
 
-- Landing page componentizada e responsiva.
-- Sessão de planos segmentada por nicho (Comércio e Serviços).
-- Loja pública por contratante via rota:
-- `/shop/{slug}`
-- Página de detalhes de produto:
-- `/shop/{slug}/produto/{product}`
-- Redirecionamento legado:
-- `/catalogo/{slug}`
-- `/catalogo/{slug}/produto/{product}`
-- Loja pública com:
-- Busca de produtos
-- Filtro por categoria
-- Ordenação
-- Paginação
-- Favoritos em `localStorage`
-- Carrinho em `localStorage`
-- Checkout atual via WhatsApp (MVP).
+- Loja por rota pública `/shop/{slug}`.
+- Página de produto por `/shop/{slug}/produto/{product}`.
+- Busca, filtro por categoria, ordenação e paginação.
+- Carrinho e favoritos.
+- Favoritos persistidos por cliente da loja (`shop_customer_favorites`) e exibidos na conta.
+- Checkout MVP (ainda com limitações do fluxo transacional completo).
 
-### 2.6 Padrões de UX/UI adotados
+### 2.6 Identidade visual e experiência da loja
 
-- Paginação padronizada em pt-BR.
-- Tabelas com scroll horizontal interno (evita quebrar o layout da página em mobile).
-- Modo de exibição lista/cards nas telas principais.
-- Inputs de busca com botão de limpar (`x`) e fluxo consistente.
-- Selects customizados do sistema (`UiSelect`) nas páginas migradas.
-- Modais padronizados para criação/edição.
-- Confirmação de exclusão no padrão anterior do sistema.
-- Navegação mobile inferior no app autenticado e na loja pública.
+- Logo da loja pública prioriza o logo do contratante.
+- Sem logo/ícone, exibe iniciais do contratante com cor de fundo da marca.
+- Separação de identidade:
+- Portal do sistema mantém nome do sistema.
+- Loja pública usa identidade do contratante.
 
-## 3. Regras já definidas de catálogo público e domínio
+### 2.7 Conta do cliente da loja pública
 
-- Estratégia principal de publicação: `slug.veshop.com.br`.
-- Contratantes sem domínio próprio usam o padrão de subdomínio.
-- Contratantes com domínio próprio poderão vincular domínio externo.
-- Contratantes com loja virtual existente poderão usar Veshop como backoffice.
-- Em ambiente local, a navegação atual está operando por rota (`/shop/{slug}`).
+- Cadastro e login isolados por contratante/loja.
+- Cliente da loja não acessa o portal administrativo do sistema.
+- Verificação de e-mail no fluxo de cliente da loja (com envio e confirmação).
+- Página “Minha conta” com:
+- Atualização de telefone e endereço.
+- Consulta de CEP com ViaCEP.
+- Lista de favoritos.
+- Histórico de pedidos.
+- Notificações da conta.
 
-## 4. Pontos ainda pendentes (por prioridade)
+### 2.8 Cadastro de clientes e fornecedores (nova entrega)
 
-### 4.1 P0 - Fechamento do fluxo de pedido online (prioridade máxima)
+- Máscara/regex para documento (CPF/CNPJ).
+- Máscara/regex para telefone no padrão `(11) 99999-9999`.
+- Wizard de endereço nos modais de cliente e fornecedor.
+- Campo CEP com máscara e integração ViaCEP.
+- Preenchimento manual como fallback quando ViaCEP falha.
+- Campo UF com seleção de estados brasileiros.
+- Mesma padronização aplicada no cadastro público da loja e no perfil do cliente da loja.
 
-- Persistir pedido do catálogo público no backend (não apenas checkout por WhatsApp).
-- Criar lifecycle de pedido:
+## 3. Pendências (o que ainda falta)
+
+### 3.1 P0 - Fechamento do pedido online transacional
+
+- Finalizar criação de pedido no backend no checkout público (não só fluxo parcial).
+- Fechar lifecycle de pedido ponta a ponta:
 - `novo`
 - `aguardando_confirmação`
 - `confirmado`
@@ -132,74 +112,41 @@ Objetivos:
 - `aguardando_pagamento`
 - `pago`
 - `cancelado`
-- Notificar admin no painel e por canal externo (ex.: WhatsApp).
-- Permitir decisão do admin (aceitar/rejeitar) com motivo.
-- Gerar cobrança digital para o cliente (PIX/link) após confirmação.
+- Ação do admin para aceitar/rejeitar pedido com motivo.
 
-### 4.2 P1 - Integração real de pagamentos e conciliação
+### 3.2 P1 - Pagamento online real
 
-- Integrar gateways (ex.: Mercado Pago) para cobrança real.
-- Gerar QR Code PIX dinâmico por transação.
-- Processar webhook para confirmação de pagamento.
-- Atualizar status do pedido/venda automaticamente por evento do gateway.
-- Tratar estorno/cancelamento com reversões financeiras e de estoque.
+- Integração com gateway (ex.: Mercado Pago).
+- PIX dinâmico por transação.
+- Webhook para confirmação automática.
+- Tratamento de estorno/cancelamento.
 
-### 4.3 P2 - Fechar ciclo comercial completo
+### 3.3 P2 - Conciliação operacional completa
 
-- Evoluir módulo de Pedidos para operação completa no painel.
-- Evoluir módulo de Estoque para entradas, saídas, ajustes e inventário geral.
-- Evoluir Contas a pagar/receber para fluxo transacional completo.
-- Conciliação financeira ponta a ponta (caixa, venda, contas e pagamento).
-- Relatórios gerenciais e financeiros com dados consolidados reais.
+- Conectar pedido, venda, estoque e financeiro ponta a ponta.
+- Evoluir módulos de pedidos, estoque e relatórios para operação completa.
 
-### 4.4 P3 - Catálogo público multi-tenant por host
+### 3.4 P3 - Publicação por domínio/subdomínio
 
-- Resolver contratante por host (subdomínio/domínio customizado) em produção.
-- Fluxo de onboarding de domínio:
-- Validação DNS
-- SSL
-- Redirecionamentos canônicos
+- Resolver contratante por host (subdomínio/domínio customizado).
+- Onboarding de domínio com validação DNS, SSL e redirecionamentos.
 
-### 4.5 P4 - Módulo de integrações
-
-- Área dedicada de integrações por contratante.
-- Gestão segura de credenciais de gateway.
-- Health-check de integração.
-- Integrações com e-commerce externo (sincronização de pedidos, estoque e financeiro).
-
-### 4.6 P5 - Módulo de serviços (fluxo transacional)
+### 3.5 P4 - Módulo de serviços (transacional)
 
 - Concluir catálogo de serviços com backend final.
 - Concluir ordens de serviço com status e histórico.
-- Concluir agenda operacional integrada a ordens.
+- Concluir agenda operacional integrada.
 
-### 4.7 P6 - Auditoria e governança
+### 3.6 P5 - Auditoria e governança
 
-- Implementar trilha de auditoria de ações críticas.
-- Padronizar eventos auditáveis por entidade.
-- Endurecer validações tenant-first em toda a aplicação.
+- Trilhas de auditoria para ações críticas.
+- Padronização de eventos auditáveis por entidade.
+- Reforço de validações tenant-first em todos os fluxos.
 
-### 4.8 P7 - Escalabilidade e operação
+## 4. Próxima entrega recomendada
 
-- Redis para cache, sessão e filas.
-- Workers e jobs assíncronos de produção.
-- Observabilidade (logs estruturados, métricas, alertas).
-- Estratégia de backup/restore validada.
-- Evolução de armazenamento de mídia para object storage quando necessário.
-
-## 5. Decisão atual para identidade do comprador no catálogo
-
-- No modelo atual, o cliente comprador é tratado por contratante (isolamento por loja).
-- Conta global única de comprador entre múltiplas lojas ainda não foi implementada.
-- Se necessário, será evoluído para modelo híbrido:
-- conta global do comprador
-- perfil e histórico por loja/contratante
-
-## 6. Próxima entrega recomendada
-
-Ordem sugerida para a próxima etapa:
-1. Checkout transacional do catálogo público criando pedido no backend.
-2. Fluxo de confirmação/rejeição de pedido no painel do admin.
-3. Integração de pagamento com geração de PIX QR Code/link.
-4. Webhook de confirmação de pagamento com atualização automática de status.
-5. Conciliação entre pedido, venda, estoque e financeiro.
+Ordem sugerida:
+1. Fechar checkout transacional da loja pública com pedido persistido.
+2. Implementar aprovação/rejeição de pedido pelo admin com notificação.
+3. Integrar pagamento online (PIX/link) com webhook de confirmação.
+4. Concluir conciliação automática entre pedido, venda, estoque e financeiro.

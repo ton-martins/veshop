@@ -8,6 +8,18 @@ import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { Truck, PackageCheck, Timer, AlertTriangle, Search, Filter, Plus, Pencil, Trash2 } from 'lucide-vue-next';
+import {
+    BRAZIL_STATES,
+    formatCepBR,
+    detectDocumentTypeBR,
+    formatDocumentByTypeBR,
+    formatPhoneBR,
+    isValidCepMaskBR,
+    isValidDocumentByTypeBR,
+    isValidPhoneMaskBR,
+    normalizeStateCode,
+    viaCepToAddress,
+} from '@/utils/br';
 
 const props = defineProps({
     suppliers: {
@@ -34,6 +46,24 @@ const statusOptions = [
     { value: 'active', label: 'Ativos' },
     { value: 'inactive', label: 'Inativos' },
 ];
+
+const documentTypeOptions = [
+    { value: 'cpf', label: 'CPF' },
+    { value: 'cnpj', label: 'CNPJ' },
+];
+
+const stateOptions = computed(() => ([
+    { value: '', label: 'Selecione' },
+    ...BRAZIL_STATES.map((state) => ({
+        value: state.code,
+        label: `${state.code} - ${state.name}`,
+    })),
+]));
+
+const wizardSteps = ['Dados do fornecedor', 'Endereço'];
+const currentStep = ref(1);
+const cepLookupLoading = ref(false);
+const cepLookupError = ref('');
 
 watch(
     () => props.filters,
@@ -86,47 +116,173 @@ const editingSupplier = ref(null);
 const showDeleteModal = ref(false);
 const supplierToDelete = ref(null);
 
-const supplierForm = useForm({
+const buildSupplierDefaults = () => ({
     name: '',
     email: '',
     phone: '',
+    document_type: 'cpf',
     document: '',
+    cep: '',
+    street: '',
+    number: '',
+    complement: '',
+    neighborhood: '',
+    city: '',
+    state: '',
     category: '',
     lead_time_days: 0,
     is_active: true,
 });
+
+const supplierForm = useForm(buildSupplierDefaults());
 const deleteForm = useForm({});
 
 const isEditing = computed(() => Boolean(editingSupplier.value?.id));
+const isFirstStep = computed(() => currentStep.value === 1);
+const isLastStep = computed(() => currentStep.value === wizardSteps.length);
+const canAdvance = computed(() => String(supplierForm.name ?? '').trim() !== '');
+
+const resetWizard = () => {
+    currentStep.value = 1;
+    cepLookupError.value = '';
+};
 
 const openCreate = () => {
     editingSupplier.value = null;
+    supplierForm.defaults(buildSupplierDefaults());
     supplierForm.reset();
     supplierForm.clearErrors();
     supplierForm.lead_time_days = 0;
     supplierForm.is_active = true;
+    resetWizard();
     showModal.value = true;
 };
 
 const openEdit = (supplier) => {
     editingSupplier.value = supplier;
+    supplierForm.document_type = detectDocumentTypeBR(supplier.document ?? '');
     supplierForm.name = supplier.name ?? '';
     supplierForm.email = supplier.email ?? '';
     supplierForm.phone = supplier.phone ?? '';
-    supplierForm.document = supplier.document ?? '';
+    supplierForm.document = formatDocumentByTypeBR(supplier.document ?? '', supplierForm.document_type);
+    supplierForm.cep = supplier.cep ?? '';
+    supplierForm.street = supplier.street ?? '';
+    supplierForm.number = supplier.number ?? '';
+    supplierForm.complement = supplier.complement ?? '';
+    supplierForm.neighborhood = supplier.neighborhood ?? '';
+    supplierForm.city = supplier.city ?? '';
+    supplierForm.state = supplier.state ?? '';
     supplierForm.category = supplier.category ?? '';
     supplierForm.lead_time_days = Number.parseInt(String(supplier.lead_time_days ?? 0), 10) || 0;
     supplierForm.is_active = Boolean(supplier.is_active);
     supplierForm.clearErrors();
+    resetWizard();
     showModal.value = true;
 };
 
 const closeModal = () => {
     showModal.value = false;
     editingSupplier.value = null;
+    supplierForm.clearErrors();
+    supplierForm.defaults(buildSupplierDefaults());
+    supplierForm.reset();
+    resetWizard();
+};
+
+const onPhoneInput = (event) => {
+    supplierForm.phone = formatPhoneBR(event?.target?.value ?? supplierForm.phone);
+    supplierForm.clearErrors('phone');
+};
+
+const onDocumentInput = (event) => {
+    supplierForm.document = formatDocumentByTypeBR(event?.target?.value ?? supplierForm.document, supplierForm.document_type);
+    supplierForm.clearErrors('document');
+};
+
+const onDocumentTypeChange = () => {
+    supplierForm.document = formatDocumentByTypeBR(supplierForm.document, supplierForm.document_type);
+    supplierForm.clearErrors('document');
+};
+
+const onCepInput = (event) => {
+    supplierForm.cep = formatCepBR(event?.target?.value ?? supplierForm.cep);
+    supplierForm.clearErrors('cep');
+};
+
+const lookupCep = async () => {
+    cepLookupError.value = '';
+    supplierForm.cep = formatCepBR(supplierForm.cep);
+
+    if (!supplierForm.cep) return;
+    if (supplierForm.cep.length !== 9) {
+        cepLookupError.value = 'CEP inválido. Digite os 8 números.';
+        return;
+    }
+
+    cepLookupLoading.value = true;
+    const cepDigits = supplierForm.cep.replace(/\D/g, '');
+
+    try {
+        const response = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
+        if (!response.ok) throw new Error('lookup_failed');
+
+        const payload = await response.json();
+        if (payload?.erro) {
+            cepLookupError.value = 'CEP não encontrado.';
+            return;
+        }
+
+        const parsed = viaCepToAddress(payload);
+        supplierForm.cep = parsed.cep || supplierForm.cep;
+        supplierForm.street = parsed.street || supplierForm.street;
+        supplierForm.neighborhood = parsed.neighborhood || supplierForm.neighborhood;
+        supplierForm.city = parsed.city || supplierForm.city;
+        supplierForm.state = parsed.state || supplierForm.state;
+
+        if (!String(supplierForm.complement ?? '').trim()) {
+            supplierForm.complement = parsed.complement || '';
+        }
+    } catch {
+        cepLookupError.value = 'Não foi possível consultar o ViaCEP agora. Preencha manualmente.';
+    } finally {
+        cepLookupLoading.value = false;
+    }
+};
+
+const goNextStep = () => {
+    if (!canAdvance.value) return;
+    currentStep.value = Math.min(wizardSteps.length, currentStep.value + 1);
+};
+
+const goPreviousStep = () => {
+    currentStep.value = Math.max(1, currentStep.value - 1);
 };
 
 const submitSupplier = () => {
+    cepLookupError.value = '';
+    supplierForm.phone = formatPhoneBR(supplierForm.phone);
+    supplierForm.document = formatDocumentByTypeBR(supplierForm.document, supplierForm.document_type);
+    supplierForm.cep = formatCepBR(supplierForm.cep);
+    supplierForm.state = normalizeStateCode(supplierForm.state);
+
+    if (supplierForm.phone && !isValidPhoneMaskBR(supplierForm.phone)) {
+        supplierForm.setError('phone', 'Informe o telefone no formato (11) 99999-9999.');
+        return;
+    }
+
+    if (supplierForm.document && !isValidDocumentByTypeBR(supplierForm.document, supplierForm.document_type)) {
+        const example = supplierForm.document_type === 'cnpj'
+            ? '00.000.000/0000-00'
+            : '000.000.000.00';
+        supplierForm.setError('document', `Informe o documento no formato ${example}.`);
+        return;
+    }
+
+    if (supplierForm.cep && !isValidCepMaskBR(supplierForm.cep)) {
+        supplierForm.setError('cep', 'Informe o CEP no formato 00000-000.');
+        return;
+    }
+
     if (isEditing.value) {
         supplierForm.put(route('admin.suppliers.update', editingSupplier.value.id), {
             preserveScroll: true,
@@ -187,7 +343,7 @@ const removeSupplier = () => {
                         <input
                             v-model="filterForm.search"
                             type="text"
-                            placeholder="Buscar fornecedor por nome, email ou segmento"
+                            placeholder="Buscar fornecedor por nome, e-mail ou segmento"
                             class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                             @keydown.enter.prevent="applyFilters"
                         />
@@ -296,11 +452,11 @@ const removeSupplier = () => {
             <WizardModalFrame
                 :title="isEditing ? 'Editar fornecedor' : 'Novo fornecedor'"
                 description="Preencha os dados do fornecedor."
-                :steps="['Dados do fornecedor']"
-                :current-step="1"
+                :steps="wizardSteps"
+                :current-step="currentStep"
                 @close="closeModal"
             >
-                <div class="grid gap-3 md:grid-cols-2">
+                <div v-if="currentStep === 1" class="grid gap-3 md:grid-cols-2">
                     <div class="md:col-span-2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
                         <input
@@ -326,23 +482,40 @@ const removeSupplier = () => {
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone</label>
                         <input
-                            v-model="supplierForm.phone"
+                            :value="supplierForm.phone"
                             type="text"
+                            inputmode="numeric"
+                            maxlength="15"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="(00) 00000-0000"
+                            placeholder="(11) 99999-9999"
+                            @input="onPhoneInput"
                         >
                         <p v-if="supplierForm.errors.phone" class="mt-1 text-xs text-rose-600">{{ supplierForm.errors.phone }}</p>
                     </div>
 
-                    <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Documento</label>
-                        <input
-                            v-model="supplierForm.document"
-                            type="text"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="CPF/CNPJ"
-                        >
-                        <p v-if="supplierForm.errors.document" class="mt-1 text-xs text-rose-600">{{ supplierForm.errors.document }}</p>
+                    <div class="md:col-span-2 grid gap-3 md:grid-cols-3">
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo de documento</label>
+                            <UiSelect
+                                v-model="supplierForm.document_type"
+                                :options="documentTypeOptions"
+                                button-class="mt-1 w-full text-sm"
+                                @change="onDocumentTypeChange"
+                            />
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Documento</label>
+                            <input
+                                :value="supplierForm.document"
+                                type="text"
+                                inputmode="numeric"
+                                :maxlength="supplierForm.document_type === 'cnpj' ? 18 : 14"
+                                class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                :placeholder="supplierForm.document_type === 'cnpj' ? '00.000.000/0000-00' : '000.000.000.00'"
+                                @input="onDocumentInput"
+                            >
+                            <p v-if="supplierForm.errors.document" class="mt-1 text-xs text-rose-600">{{ supplierForm.errors.document }}</p>
+                        </div>
                     </div>
 
                     <div>
@@ -367,30 +540,118 @@ const removeSupplier = () => {
                         >
                         <p v-if="supplierForm.errors.lead_time_days" class="mt-1 text-xs text-rose-600">{{ supplierForm.errors.lead_time_days }}</p>
                     </div>
+
+                    <label class="flex items-center gap-2 text-sm font-medium text-slate-700 md:col-span-2">
+                        <input v-model="supplierForm.is_active" type="checkbox" class="rounded border-slate-300">
+                        Fornecedor ativo
+                    </label>
                 </div>
 
-                <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
-                    <input v-model="supplierForm.is_active" type="checkbox" class="rounded border-slate-300">
-                    Fornecedor ativo
-                </label>
+                <div v-else class="grid gap-3 md:grid-cols-2">
+                    <div class="md:col-span-2">
+                        <div class="flex flex-wrap items-end gap-2">
+                            <div class="min-w-[180px] flex-1">
+                                <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">CEP</label>
+                                <input
+                                    :value="supplierForm.cep"
+                                    type="text"
+                                    inputmode="numeric"
+                                    maxlength="9"
+                                    class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="00000-000"
+                                    @input="onCepInput"
+                                    @blur="lookupCep"
+                                >
+                            </div>
+                            <button
+                                type="button"
+                                class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="cepLookupLoading"
+                                @click="lookupCep"
+                            >
+                                {{ cepLookupLoading ? 'Consultando...' : 'Consultar CEP' }}
+                            </button>
+                        </div>
+                        <p v-if="supplierForm.errors.cep" class="mt-1 text-xs text-rose-600">{{ supplierForm.errors.cep }}</p>
+                        <p v-if="cepLookupError" class="mt-2 text-xs font-semibold text-amber-700">{{ cepLookupError }}</p>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rua</label>
+                        <input v-model="supplierForm.street" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Logradouro">
+                        <p v-if="supplierForm.errors.street" class="mt-1 text-xs text-rose-600">{{ supplierForm.errors.street }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Número</label>
+                        <input v-model="supplierForm.number" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="123">
+                        <p v-if="supplierForm.errors.number" class="mt-1 text-xs text-rose-600">{{ supplierForm.errors.number }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Complemento</label>
+                        <input v-model="supplierForm.complement" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Apto, bloco, etc">
+                        <p v-if="supplierForm.errors.complement" class="mt-1 text-xs text-rose-600">{{ supplierForm.errors.complement }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Bairro</label>
+                        <input v-model="supplierForm.neighborhood" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Bairro">
+                        <p v-if="supplierForm.errors.neighborhood" class="mt-1 text-xs text-rose-600">{{ supplierForm.errors.neighborhood }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cidade</label>
+                        <input v-model="supplierForm.city" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Cidade">
+                        <p v-if="supplierForm.errors.city" class="mt-1 text-xs text-rose-600">{{ supplierForm.errors.city }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">UF</label>
+                        <UiSelect v-model="supplierForm.state" :options="stateOptions" button-class="mt-1 w-full text-sm" />
+                        <p v-if="supplierForm.errors.state" class="mt-1 text-xs text-rose-600">{{ supplierForm.errors.state }}</p>
+                    </div>
+                </div>
 
                 <template #footer>
-                    <div class="flex items-center justify-end gap-2">
+                    <div class="flex items-center justify-between gap-2">
                         <button
+                            v-if="!isFirstStep"
                             type="button"
                             class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            @click="closeModal"
+                            @click="goPreviousStep"
                         >
-                            Cancelar
+                            Voltar
                         </button>
-                        <button
-                            type="button"
-                            class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                            :disabled="supplierForm.processing"
-                            @click="submitSupplier"
-                        >
-                            {{ supplierForm.processing ? 'Salvando...' : 'Salvar' }}
-                        </button>
+                        <div v-else />
+
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                @click="closeModal"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                v-if="!isLastStep"
+                                type="button"
+                                class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="!canAdvance"
+                                @click="goNextStep"
+                            >
+                                Próximo
+                            </button>
+                            <button
+                                v-else
+                                type="button"
+                                class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="supplierForm.processing"
+                                @click="submitSupplier"
+                            >
+                                {{ supplierForm.processing ? 'Salvando...' : 'Salvar' }}
+                            </button>
+                        </div>
                     </div>
                 </template>
             </WizardModalFrame>
@@ -407,3 +668,4 @@ const removeSupplier = () => {
         />
     </AuthenticatedLayout>
 </template>
+

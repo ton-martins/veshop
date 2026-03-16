@@ -158,12 +158,24 @@ class DashboardController extends Controller
             }
         }
 
-        $today = now()->toDateString();
+        $timezone = (string) ($contractor->timezone ?: config('app.timezone', 'UTC'));
+        $nowAtTimezone = now($timezone);
+        $dayStartUtc = $nowAtTimezone->copy()->startOfDay()->utc();
+        $dayEndUtc = $nowAtTimezone->copy()->endOfDay()->utc();
 
         $salesTodayQuery = Sale::query()
             ->where('contractor_id', $contractor->id)
-            ->where('status', Sale::STATUS_COMPLETED)
-            ->whereDate('completed_at', $today);
+            ->where('source', Sale::SOURCE_PDV)
+            ->whereIn('status', [Sale::STATUS_COMPLETED, Sale::STATUS_PAID])
+            ->where(static function ($query) use ($dayStartUtc, $dayEndUtc): void {
+                $query
+                    ->whereBetween('completed_at', [$dayStartUtc, $dayEndUtc])
+                    ->orWhere(static function ($fallback) use ($dayStartUtc, $dayEndUtc): void {
+                        $fallback
+                            ->whereNull('completed_at')
+                            ->whereBetween('created_at', [$dayStartUtc, $dayEndUtc]);
+                    });
+            });
 
         $salesCount = (clone $salesTodayQuery)->count();
         $salesToday = (float) (clone $salesTodayQuery)->sum('total_amount');
@@ -182,7 +194,8 @@ class DashboardController extends Controller
 
         $recentSales = Sale::query()
             ->where('contractor_id', $contractor->id)
-            ->where('status', Sale::STATUS_COMPLETED)
+            ->where('source', Sale::SOURCE_PDV)
+            ->whereIn('status', [Sale::STATUS_COMPLETED, Sale::STATUS_PAID])
             ->with([
                 'client:id,name',
                 'payments.paymentMethod:id,name',
@@ -206,7 +219,7 @@ class DashboardController extends Controller
                     'customer' => $sale->client?->name ?? 'Consumidor final',
                     'payment' => $paymentNames->isNotEmpty()
                         ? $paymentNames->implode(' + ')
-                        : 'Nao informado',
+                        : 'Não informado',
                     'amount' => 'R$ '.number_format($amount, 2, ',', '.'),
                     'time' => $completedAt?->format('H:i') ?? '--:--',
                 ];
@@ -217,7 +230,20 @@ class DashboardController extends Controller
         $paymentSummary = SalePayment::query()
             ->where('contractor_id', $contractor->id)
             ->whereIn('status', [SalePayment::STATUS_PAID, SalePayment::STATUS_AUTHORIZED])
-            ->whereDate('paid_at', $today)
+            ->whereHas('sale', static function ($query) use ($contractor): void {
+                $query
+                    ->where('contractor_id', $contractor->id)
+                    ->where('source', Sale::SOURCE_PDV);
+            })
+            ->where(static function ($query) use ($dayStartUtc, $dayEndUtc): void {
+                $query
+                    ->whereBetween('paid_at', [$dayStartUtc, $dayEndUtc])
+                    ->orWhere(static function ($fallback) use ($dayStartUtc, $dayEndUtc): void {
+                        $fallback
+                            ->whereNull('paid_at')
+                            ->whereBetween('created_at', [$dayStartUtc, $dayEndUtc]);
+                    });
+            })
             ->with('paymentMethod:id,code')
             ->get()
             ->reduce(

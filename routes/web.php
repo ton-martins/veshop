@@ -145,6 +145,9 @@ Route::middleware(['shop.auth', 'shop.contractor', 'shop.verified'])->group(func
     Route::get('/shop/{slug}/conta', [ShopAccountController::class, 'show'])
         ->name('shop.account');
 
+    Route::patch('/shop/{slug}/conta', [ShopAccountController::class, 'updateProfile'])
+        ->name('shop.account.update');
+
     Route::post('/shop/{slug}/conta/notificacoes/ler', [ShopAccountController::class, 'markNotificationsAsRead'])
         ->name('shop.account.notifications.read');
 

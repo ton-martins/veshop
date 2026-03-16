@@ -3,13 +3,16 @@
 namespace App\Http\Controllers\Shop;
 
 use App\Http\Controllers\Controller;
+use App\Models\Client;
 use App\Models\Contractor;
 use App\Models\Sale;
 use App\Models\SalePayment;
 use App\Models\ShopCustomer;
 use App\Models\ShopCustomerFavorite;
+use App\Support\BrazilData;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -66,6 +69,13 @@ class ShopAccountController extends Controller
                 'name' => (string) $customer->name,
                 'email' => (string) ($customer->email ?? ''),
                 'phone' => (string) ($customer->phone ?? ''),
+                'cep' => (string) ($customer->cep ?? ''),
+                'street' => (string) ($customer->street ?? ''),
+                'number' => (string) ($customer->number ?? ''),
+                'complement' => (string) ($customer->complement ?? ''),
+                'neighborhood' => (string) ($customer->neighborhood ?? ''),
+                'city' => (string) ($customer->city ?? ''),
+                'state' => (string) ($customer->state ?? ''),
             ],
             'orders' => $orders,
             'favorites' => $favorites,
@@ -89,6 +99,79 @@ class ShopAccountController extends Controller
                 ->all(),
             'notifications_unread_count' => (int) $customer->unreadNotifications()->count(),
         ]);
+    }
+
+    public function updateProfile(Request $request, string $slug): RedirectResponse
+    {
+        $contractor = $this->resolveActiveContractorBySlug($slug);
+        /** @var ShopCustomer|null $customer */
+        $customer = $request->user('shop');
+        abort_unless($customer, 403);
+        abort_unless((int) $customer->contractor_id === (int) $contractor->id, 403);
+
+        $validated = $request->validate([
+            'phone' => ['nullable', 'string', 'regex:/^\(\d{2}\)\s\d{5}-\d{4}$/'],
+            'cep' => ['nullable', 'string', 'regex:/^\d{5}-\d{3}$/'],
+            'street' => ['nullable', 'string', 'max:160'],
+            'number' => ['nullable', 'string', 'max:20'],
+            'complement' => ['nullable', 'string', 'max:120'],
+            'neighborhood' => ['nullable', 'string', 'max:120'],
+            'city' => ['nullable', 'string', 'max:120'],
+            'state' => ['nullable', 'string', Rule::in(BrazilData::STATE_CODES)],
+        ]);
+
+        $phone = BrazilData::normalizePhone($validated['phone'] ?? null);
+        $cep = BrazilData::normalizeCep($validated['cep'] ?? null);
+        $street = trim((string) ($validated['street'] ?? ''));
+        $number = trim((string) ($validated['number'] ?? ''));
+        $complement = trim((string) ($validated['complement'] ?? ''));
+        $neighborhood = trim((string) ($validated['neighborhood'] ?? ''));
+        $city = trim((string) ($validated['city'] ?? ''));
+        $state = BrazilData::normalizeState($validated['state'] ?? null);
+
+        $customer->fill([
+            'phone' => $phone !== '' ? $phone : null,
+            'cep' => $cep !== '' ? $cep : null,
+            'street' => $street !== '' ? $street : null,
+            'number' => $number !== '' ? $number : null,
+            'complement' => $complement !== '' ? $complement : null,
+            'neighborhood' => $neighborhood !== '' ? $neighborhood : null,
+            'city' => $city !== '' ? $city : null,
+            'state' => $state !== '' ? $state : null,
+        ])->save();
+
+        $client = $customer->client;
+        if (! $client) {
+            $client = Client::query()->create([
+                'contractor_id' => $contractor->id,
+                'name' => $customer->name,
+                'email' => $customer->email,
+                'phone' => $phone !== '' ? $phone : null,
+                'cep' => $cep !== '' ? $cep : null,
+                'street' => $street !== '' ? $street : null,
+                'number' => $number !== '' ? $number : null,
+                'complement' => $complement !== '' ? $complement : null,
+                'neighborhood' => $neighborhood !== '' ? $neighborhood : null,
+                'city' => $city !== '' ? $city : null,
+                'state' => $state !== '' ? $state : null,
+                'is_active' => true,
+            ]);
+
+            $customer->forceFill(['client_id' => $client->id])->save();
+        } else {
+            $client->fill([
+                'phone' => $phone !== '' ? $phone : null,
+                'cep' => $cep !== '' ? $cep : null,
+                'street' => $street !== '' ? $street : null,
+                'number' => $number !== '' ? $number : null,
+                'complement' => $complement !== '' ? $complement : null,
+                'neighborhood' => $neighborhood !== '' ? $neighborhood : null,
+                'city' => $city !== '' ? $city : null,
+                'state' => $state !== '' ? $state : null,
+            ])->save();
+        }
+
+        return back()->with('status', 'Dados atualizados com sucesso.');
     }
 
     public function markNotificationsAsRead(Request $request, string $slug): RedirectResponse

@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 const props = defineProps({
     label: {
@@ -18,6 +18,10 @@ const props = defineProps({
         type: Number,
         default: 1,
     },
+    desktopAspectRatio: {
+        type: Number,
+        default: null,
+    },
     disabled: {
         type: Boolean,
         default: false,
@@ -31,6 +35,18 @@ const props = defineProps({
 const emit = defineEmits(['change']);
 const localPreview = ref(props.initialPreview || '');
 let objectUrl = null;
+
+const previewStyle = computed(() => {
+    const mobileRatio = Number(props.aspectRatio);
+    const desktopRatio = Number(props.desktopAspectRatio);
+
+    return {
+        '--uploader-aspect-mobile': String(Number.isFinite(mobileRatio) && mobileRatio > 0 ? mobileRatio : 1),
+        ...(Number.isFinite(desktopRatio) && desktopRatio > 0
+            ? { '--uploader-aspect-desktop': String(desktopRatio) }
+            : {}),
+    };
+});
 
 watch(
     () => props.initialPreview,
@@ -73,8 +89,8 @@ onBeforeUnmount(() => {
     <div class="space-y-2">
         <label class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ label }}</label>
         <div
-            class="overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
-            :style="{ aspectRatio: String(aspectRatio) }"
+            class="branding-image-uploader-preview overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
+            :style="previewStyle"
         >
             <img
                 v-if="localPreview"
@@ -99,3 +115,15 @@ onBeforeUnmount(() => {
         <p v-if="helpText" class="text-[11px] text-slate-500">{{ helpText }}</p>
     </div>
 </template>
+
+<style scoped>
+.branding-image-uploader-preview {
+    aspect-ratio: var(--uploader-aspect-mobile, 1);
+}
+
+@media (min-width: 768px) {
+    .branding-image-uploader-preview {
+        aspect-ratio: var(--uploader-aspect-desktop, var(--uploader-aspect-mobile, 1));
+    }
+}
+</style>

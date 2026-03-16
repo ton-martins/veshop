@@ -1,8 +1,9 @@
 <script setup>
-import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { computed, ref, watch } from 'vue';
 import { Bell, Check, Heart, Home, LogOut, ShoppingBag } from 'lucide-vue-next';
 import { useBranding } from '@/branding';
+import { BRAZIL_STATES, formatCepBR, formatPhoneBR, normalizeStateCode, viaCepToAddress } from '@/utils/br';
 
 const props = defineProps({
     contractor: { type: Object, required: true },
@@ -13,12 +14,22 @@ const props = defineProps({
     notifications_unread_count: { type: Number, default: 0 },
 });
 
+const page = usePage();
+const flashStatus = computed(() => String(page.props?.flash?.status ?? '').trim());
 const { normalizeHex, primaryColor, withAlpha, themeStyles } = useBranding();
 
 const storeSlug = computed(() => String(props.contractor?.slug || 'shop'));
 const storeName = computed(() => String(props.contractor?.brand_name || props.contractor?.name || 'Loja'));
 const storeLogo = computed(() => props.contractor?.avatar_url || props.contractor?.logo_url || null);
 const storePrimaryColor = computed(() => normalizeHex(props.contractor?.primary_color || '', primaryColor.value));
+
+const stateOptions = computed(() => ([
+    { value: '', label: 'Selecione a UF' },
+    ...BRAZIL_STATES.map((state) => ({
+        value: state.code,
+        label: `${state.code} - ${state.name}`,
+    })),
+]));
 
 const storeInitials = computed(() => {
     const safe = String(storeName.value || '').trim();
@@ -64,7 +75,102 @@ const pageStyles = computed(() => {
 const shopUrl = computed(() => `/shop/${storeSlug.value}`);
 const shopFavoritesUrl = computed(() => `/shop/${storeSlug.value}?favoritos=1`);
 const logoutUrl = computed(() => `/shop/${storeSlug.value}/sair`);
+const accountUpdateUrl = computed(() => `/shop/${storeSlug.value}/conta`);
 const asCurrency = (value) => Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const cepLookupLoading = ref(false);
+const cepLookupError = ref('');
+
+const profileForm = useForm({
+    phone: String(props.customer?.phone ?? ''),
+    cep: String(props.customer?.cep ?? ''),
+    street: String(props.customer?.street ?? ''),
+    number: String(props.customer?.number ?? ''),
+    complement: String(props.customer?.complement ?? ''),
+    neighborhood: String(props.customer?.neighborhood ?? ''),
+    city: String(props.customer?.city ?? ''),
+    state: String(props.customer?.state ?? ''),
+});
+
+watch(
+    () => props.customer,
+    (next) => {
+        profileForm.phone = String(next?.phone ?? '');
+        profileForm.cep = String(next?.cep ?? '');
+        profileForm.street = String(next?.street ?? '');
+        profileForm.number = String(next?.number ?? '');
+        profileForm.complement = String(next?.complement ?? '');
+        profileForm.neighborhood = String(next?.neighborhood ?? '');
+        profileForm.city = String(next?.city ?? '');
+        profileForm.state = String(next?.state ?? '');
+    },
+    { deep: true },
+);
+
+const onPhoneInput = (event) => {
+    profileForm.phone = formatPhoneBR(event?.target?.value ?? profileForm.phone);
+};
+
+const onCepInput = (event) => {
+    profileForm.cep = formatCepBR(event?.target?.value ?? profileForm.cep);
+};
+
+const lookupCep = async () => {
+    cepLookupError.value = '';
+    profileForm.cep = formatCepBR(profileForm.cep);
+
+    if (!profileForm.cep) return;
+    if (profileForm.cep.length !== 9) {
+        cepLookupError.value = 'CEP inválido. Digite os 8 números.';
+        return;
+    }
+
+    const cepDigits = profileForm.cep.replace(/\D/g, '');
+    cepLookupLoading.value = true;
+
+    try {
+        const response = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
+        if (!response.ok) throw new Error('lookup_failed');
+
+        const payload = await response.json();
+        if (payload?.erro) {
+            cepLookupError.value = 'CEP não encontrado.';
+            return;
+        }
+
+        const parsed = viaCepToAddress(payload);
+        profileForm.cep = parsed.cep || profileForm.cep;
+        profileForm.street = parsed.street || profileForm.street;
+        profileForm.neighborhood = parsed.neighborhood || profileForm.neighborhood;
+        profileForm.city = parsed.city || profileForm.city;
+        profileForm.state = parsed.state || profileForm.state;
+
+        if (!String(profileForm.complement ?? '').trim()) {
+            profileForm.complement = parsed.complement || '';
+        }
+    } catch {
+        cepLookupError.value = 'Não foi possível consultar o ViaCEP agora. Preencha manualmente.';
+    } finally {
+        cepLookupLoading.value = false;
+    }
+};
+
+const submitProfile = () => {
+    cepLookupError.value = '';
+    profileForm.phone = formatPhoneBR(profileForm.phone);
+    profileForm.cep = formatCepBR(profileForm.cep);
+    profileForm.state = normalizeStateCode(profileForm.state);
+
+    profileForm.transform((data) => ({
+        ...data,
+        _method: 'patch',
+    })).post(accountUpdateUrl.value, {
+        preserveScroll: true,
+        onFinish: () => {
+            profileForm.transform((data) => data);
+        },
+    });
+};
 
 const logoutForm = useForm({});
 const doLogout = () => {
@@ -126,9 +232,107 @@ const markOneNotificationAsRead = (id) => {
             </header>
 
             <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                <h1 class="text-base font-semibold text-slate-900">{{ customer.name }}</h1>
-                <p class="mt-1 text-sm text-slate-600">{{ customer.email || 'E-mail não informado' }}</p>
-                <p class="text-sm text-slate-600">{{ customer.phone || 'Telefone não informado' }}</p>
+                <div class="mb-4">
+                    <h1 class="text-base font-semibold text-slate-900">{{ customer.name }}</h1>
+                    <p class="mt-1 text-sm text-slate-600">{{ customer.email || 'E-mail não informado' }}</p>
+                </div>
+
+                <div v-if="flashStatus" class="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                    {{ flashStatus }}
+                </div>
+
+                <form class="grid gap-3 md:grid-cols-2" @submit.prevent="submitProfile">
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone</label>
+                        <input
+                            :value="profileForm.phone"
+                            type="text"
+                            inputmode="numeric"
+                            maxlength="15"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="(11) 99999-9999"
+                            @input="onPhoneInput"
+                        >
+                        <p v-if="profileForm.errors.phone" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.phone }}</p>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <div class="flex flex-wrap items-end gap-2">
+                            <div class="min-w-[180px] flex-1">
+                                <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">CEP</label>
+                                <input
+                                    :value="profileForm.cep"
+                                    type="text"
+                                    inputmode="numeric"
+                                    maxlength="9"
+                                    class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="00000-000"
+                                    @input="onCepInput"
+                                    @blur="lookupCep"
+                                >
+                            </div>
+                            <button
+                                type="button"
+                                class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="cepLookupLoading"
+                                @click="lookupCep"
+                            >
+                                {{ cepLookupLoading ? 'Consultando...' : 'Consultar CEP' }}
+                            </button>
+                        </div>
+                        <p v-if="profileForm.errors.cep" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.cep }}</p>
+                        <p v-if="cepLookupError" class="mt-2 text-xs font-semibold text-amber-700">{{ cepLookupError }}</p>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rua</label>
+                        <input v-model="profileForm.street" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Logradouro">
+                        <p v-if="profileForm.errors.street" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.street }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Número</label>
+                        <input v-model="profileForm.number" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="123">
+                        <p v-if="profileForm.errors.number" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.number }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Complemento</label>
+                        <input v-model="profileForm.complement" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Apto, bloco, etc">
+                        <p v-if="profileForm.errors.complement" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.complement }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Bairro</label>
+                        <input v-model="profileForm.neighborhood" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Bairro">
+                        <p v-if="profileForm.errors.neighborhood" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.neighborhood }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cidade</label>
+                        <input v-model="profileForm.city" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Cidade">
+                        <p v-if="profileForm.errors.city" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.city }}</p>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">UF</label>
+                        <select v-model="profileForm.state" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                            <option v-for="option in stateOptions" :key="`state-account-${option.value || 'empty'}`" :value="option.value">{{ option.label }}</option>
+                        </select>
+                        <p v-if="profileForm.errors.state" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.state }}</p>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <button
+                            type="submit"
+                            class="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                            style="background: var(--shop-primary-strong)"
+                            :disabled="profileForm.processing"
+                        >
+                            {{ profileForm.processing ? 'Salvando...' : 'Atualizar dados' }}
+                        </button>
+                    </div>
+                </form>
             </section>
 
             <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
@@ -281,3 +485,4 @@ const markOneNotificationAsRead = (id) => {
         </div>
     </div>
 </template>
+

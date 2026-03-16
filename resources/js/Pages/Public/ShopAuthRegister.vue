@@ -1,8 +1,15 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { Home, UserPlus } from 'lucide-vue-next';
 import { useBranding } from '@/branding';
+import {
+    BRAZIL_STATES,
+    formatCepBR,
+    formatPhoneBR,
+    normalizeStateCode,
+    viaCepToAddress,
+} from '@/utils/br';
 
 const props = defineProps({
     contractor: { type: Object, required: true },
@@ -13,6 +20,17 @@ const storeName = computed(() => String(props.contractor?.brand_name || props.co
 const storeLogo = computed(() => props.contractor?.avatar_url || props.contractor?.logo_url || null);
 const { normalizeHex, primaryColor, withAlpha, themeStyles } = useBranding();
 const storePrimaryColor = computed(() => normalizeHex(props.contractor?.primary_color || '', primaryColor.value));
+
+const stateOptions = computed(() => ([
+    { value: '', label: 'Selecione a UF' },
+    ...BRAZIL_STATES.map((state) => ({
+        value: state.code,
+        label: `${state.code} - ${state.name}`,
+    })),
+]));
+
+const cepLookupLoading = ref(false);
+const cepLookupError = ref('');
 
 const storeInitials = computed(() => {
     const safe = String(storeName.value || '').trim();
@@ -64,11 +82,70 @@ const form = useForm({
     name: '',
     email: '',
     phone: '',
+    cep: '',
+    street: '',
+    number: '',
+    complement: '',
+    neighborhood: '',
+    city: '',
+    state: '',
     password: '',
     password_confirmation: '',
 });
 
+const onPhoneInput = (event) => {
+    form.phone = formatPhoneBR(event?.target?.value ?? form.phone);
+};
+
+const onCepInput = (event) => {
+    form.cep = formatCepBR(event?.target?.value ?? form.cep);
+};
+
+const lookupCep = async () => {
+    cepLookupError.value = '';
+    form.cep = formatCepBR(form.cep);
+
+    if (!form.cep) return;
+    if (form.cep.length !== 9) {
+        cepLookupError.value = 'CEP inválido. Digite os 8 números.';
+        return;
+    }
+
+    const cepDigits = form.cep.replace(/\D/g, '');
+    cepLookupLoading.value = true;
+
+    try {
+        const response = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
+        if (!response.ok) throw new Error('lookup_failed');
+
+        const payload = await response.json();
+        if (payload?.erro) {
+            cepLookupError.value = 'CEP não encontrado.';
+            return;
+        }
+
+        const parsed = viaCepToAddress(payload);
+        form.cep = parsed.cep || form.cep;
+        form.street = parsed.street || form.street;
+        form.neighborhood = parsed.neighborhood || form.neighborhood;
+        form.city = parsed.city || form.city;
+        form.state = parsed.state || form.state;
+
+        if (!String(form.complement ?? '').trim()) {
+            form.complement = parsed.complement || '';
+        }
+    } catch {
+        cepLookupError.value = 'Não foi possível consultar o ViaCEP agora. Preencha manualmente.';
+    } finally {
+        cepLookupLoading.value = false;
+    }
+};
+
 const submit = () => {
+    form.phone = formatPhoneBR(form.phone);
+    form.cep = formatCepBR(form.cep);
+    form.state = normalizeStateCode(form.state);
+
     form.post(registerUrl.value, {
         preserveScroll: true,
     });
@@ -79,7 +156,7 @@ const submit = () => {
     <Head :title="`Cadastro | ${storeName}`" />
 
     <div class="min-h-screen bg-slate-100 px-4 py-8 text-slate-900 sm:px-6 lg:px-8" :style="pageStyles">
-        <div class="mx-auto w-full max-w-xl">
+        <div class="mx-auto w-full max-w-3xl">
             <div class="mb-4 flex items-center justify-between gap-3">
                 <Link :href="shopUrl" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                     <Home class="h-3.5 w-3.5" />
@@ -123,21 +200,90 @@ const submit = () => {
                                 type="email"
                                 autocomplete="email"
                                 class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                placeholder="voce@exemplo.com"
+                                placeholder="nome@exemplo.com"
                             >
                             <p v-if="form.errors.email" class="mt-1 text-xs font-semibold text-rose-600">{{ form.errors.email }}</p>
                         </div>
 
                         <div class="sm:col-span-2">
-                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone (opcional)</label>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone</label>
                             <input
-                                v-model="form.phone"
+                                :value="form.phone"
                                 type="text"
+                                inputmode="numeric"
+                                maxlength="15"
                                 autocomplete="tel"
                                 class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                                 placeholder="(11) 99999-9999"
+                                @input="onPhoneInput"
                             >
                             <p v-if="form.errors.phone" class="mt-1 text-xs font-semibold text-rose-600">{{ form.errors.phone }}</p>
+                        </div>
+
+                        <div class="sm:col-span-2">
+                            <div class="flex flex-wrap items-end gap-2">
+                                <div class="min-w-[180px] flex-1">
+                                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">CEP (opcional)</label>
+                                    <input
+                                        :value="form.cep"
+                                        type="text"
+                                        inputmode="numeric"
+                                        maxlength="9"
+                                        class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                        placeholder="00000-000"
+                                        @input="onCepInput"
+                                        @blur="lookupCep"
+                                    >
+                                </div>
+                                <button
+                                    type="button"
+                                    class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="cepLookupLoading"
+                                    @click="lookupCep"
+                                >
+                                    {{ cepLookupLoading ? 'Consultando...' : 'Consultar CEP' }}
+                                </button>
+                            </div>
+                            <p v-if="form.errors.cep" class="mt-1 text-xs font-semibold text-rose-600">{{ form.errors.cep }}</p>
+                            <p v-if="cepLookupError" class="mt-2 text-xs font-semibold text-amber-700">{{ cepLookupError }}</p>
+                        </div>
+
+                        <div class="sm:col-span-2">
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rua</label>
+                            <input v-model="form.street" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Logradouro">
+                            <p v-if="form.errors.street" class="mt-1 text-xs font-semibold text-rose-600">{{ form.errors.street }}</p>
+                        </div>
+
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Número</label>
+                            <input v-model="form.number" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="123">
+                            <p v-if="form.errors.number" class="mt-1 text-xs font-semibold text-rose-600">{{ form.errors.number }}</p>
+                        </div>
+
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Complemento</label>
+                            <input v-model="form.complement" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Apto, bloco, etc">
+                            <p v-if="form.errors.complement" class="mt-1 text-xs font-semibold text-rose-600">{{ form.errors.complement }}</p>
+                        </div>
+
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Bairro</label>
+                            <input v-model="form.neighborhood" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Bairro">
+                            <p v-if="form.errors.neighborhood" class="mt-1 text-xs font-semibold text-rose-600">{{ form.errors.neighborhood }}</p>
+                        </div>
+
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cidade</label>
+                            <input v-model="form.city" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Cidade">
+                            <p v-if="form.errors.city" class="mt-1 text-xs font-semibold text-rose-600">{{ form.errors.city }}</p>
+                        </div>
+
+                        <div class="sm:col-span-2">
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">UF</label>
+                            <select v-model="form.state" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                                <option v-for="option in stateOptions" :key="`state-register-${option.value || 'empty'}`" :value="option.value">{{ option.label }}</option>
+                            </select>
+                            <p v-if="form.errors.state" class="mt-1 text-xs font-semibold text-rose-600">{{ form.errors.state }}</p>
                         </div>
 
                         <div>
@@ -188,3 +334,4 @@ const submit = () => {
         </div>
     </div>
 </template>
+

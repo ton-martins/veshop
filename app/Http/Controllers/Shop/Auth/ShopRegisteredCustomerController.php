@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Contractor;
 use App\Models\ShopCustomer;
+use App\Support\BrazilData;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -50,16 +52,43 @@ class ShopRegisteredCustomerController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:160'],
             'email' => ['required', 'string', 'email', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:32'],
+            'phone' => ['nullable', 'string', 'regex:/^\(\d{2}\)\s\d{5}-\d{4}$/'],
+            'cep' => ['nullable', 'string', 'regex:/^\d{5}-\d{3}$/'],
+            'street' => ['nullable', 'string', 'max:160'],
+            'number' => ['nullable', 'string', 'max:20'],
+            'complement' => ['nullable', 'string', 'max:120'],
+            'neighborhood' => ['nullable', 'string', 'max:120'],
+            'city' => ['nullable', 'string', 'max:120'],
+            'state' => ['nullable', 'string', Rule::in(BrazilData::STATE_CODES)],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
 
         $email = strtolower(trim((string) $validated['email']));
-        $phone = $this->normalizePhone($validated['phone'] ?? null);
+        $phone = BrazilData::normalizePhone($validated['phone'] ?? null);
+        $cep = BrazilData::normalizeCep($validated['cep'] ?? null);
+        $state = BrazilData::normalizeState($validated['state'] ?? null);
+        $street = trim((string) ($validated['street'] ?? ''));
+        $number = trim((string) ($validated['number'] ?? ''));
+        $complement = trim((string) ($validated['complement'] ?? ''));
+        $neighborhood = trim((string) ($validated['neighborhood'] ?? ''));
+        $city = trim((string) ($validated['city'] ?? ''));
         $requiresEmailVerification = $contractor->requiresEmailVerification();
 
         /** @var ShopCustomer $customer */
-        $customer = DB::transaction(function () use ($contractor, $validated, $email, $phone, $requiresEmailVerification): ShopCustomer {
+        $customer = DB::transaction(function () use (
+            $contractor,
+            $validated,
+            $email,
+            $phone,
+            $cep,
+            $street,
+            $number,
+            $complement,
+            $neighborhood,
+            $city,
+            $state,
+            $requiresEmailVerification
+        ): ShopCustomer {
             /** @var ShopCustomer|null $existing */
             $existing = ShopCustomer::query()
                 ->withTrashed()
@@ -77,6 +106,13 @@ class ShopRegisteredCustomerController extends Controller
                 'name' => $validated['name'],
                 'email' => $email,
                 'phone' => $phone,
+                'cep' => $cep,
+                'street' => $street,
+                'number' => $number,
+                'complement' => $complement,
+                'neighborhood' => $neighborhood,
+                'city' => $city,
+                'state' => $state,
             ]);
 
             $payload = [
@@ -84,6 +120,13 @@ class ShopRegisteredCustomerController extends Controller
                 'name' => trim((string) $validated['name']),
                 'email' => $email,
                 'phone' => $phone !== '' ? $phone : null,
+                'cep' => $cep !== '' ? $cep : null,
+                'street' => $street !== '' ? $street : null,
+                'number' => $number !== '' ? $number : null,
+                'complement' => $complement !== '' ? $complement : null,
+                'neighborhood' => $neighborhood !== '' ? $neighborhood : null,
+                'city' => $city !== '' ? $city : null,
+                'state' => $state !== '' ? $state : null,
                 'password' => (string) $validated['password'],
                 'is_active' => true,
                 'email_verified_at' => $requiresEmailVerification ? null : now(),
@@ -146,13 +189,31 @@ class ShopRegisteredCustomerController extends Controller
     }
 
     /**
-     * @param array{name: string, email: string, phone: string} $data
+     * @param array{
+     *  name: string,
+     *  email: string,
+     *  phone: string,
+     *  cep: string,
+     *  street: string,
+     *  number: string,
+     *  complement: string,
+     *  neighborhood: string,
+     *  city: string,
+     *  state: string
+     * } $data
      */
     private function resolveOrCreateClient(Contractor $contractor, array $data): ?Client
     {
         $name = trim((string) ($data['name'] ?? ''));
         $email = trim((string) ($data['email'] ?? ''));
         $phone = trim((string) ($data['phone'] ?? ''));
+        $cep = trim((string) ($data['cep'] ?? ''));
+        $street = trim((string) ($data['street'] ?? ''));
+        $number = trim((string) ($data['number'] ?? ''));
+        $complement = trim((string) ($data['complement'] ?? ''));
+        $neighborhood = trim((string) ($data['neighborhood'] ?? ''));
+        $city = trim((string) ($data['city'] ?? ''));
+        $state = trim((string) ($data['state'] ?? ''));
 
         if ($name === '') {
             return null;
@@ -168,6 +229,13 @@ class ShopRegisteredCustomerController extends Controller
                 $existingByEmail->fill([
                     'name' => $name,
                     'phone' => $phone !== '' ? $phone : $existingByEmail->phone,
+                    'cep' => $cep !== '' ? $cep : $existingByEmail->cep,
+                    'street' => $street !== '' ? $street : $existingByEmail->street,
+                    'number' => $number !== '' ? $number : $existingByEmail->number,
+                    'complement' => $complement !== '' ? $complement : $existingByEmail->complement,
+                    'neighborhood' => $neighborhood !== '' ? $neighborhood : $existingByEmail->neighborhood,
+                    'city' => $city !== '' ? $city : $existingByEmail->city,
+                    'state' => $state !== '' ? $state : $existingByEmail->state,
                     'is_active' => true,
                 ])->save();
 
@@ -185,6 +253,13 @@ class ShopRegisteredCustomerController extends Controller
                 $existingByPhone->fill([
                     'name' => $name,
                     'email' => $email !== '' ? $email : $existingByPhone->email,
+                    'cep' => $cep !== '' ? $cep : $existingByPhone->cep,
+                    'street' => $street !== '' ? $street : $existingByPhone->street,
+                    'number' => $number !== '' ? $number : $existingByPhone->number,
+                    'complement' => $complement !== '' ? $complement : $existingByPhone->complement,
+                    'neighborhood' => $neighborhood !== '' ? $neighborhood : $existingByPhone->neighborhood,
+                    'city' => $city !== '' ? $city : $existingByPhone->city,
+                    'state' => $state !== '' ? $state : $existingByPhone->state,
                     'is_active' => true,
                 ])->save();
 
@@ -197,14 +272,14 @@ class ShopRegisteredCustomerController extends Controller
             'name' => $name,
             'email' => $email !== '' ? $email : null,
             'phone' => $phone !== '' ? $phone : null,
+            'cep' => $cep !== '' ? $cep : null,
+            'street' => $street !== '' ? $street : null,
+            'number' => $number !== '' ? $number : null,
+            'complement' => $complement !== '' ? $complement : null,
+            'neighborhood' => $neighborhood !== '' ? $neighborhood : null,
+            'city' => $city !== '' ? $city : null,
+            'state' => $state !== '' ? $state : null,
             'is_active' => true,
         ]);
-    }
-
-    private function normalizePhone(mixed $value): string
-    {
-        $digits = preg_replace('/\D+/', '', (string) ($value ?? ''));
-
-        return is_string($digits) ? trim($digits) : '';
     }
 }

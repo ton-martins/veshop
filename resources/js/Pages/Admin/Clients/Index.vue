@@ -8,6 +8,18 @@ import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { Users2, UserPlus2, MapPin, AlertCircle, Search, Filter, Plus, Pencil, Trash2 } from 'lucide-vue-next';
+import {
+    BRAZIL_STATES,
+    formatCepBR,
+    detectDocumentTypeBR,
+    formatDocumentByTypeBR,
+    formatPhoneBR,
+    isValidCepMaskBR,
+    isValidDocumentByTypeBR,
+    isValidPhoneMaskBR,
+    normalizeStateCode,
+    viaCepToAddress,
+} from '@/utils/br';
 
 const props = defineProps({
     clients: {
@@ -34,6 +46,24 @@ const statusOptions = [
     { value: 'active', label: 'Ativos' },
     { value: 'inactive', label: 'Inativos' },
 ];
+
+const documentTypeOptions = [
+    { value: 'cpf', label: 'CPF' },
+    { value: 'cnpj', label: 'CNPJ' },
+];
+
+const stateOptions = computed(() => ([
+    { value: '', label: 'Selecione' },
+    ...BRAZIL_STATES.map((state) => ({
+        value: state.code,
+        label: `${state.code} - ${state.name}`,
+    })),
+]));
+
+const wizardSteps = ['Dados do cliente', 'Endereço'];
+const currentStep = ref(1);
+const cepLookupLoading = ref(false);
+const cepLookupError = ref('');
 
 watch(
     () => props.filters,
@@ -86,46 +116,168 @@ const editingClient = ref(null);
 const showDeleteModal = ref(false);
 const clientToDelete = ref(null);
 
-const clientForm = useForm({
+const buildClientDefaults = () => ({
     name: '',
     email: '',
     phone: '',
+    document_type: 'cpf',
     document: '',
+    cep: '',
+    street: '',
+    number: '',
+    complement: '',
+    neighborhood: '',
     city: '',
     state: '',
     is_active: true,
 });
+
+const clientForm = useForm(buildClientDefaults());
 const deleteForm = useForm({});
 
 const isEditing = computed(() => Boolean(editingClient.value?.id));
+const isFirstStep = computed(() => currentStep.value === 1);
+const isLastStep = computed(() => currentStep.value === wizardSteps.length);
+const canAdvance = computed(() => String(clientForm.name ?? '').trim() !== '');
+
+const resetWizard = () => {
+    currentStep.value = 1;
+    cepLookupError.value = '';
+};
 
 const openCreate = () => {
     editingClient.value = null;
+    clientForm.defaults(buildClientDefaults());
     clientForm.reset();
     clientForm.clearErrors();
     clientForm.is_active = true;
+    resetWizard();
     showModal.value = true;
 };
 
 const openEdit = (client) => {
     editingClient.value = client;
+    clientForm.document_type = detectDocumentTypeBR(client.document ?? '');
     clientForm.name = client.name ?? '';
     clientForm.email = client.email ?? '';
     clientForm.phone = client.phone ?? '';
-    clientForm.document = client.document ?? '';
+    clientForm.document = formatDocumentByTypeBR(client.document ?? '', clientForm.document_type);
+    clientForm.cep = client.cep ?? '';
+    clientForm.street = client.street ?? '';
+    clientForm.number = client.number ?? '';
+    clientForm.complement = client.complement ?? '';
+    clientForm.neighborhood = client.neighborhood ?? '';
     clientForm.city = client.city ?? '';
     clientForm.state = client.state ?? '';
     clientForm.is_active = Boolean(client.is_active);
     clientForm.clearErrors();
+    resetWizard();
     showModal.value = true;
 };
 
 const closeModal = () => {
     showModal.value = false;
     editingClient.value = null;
+    clientForm.clearErrors();
+    clientForm.defaults(buildClientDefaults());
+    clientForm.reset();
+    resetWizard();
+};
+
+const onPhoneInput = (event) => {
+    clientForm.phone = formatPhoneBR(event?.target?.value ?? clientForm.phone);
+    clientForm.clearErrors('phone');
+};
+
+const onDocumentInput = (event) => {
+    clientForm.document = formatDocumentByTypeBR(event?.target?.value ?? clientForm.document, clientForm.document_type);
+    clientForm.clearErrors('document');
+};
+
+const onDocumentTypeChange = () => {
+    clientForm.document = formatDocumentByTypeBR(clientForm.document, clientForm.document_type);
+    clientForm.clearErrors('document');
+};
+
+const onCepInput = (event) => {
+    clientForm.cep = formatCepBR(event?.target?.value ?? clientForm.cep);
+    clientForm.clearErrors('cep');
+};
+
+const lookupCep = async () => {
+    cepLookupError.value = '';
+    clientForm.cep = formatCepBR(clientForm.cep);
+
+    if (!clientForm.cep) return;
+    if (clientForm.cep.length !== 9) {
+        cepLookupError.value = 'CEP inválido. Digite os 8 números.';
+        return;
+    }
+
+    cepLookupLoading.value = true;
+    const cepDigits = clientForm.cep.replace(/\D/g, '');
+
+    try {
+        const response = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
+        if (!response.ok) throw new Error('lookup_failed');
+
+        const payload = await response.json();
+        if (payload?.erro) {
+            cepLookupError.value = 'CEP não encontrado.';
+            return;
+        }
+
+        const parsed = viaCepToAddress(payload);
+        clientForm.cep = parsed.cep || clientForm.cep;
+        clientForm.street = parsed.street || clientForm.street;
+        clientForm.neighborhood = parsed.neighborhood || clientForm.neighborhood;
+        clientForm.city = parsed.city || clientForm.city;
+        clientForm.state = parsed.state || clientForm.state;
+
+        if (!String(clientForm.complement ?? '').trim()) {
+            clientForm.complement = parsed.complement || '';
+        }
+    } catch {
+        cepLookupError.value = 'Não foi possível consultar o ViaCEP agora. Preencha manualmente.';
+    } finally {
+        cepLookupLoading.value = false;
+    }
+};
+
+const goNextStep = () => {
+    if (!canAdvance.value) return;
+    currentStep.value = Math.min(wizardSteps.length, currentStep.value + 1);
+};
+
+const goPreviousStep = () => {
+    currentStep.value = Math.max(1, currentStep.value - 1);
 };
 
 const submitClient = () => {
+    cepLookupError.value = '';
+    clientForm.phone = formatPhoneBR(clientForm.phone);
+    clientForm.document = formatDocumentByTypeBR(clientForm.document, clientForm.document_type);
+    clientForm.cep = formatCepBR(clientForm.cep);
+    clientForm.state = normalizeStateCode(clientForm.state);
+
+    if (clientForm.phone && !isValidPhoneMaskBR(clientForm.phone)) {
+        clientForm.setError('phone', 'Informe o telefone no formato (11) 99999-9999.');
+        return;
+    }
+
+    if (clientForm.document && !isValidDocumentByTypeBR(clientForm.document, clientForm.document_type)) {
+        const example = clientForm.document_type === 'cnpj'
+            ? '00.000.000/0000-00'
+            : '000.000.000.00';
+        clientForm.setError('document', `Informe o documento no formato ${example}.`);
+        return;
+    }
+
+    if (clientForm.cep && !isValidCepMaskBR(clientForm.cep)) {
+        clientForm.setError('cep', 'Informe o CEP no formato 00000-000.');
+        return;
+    }
+
     if (isEditing.value) {
         clientForm.put(route('admin.clients.update', editingClient.value.id), {
             preserveScroll: true,
@@ -186,7 +338,7 @@ const removeClient = () => {
                         <input
                             v-model="filterForm.search"
                             type="text"
-                            placeholder="Buscar cliente por nome, email, telefone ou cidade"
+                            placeholder="Buscar cliente por nome, e-mail, telefone ou cidade"
                             class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                             @keydown.enter.prevent="applyFilters"
                         />
@@ -295,11 +447,11 @@ const removeClient = () => {
             <WizardModalFrame
                 :title="isEditing ? 'Editar cliente' : 'Novo cliente'"
                 description="Preencha os dados do cliente."
-                :steps="['Dados do cliente']"
-                :current-step="1"
+                :steps="wizardSteps"
+                :current-step="currentStep"
                 @close="closeModal"
             >
-                <div class="grid gap-3 md:grid-cols-2">
+                <div v-if="currentStep === 1" class="grid gap-3 md:grid-cols-2">
                     <div class="md:col-span-2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
                         <input
@@ -325,71 +477,153 @@ const removeClient = () => {
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone</label>
                         <input
-                            v-model="clientForm.phone"
+                            :value="clientForm.phone"
                             type="text"
+                            inputmode="numeric"
+                            maxlength="15"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="(00) 00000-0000"
+                            placeholder="(11) 99999-9999"
+                            @input="onPhoneInput"
                         >
                         <p v-if="clientForm.errors.phone" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.phone }}</p>
                     </div>
 
+                    <div class="md:col-span-2 grid gap-3 md:grid-cols-3">
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo de documento</label>
+                            <UiSelect
+                                v-model="clientForm.document_type"
+                                :options="documentTypeOptions"
+                                button-class="mt-1 w-full text-sm"
+                                @change="onDocumentTypeChange"
+                            />
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Documento</label>
+                            <input
+                                :value="clientForm.document"
+                                type="text"
+                                inputmode="numeric"
+                                :maxlength="clientForm.document_type === 'cnpj' ? 18 : 14"
+                                class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                :placeholder="clientForm.document_type === 'cnpj' ? '00.000.000/0000-00' : '000.000.000.00'"
+                                @input="onDocumentInput"
+                            >
+                            <p v-if="clientForm.errors.document" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.document }}</p>
+                        </div>
+                    </div>
+
+                    <label class="flex items-center gap-2 text-sm font-medium text-slate-700 md:col-span-2">
+                        <input v-model="clientForm.is_active" type="checkbox" class="rounded border-slate-300">
+                        Cliente ativo
+                    </label>
+                </div>
+
+                <div v-else class="grid gap-3 md:grid-cols-2">
+                    <div class="md:col-span-2">
+                        <div class="flex flex-wrap items-end gap-2">
+                            <div class="min-w-[180px] flex-1">
+                                <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">CEP</label>
+                                <input
+                                    :value="clientForm.cep"
+                                    type="text"
+                                    inputmode="numeric"
+                                    maxlength="9"
+                                    class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="00000-000"
+                                    @input="onCepInput"
+                                    @blur="lookupCep"
+                                >
+                            </div>
+                            <button
+                                type="button"
+                                class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="cepLookupLoading"
+                                @click="lookupCep"
+                            >
+                                {{ cepLookupLoading ? 'Consultando...' : 'Consultar CEP' }}
+                            </button>
+                        </div>
+                        <p v-if="clientForm.errors.cep" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.cep }}</p>
+                        <p v-if="cepLookupError" class="mt-2 text-xs font-semibold text-amber-700">{{ cepLookupError }}</p>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rua</label>
+                        <input v-model="clientForm.street" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Logradouro">
+                        <p v-if="clientForm.errors.street" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.street }}</p>
+                    </div>
+
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Documento</label>
-                        <input
-                            v-model="clientForm.document"
-                            type="text"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="CPF/CNPJ"
-                        >
-                        <p v-if="clientForm.errors.document" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.document }}</p>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Número</label>
+                        <input v-model="clientForm.number" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="123">
+                        <p v-if="clientForm.errors.number" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.number }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Complemento</label>
+                        <input v-model="clientForm.complement" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Apto, bloco, etc">
+                        <p v-if="clientForm.errors.complement" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.complement }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Bairro</label>
+                        <input v-model="clientForm.neighborhood" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Bairro">
+                        <p v-if="clientForm.errors.neighborhood" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.neighborhood }}</p>
                     </div>
 
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cidade</label>
-                        <input
-                            v-model="clientForm.city"
-                            type="text"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="Cidade"
-                        >
+                        <input v-model="clientForm.city" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Cidade">
                         <p v-if="clientForm.errors.city" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.city }}</p>
                     </div>
 
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">UF</label>
-                        <input
-                            v-model="clientForm.state"
-                            type="text"
-                            maxlength="2"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm uppercase text-slate-700"
-                            placeholder="SP"
-                        >
+                        <UiSelect v-model="clientForm.state" :options="stateOptions" button-class="mt-1 w-full text-sm" />
                         <p v-if="clientForm.errors.state" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.state }}</p>
                     </div>
                 </div>
 
-                <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
-                    <input v-model="clientForm.is_active" type="checkbox" class="rounded border-slate-300">
-                    Cliente ativo
-                </label>
-
                 <template #footer>
-                    <div class="flex items-center justify-end gap-2">
+                    <div class="flex items-center justify-between gap-2">
                         <button
+                            v-if="!isFirstStep"
                             type="button"
                             class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            @click="closeModal"
+                            @click="goPreviousStep"
                         >
-                            Cancelar
+                            Voltar
                         </button>
-                        <button
-                            type="button"
-                            class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                            :disabled="clientForm.processing"
-                            @click="submitClient"
-                        >
-                            {{ clientForm.processing ? 'Salvando...' : 'Salvar' }}
-                        </button>
+                        <div v-else />
+
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                @click="closeModal"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                v-if="!isLastStep"
+                                type="button"
+                                class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="!canAdvance"
+                                @click="goNextStep"
+                            >
+                                Próximo
+                            </button>
+                            <button
+                                v-else
+                                type="button"
+                                class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="clientForm.processing"
+                                @click="submitClient"
+                            >
+                                {{ clientForm.processing ? 'Salvando...' : 'Salvar' }}
+                            </button>
+                        </div>
                     </div>
                 </template>
             </WizardModalFrame>
@@ -406,3 +640,4 @@ const removeClient = () => {
         />
     </AuthenticatedLayout>
 </template>
+
