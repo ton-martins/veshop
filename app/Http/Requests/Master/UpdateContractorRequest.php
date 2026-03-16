@@ -28,6 +28,15 @@ class UpdateContractorRequest extends FormRequest
             $brandPrimaryColor = "#{$brandPrimaryColor}";
         }
 
+        $moduleCodes = $this->input('module_codes', []);
+        $moduleCodes = is_array($moduleCodes) ? $moduleCodes : [];
+        $moduleCodes = collect($moduleCodes)
+            ->map(static fn (mixed $value): string => strtolower(trim((string) $value)))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
         $this->merge([
             'slug' => trim((string) $this->input('slug', '')),
             'email' => strtolower(trim((string) $this->input('email', ''))),
@@ -35,6 +44,8 @@ class UpdateContractorRequest extends FormRequest
             'cnpj' => $cnpj !== '' ? $cnpj : null,
             'brand_name' => trim((string) $this->input('brand_name', '')),
             'brand_primary_color' => $brandPrimaryColor,
+            'business_type' => strtolower(trim((string) $this->input('business_type', ''))),
+            'module_codes' => $moduleCodes,
             'is_active' => $this->boolean('is_active', true),
         ]);
     }
@@ -50,6 +61,7 @@ class UpdateContractorRequest extends FormRequest
         $contractor = $this->route('contractor');
         $contractorId = $contractor?->id;
         $niche = strtolower(trim((string) $this->input('business_niche', Contractor::defaultNiche())));
+        $allowedBusinessTypes = Contractor::availableBusinessTypes($niche);
 
         return [
             'name' => ['required', 'string', 'max:180'],
@@ -77,6 +89,7 @@ class UpdateContractorRequest extends FormRequest
             'brand_name' => ['nullable', 'string', 'max:180'],
             'brand_primary_color' => ['nullable', 'regex:/^#([A-Fa-f0-9]{6})$/'],
             'business_niche' => ['required', Rule::in(Contractor::availableNiches())],
+            'business_type' => ['required', Rule::in($allowedBusinessTypes)],
             'plan_id' => [
                 'nullable',
                 'integer',
@@ -84,6 +97,14 @@ class UpdateContractorRequest extends FormRequest
                     $query
                         ->where('niche', $niche)
                         ->whereNull('deleted_at');
+                }),
+            ],
+            'module_codes' => ['nullable', 'array'],
+            'module_codes.*' => [
+                'string',
+                'max:80',
+                Rule::exists('modules', 'code')->where(static function ($query) {
+                    $query->where('is_active', true);
                 }),
             ],
             'is_active' => ['required', 'boolean'],

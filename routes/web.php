@@ -95,7 +95,7 @@ Route::get('/home', DashboardRedirectController::class)
     ->middleware(['auth', '2fa', 'verified'])
     ->name('home');
 
-Route::middleware(['auth', '2fa', 'verified'])->group(function () {
+Route::middleware(['auth', '2fa', 'verified', 'contractor.module:notifications'])->group(function () {
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::post('/notifications/read', [NotificationController::class, 'markAsRead'])->name('notifications.read');
 });

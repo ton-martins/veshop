@@ -48,6 +48,7 @@ class MasterCrudTest extends TestCase
                 'brand_name' => 'Norte Comercio',
                 'brand_primary_color' => '#1E293B',
                 'business_niche' => Contractor::NICHE_COMMERCIAL,
+                'business_type' => Contractor::BUSINESS_TYPE_STORE,
                 'plan_id' => $plan->id,
                 'is_active' => true,
             ]);
@@ -61,6 +62,7 @@ class MasterCrudTest extends TestCase
         ]);
 
         $contractor = Contractor::query()->where('email', 'norte@example.com')->firstOrFail();
+        $this->assertTrue($contractor->hasModule(Contractor::MODULE_COMMERCIAL));
 
         $updateResponse = $this
             ->actingAs($master)
@@ -75,6 +77,7 @@ class MasterCrudTest extends TestCase
                 'brand_name' => 'Norte Atualizado',
                 'brand_primary_color' => '#0F172A',
                 'business_niche' => Contractor::NICHE_SERVICES,
+                'business_type' => Contractor::BUSINESS_TYPE_BARBERSHOP,
                 'plan_id' => null,
                 'is_active' => false,
             ]);
@@ -87,6 +90,8 @@ class MasterCrudTest extends TestCase
         $this->assertNull($contractor->plan_id);
         $this->assertFalse((bool) $contractor->is_active);
         $this->assertSame(Contractor::NICHE_SERVICES, $contractor->niche());
+        $this->assertSame(Contractor::BUSINESS_TYPE_BARBERSHOP, $contractor->businessType());
+        $this->assertTrue($contractor->hasModule(Contractor::MODULE_SERVICES));
     }
 
     public function test_master_can_create_update_and_delete_plan(): void

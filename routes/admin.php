@@ -25,41 +25,55 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
         Route::redirect('/dashboard', '/app/home');
         Route::redirect('/inicio', '/app/home');
 
-        Route::get('/branding', [ContractorBrandingController::class, 'edit'])->name('branding.index');
-        Route::put('/branding', [ContractorBrandingController::class, 'update'])->name('branding.update');
-        Route::get('/storefront', [StorefrontController::class, 'edit'])->name('storefront.index');
-        Route::put('/storefront', [StorefrontController::class, 'update'])->name('storefront.update');
+        Route::middleware('contractor.module:files')->group(function (): void {
+            Route::get('/branding', [ContractorBrandingController::class, 'edit'])->name('branding.index');
+            Route::put('/branding', [ContractorBrandingController::class, 'update'])->name('branding.update');
+        });
+        Route::middleware('contractor.module:checkout')->group(function (): void {
+            Route::get('/storefront', [StorefrontController::class, 'edit'])->name('storefront.index');
+            Route::put('/storefront', [StorefrontController::class, 'update'])->name('storefront.update');
+        });
 
-        Route::middleware('contractor.module:commercial')->group(function (): void {
+        Route::middleware('contractor.module:catalog')->group(function (): void {
             Route::resource('products', ProductController::class)
                 ->except(['show', 'create', 'edit']);
 
             Route::resource('categories', CategoryController::class)
                 ->except(['show', 'create', 'edit']);
+        });
 
+        Route::middleware('contractor.module:crm,orders,pdv')->group(function (): void {
             Route::resource('clients', ClientController::class)
                 ->except(['show', 'create', 'edit']);
+        });
 
+        Route::middleware('contractor.module:inventory')->group(function (): void {
             Route::resource('suppliers', SupplierController::class)
                 ->except(['show', 'create', 'edit']);
 
+            Route::get('/inventory', function () {
+                return Inertia::render('Admin/Inventory/Index');
+            })->name('inventory.index');
+        });
+
+        Route::middleware('contractor.module:orders')->group(function (): void {
             Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
             Route::post('/orders/{sale}/confirm', [OrderController::class, 'confirm'])->name('orders.confirm');
             Route::post('/orders/{sale}/reject', [OrderController::class, 'reject'])->name('orders.reject');
             Route::post('/orders/{sale}/paid', [OrderController::class, 'markAsPaid'])->name('orders.paid');
             Route::post('/orders/{sale}/cancel', [OrderController::class, 'cancel'])->name('orders.cancel');
+        });
 
+        Route::middleware('contractor.module:pdv')->group(function (): void {
             Route::get('/pdv', [PdvController::class, 'index'])->name('pdv.index');
             Route::post('/pdv/cash/open', [PdvController::class, 'openCashSession'])->name('pdv.cash.open');
             Route::post('/pdv/cash/close', [PdvController::class, 'closeCashSession'])->name('pdv.cash.close');
             Route::post('/pdv/sales', [PdvController::class, 'storeSale'])->name('pdv.sales.store');
             Route::put('/pdv/products/featured', [PdvController::class, 'updateFeaturedProducts'])->name('pdv.products.featured.update');
             Route::post('/pdv/clients', [PdvController::class, 'storeClient'])->name('pdv.clients.store');
+        });
 
-            Route::get('/inventory', function () {
-                return Inertia::render('Admin/Inventory/Index');
-            })->name('inventory.index');
-
+        Route::middleware('contractor.module:finance')->group(function (): void {
             Route::get('/finance', [FinanceController::class, 'index'])->name('finance.index');
 
             Route::redirect('/finance/payables', '/app/finance?tab=payables')->name('finance.payables');
@@ -71,7 +85,9 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
             Route::post('/finance/methods', [PaymentMethodController::class, 'store'])->name('finance.methods.store');
             Route::put('/finance/methods/{paymentMethod}', [PaymentMethodController::class, 'update'])->name('finance.methods.update');
             Route::delete('/finance/methods/{paymentMethod}', [PaymentMethodController::class, 'destroy'])->name('finance.methods.destroy');
+        });
 
+        Route::middleware('contractor.module:reports')->group(function (): void {
             Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
             Route::post('/reports/exports/sales', [ReportController::class, 'exportSales'])
                 ->name('reports.exports.sales');
@@ -84,13 +100,13 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
                 return Inertia::render('Admin/Services/Index');
             })->name('index');
 
-            Route::get('/catalog', [ServiceCatalogController::class, 'index'])->name('catalog');
+            Route::middleware('contractor.module:services_catalog')->get('/catalog', [ServiceCatalogController::class, 'index'])->name('catalog');
 
-            Route::get('/orders', function () {
+            Route::middleware('contractor.module:service_orders')->get('/orders', function () {
                 return Inertia::render('Admin/Services/Orders');
             })->name('orders');
 
-            Route::get('/schedule', function () {
+            Route::middleware('contractor.module:schedule')->get('/schedule', function () {
                 return Inertia::render('Admin/Services/Schedule');
             })->name('schedule');
         });

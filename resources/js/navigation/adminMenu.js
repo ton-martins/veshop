@@ -25,6 +25,7 @@
                 route: 'admin.products.index',
                 match: ['admin.products.*'],
                 icon: 'Box',
+                module: 'catalog',
             },
             {
                 key: 'admin-categories',
@@ -32,6 +33,7 @@
                 route: 'admin.categories.index',
                 match: ['admin.categories.*'],
                 icon: 'Tags',
+                module: 'catalog',
             },
             {
                 key: 'admin-clients',
@@ -39,6 +41,7 @@
                 route: 'admin.clients.index',
                 match: ['admin.clients.*'],
                 icon: 'Users2',
+                module: ['crm', 'orders', 'pdv'],
             },
             {
                 key: 'admin-suppliers',
@@ -46,6 +49,7 @@
                 route: 'admin.suppliers.index',
                 match: ['admin.suppliers.*'],
                 icon: 'Store',
+                module: 'inventory',
             },
         ],
     },
@@ -61,6 +65,7 @@
                 route: 'admin.pdv.index',
                 match: ['admin.pdv.*'],
                 icon: 'ReceiptText',
+                module: 'pdv',
             },
             {
                 key: 'admin-orders',
@@ -68,6 +73,7 @@
                 route: 'admin.orders.index',
                 match: ['admin.orders.*'],
                 icon: 'ShoppingBag',
+                module: 'orders',
             },
             {
                 key: 'admin-inventory',
@@ -75,6 +81,7 @@
                 route: 'admin.inventory.index',
                 match: ['admin.inventory.*'],
                 icon: 'Boxes',
+                module: 'inventory',
             },
         ],
     },
@@ -82,7 +89,7 @@
         key: 'financeiro',
         label: 'Financeiro',
         icon: 'CircleDollarSign',
-        module: 'commercial',
+        module: 'finance',
         links: [
             {
                 key: 'admin-finance',
@@ -90,6 +97,7 @@
                 route: 'admin.finance.index',
                 match: ['admin.finance.*'],
                 icon: 'Banknote',
+                module: 'finance',
             },
         ],
     },
@@ -97,7 +105,7 @@
         key: 'administrativo',
         label: 'Administrativo',
         icon: 'BookOpenCheck',
-        module: 'commercial',
+        module: 'reports',
         links: [
             {
                 key: 'admin-reports',
@@ -105,6 +113,7 @@
                 route: 'admin.reports.index',
                 match: ['admin.reports.*'],
                 icon: 'FileText',
+                module: 'reports',
             },
         ],
     },
@@ -120,6 +129,7 @@
                 route: 'admin.services.index',
                 match: ['admin.services.index'],
                 icon: 'Clock3',
+                module: 'services',
             },
             {
                 key: 'admin-services-catalog',
@@ -127,6 +137,7 @@
                 route: 'admin.services.catalog',
                 match: ['admin.services.catalog'],
                 icon: 'FileText',
+                module: 'services_catalog',
             },
             {
                 key: 'admin-services-orders',
@@ -134,6 +145,7 @@
                 route: 'admin.services.orders',
                 match: ['admin.services.orders'],
                 icon: 'CircleCheckBig',
+                module: 'service_orders',
             },
             {
                 key: 'admin-services-schedule',
@@ -141,6 +153,7 @@
                 route: 'admin.services.schedule',
                 match: ['admin.services.schedule'],
                 icon: 'CalendarClock',
+                module: 'schedule',
             },
         ],
     },
@@ -155,6 +168,7 @@
                 route: 'admin.storefront.index',
                 match: ['admin.storefront.*'],
                 icon: 'Store',
+                module: 'checkout',
             },
             {
                 key: 'admin-branding',
@@ -162,6 +176,7 @@
                 route: 'admin.branding.index',
                 match: ['admin.branding.*'],
                 icon: 'Palette',
+                module: 'files',
             },
         ],
     },

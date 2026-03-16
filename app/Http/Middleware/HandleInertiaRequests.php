@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Contractor;
 use App\Models\SystemSetting;
 use Closure;
 use Illuminate\Http\Request;
@@ -184,7 +185,7 @@ class HandleInertiaRequests extends Middleware
             return null;
         }
 
-        $user->loadMissing('contractors');
+        $user->loadMissing('contractors.modules');
 
         $availableContractors = $user->contractors->values();
 
@@ -232,7 +233,7 @@ class HandleInertiaRequests extends Middleware
             ];
         }
 
-        $user->loadMissing('contractors');
+        $user->loadMissing('contractors.modules');
 
         $available = $user->contractors
             ->map(fn ($contractor): array => [
@@ -245,6 +246,8 @@ class HandleInertiaRequests extends Middleware
                 'brand_avatar_url' => $contractor->brand_avatar_url,
                 'business_niche' => $contractor->niche(),
                 'business_niche_label' => $this->resolveNicheLabel($contractor->niche()),
+                'business_type' => $contractor->businessType(),
+                'business_type_label' => Contractor::labelForBusinessType($contractor->businessType()),
                 'active_plan_name' => $contractor->activePlanName(),
                 'enabled_modules' => $contractor->enabledModules(),
             ])
@@ -261,6 +264,8 @@ class HandleInertiaRequests extends Middleware
             'brand_avatar_url' => $currentContractor->brand_avatar_url,
             'business_niche' => $currentContractor->niche(),
             'business_niche_label' => $this->resolveNicheLabel($currentContractor->niche()),
+            'business_type' => $currentContractor->businessType(),
+            'business_type_label' => Contractor::labelForBusinessType($currentContractor->businessType()),
             'active_plan_name' => $currentContractor->activePlanName(),
             'enabled_modules' => $currentContractor->enabledModules(),
         ] : null;

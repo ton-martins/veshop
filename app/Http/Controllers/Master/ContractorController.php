@@ -8,14 +8,21 @@ use App\Http\Requests\Master\UpdateContractorRequest;
 use App\Models\Contractor;
 use App\Models\Plan;
 use App\Models\User;
+use App\Services\ContractorCapabilitiesService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ContractorController extends Controller
 {
+    public function __construct(
+        private readonly ContractorCapabilitiesService $contractorCapabilitiesService,
+    ) {
+    }
+
     /**
      * Display a listing of contractors.
      */
@@ -30,6 +37,7 @@ class ContractorController extends Controller
 
         $query = Contractor::query()
             ->with('plan:id,name,price_monthly,niche')
+            ->with('modules:id,code,is_active')
             ->withCount([
                 'users as admins_count' => static fn ($innerQuery) => $innerQuery->where('role', User::ROLE_ADMIN),
             ]);
@@ -79,6 +87,9 @@ class ContractorController extends Controller
                     'brand_primary_color' => $contractor->brand_primary_color,
                     'business_niche' => $niche,
                     'business_niche_label' => $this->resolveNicheLabel($niche),
+                    'business_type' => $contractor->businessType(),
+                    'business_type_label' => Contractor::labelForBusinessType($contractor->businessType()),
+                    'enabled_module_codes' => $contractor->enabledModules(),
                     'plan_id' => $contractor->plan_id,
                     'plan_name' => $contractor->plan?->name ?? $contractor->activePlanName(),
                     'monthly_price' => $contractor->plan?->price_monthly !== null ? (float) $contractor->plan->price_monthly : null,
@@ -129,6 +140,19 @@ class ContractorController extends Controller
                 ])
                 ->values()
                 ->all(),
+            'businessTypes' => collect(Contractor::availableNiches())
+                ->flatMap(function (string $niche): Collection {
+                    return collect(Contractor::availableBusinessTypes($niche))
+                        ->map(static fn (string $businessType): array => [
+                            'value' => $businessType,
+                            'niche' => $niche,
+                            'label' => Contractor::labelForBusinessType($businessType),
+                        ]);
+                })
+                ->values()
+                ->all(),
+            'moduleCatalog' => $this->contractorCapabilitiesService->moduleCatalogForMaster(),
+            'modulePresets' => $this->resolveModulePresetsPayload(),
         ]);
     }
 
@@ -140,9 +164,16 @@ class ContractorController extends Controller
         $data = $request->validated();
         $slugBase = $data['slug'] ?: $data['name'];
         $niche = $this->normalizeNiche($data['business_niche']);
+        $businessType = Contractor::normalizeBusinessType((string) ($data['business_type'] ?? ''), $niche);
         $plan = $this->resolvePlanOrNull($data['plan_id'] ?? null, $niche);
+        $moduleCodes = $this->contractorCapabilitiesService->resolveModuleCodesForPersistence(
+            $niche,
+            $businessType,
+            $data['module_codes'] ?? [],
+        );
+        $moduleIds = $this->contractorCapabilitiesService->resolveModuleIdsFromCodes($moduleCodes);
 
-        Contractor::query()->create([
+        $contractor = Contractor::query()->create([
             'uuid' => (string) Str::uuid(),
             'name' => $data['name'],
             'email' => $data['email'],
@@ -158,8 +189,11 @@ class ContractorController extends Controller
                 niche: $niche,
                 planName: $plan?->name
             ),
+            'business_type' => $businessType,
             'is_active' => $data['is_active'],
         ]);
+
+        $contractor->modules()->sync($moduleIds);
 
         return back()->with('status', 'Contratante criado com sucesso.');
     }
@@ -172,7 +206,14 @@ class ContractorController extends Controller
         $data = $request->validated();
         $slugBase = $data['slug'] ?: $data['name'];
         $niche = $this->normalizeNiche($data['business_niche']);
+        $businessType = Contractor::normalizeBusinessType((string) ($data['business_type'] ?? ''), $niche);
         $plan = $this->resolvePlanOrNull($data['plan_id'] ?? null, $niche);
+        $moduleCodes = $this->contractorCapabilitiesService->resolveModuleCodesForPersistence(
+            $niche,
+            $businessType,
+            $data['module_codes'] ?? [],
+        );
+        $moduleIds = $this->contractorCapabilitiesService->resolveModuleIdsFromCodes($moduleCodes);
 
         $contractor->fill([
             'name' => $data['name'],
@@ -189,8 +230,11 @@ class ContractorController extends Controller
                 niche: $niche,
                 planName: $plan?->name
             ),
+            'business_type' => $businessType,
             'is_active' => $data['is_active'],
         ])->save();
+
+        $contractor->modules()->sync($moduleIds);
 
         return back()->with('status', 'Contratante atualizado com sucesso.');
     }
@@ -228,11 +272,7 @@ class ContractorController extends Controller
 
     private function normalizeNiche(string $niche): string
     {
-        $safeNiche = strtolower(trim($niche));
-
-        return in_array($safeNiche, Contractor::availableNiches(), true)
-            ? $safeNiche
-            : Contractor::defaultNiche();
+        return Contractor::normalizeNiche($niche);
     }
 
     private function resolveNicheLabel(string $niche): string
@@ -283,5 +323,22 @@ class ContractorController extends Controller
         $settings['email_notifications_enabled'] = (bool) ($settings['email_notifications_enabled'] ?? true);
 
         return $settings;
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    private function resolveModulePresetsPayload(): array
+    {
+        $payload = [];
+
+        foreach (Contractor::availableNiches() as $niche) {
+            foreach (Contractor::availableBusinessTypes($niche) as $businessType) {
+                $payload[$businessType] = $this->contractorCapabilitiesService
+                    ->defaultModuleCodes($niche, $businessType);
+            }
+        }
+
+        return $payload;
     }
 }

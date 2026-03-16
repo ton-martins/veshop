@@ -155,6 +155,9 @@ const currentArea = computed(() => {
 
     return user.value?.role === 'master' ? 'master' : 'admin';
 });
+const notificationsEnabled = computed(() =>
+    currentArea.value !== 'admin' || contractorEnabledModules.value.includes('notifications'),
+);
 
 const systemContextLabel = computed(() => {
     if (showContractorContext.value) {
@@ -292,20 +295,23 @@ const toMenuWithIcons = (groups) =>
         })),
     }));
 
+const hasEnabledModule = (required) => {
+    if (!required) return true;
+
+    const enabled = contractorEnabledModules.value;
+    if (Array.isArray(required)) {
+        return required.some((item) => enabled.includes(String(item ?? '').trim().toLowerCase()));
+    }
+
+    return enabled.includes(String(required ?? '').trim().toLowerCase());
+};
+
 const filteredAdminMenuGroups = computed(() =>
     adminMenuGroups
-        .filter((group) => {
-            if (!group.module) return true;
-
-            return contractorEnabledModules.value.includes(group.module);
-        })
+        .filter((group) => hasEnabledModule(group.module))
         .map((group) => ({
             ...group,
-            links: (group.links ?? []).filter((link) => {
-                if (!link.module) return true;
-
-                return contractorEnabledModules.value.includes(link.module);
-            }),
+            links: (group.links ?? []).filter((link) => hasEnabledModule(link.module)),
         }))
         .filter((group) => (group.links ?? []).length > 0),
 );
@@ -605,6 +611,12 @@ watch(
     { flush: 'post' },
 );
 
+watch(notificationsEnabled, (enabled) => {
+    if (!enabled) {
+        notificationsPanelOpen.value = false;
+    }
+});
+
 onBeforeUnmount(() => {
     if (tableMutationObserver) {
         tableMutationObserver.disconnect();
@@ -638,6 +650,7 @@ const doLogout = () => {
 };
 
 const hasNotificationsActions = computed(() => {
+    if (!notificationsEnabled.value) return false;
     if (typeof route !== 'function') return false;
 
     try {
@@ -648,13 +661,14 @@ const hasNotificationsActions = computed(() => {
 });
 
 const isNotificationsActive = computed(() => {
+    if (!notificationsEnabled.value) return false;
     if (notificationsPanelOpen.value) return true;
 
     return safeRouteCurrent('notifications.index') || safeRouteCurrent('notifications.*');
 });
 
 const openNotifications = () => {
-    if (!hasNotificationsActions.value) return;
+    if (!notificationsEnabled.value || !hasNotificationsActions.value) return;
     notificationsPanelOpen.value = true;
 };
 
@@ -968,6 +982,7 @@ const handleGlobalKeydown = (event) => {
                             </Link>
 
                             <button
+                                v-if="notificationsEnabled"
                                 type="button"
                                 class="relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold transition"
                                 :class="isNotificationsActive ? 'text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
@@ -1127,7 +1142,7 @@ const handleGlobalKeydown = (event) => {
 
         <transition name="drawer">
             <div
-                v-if="notificationsPanelOpen"
+                v-if="notificationsEnabled && notificationsPanelOpen"
                 class="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm"
                 @click.self="closeNotificationsPanel"
             >
@@ -1221,6 +1236,7 @@ const handleGlobalKeydown = (event) => {
         </transition>
 
         <button
+            v-if="notificationsEnabled"
             type="button"
             class="fixed right-4 bottom-5 z-30 hidden h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-white shadow-xl transition hover:bg-slate-800 md:inline-flex"
             title="Notificações"

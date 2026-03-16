@@ -5,6 +5,7 @@ php artisan cache:clear
 php artisan optimize:clear
 php artisan config:clear
 php artisan optimize
+php artisan serve
 npm run dev
 
 -- Filas Redis / background jobs

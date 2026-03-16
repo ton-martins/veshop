@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Services\ContractorCapabilitiesService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Schema;
 
 class Contractor extends Model
 {
@@ -20,6 +22,20 @@ class Contractor extends Model
     public const MODULE_COMMERCIAL = 'commercial';
 
     public const MODULE_SERVICES = 'services';
+
+    public const BUSINESS_TYPE_STORE = 'store';
+
+    public const BUSINESS_TYPE_CONFECTIONERY = 'confectionery';
+
+    public const BUSINESS_TYPE_BARBERSHOP = 'barbershop';
+
+    public const BUSINESS_TYPE_AUTO_ELECTRIC = 'auto_electric';
+
+    public const BUSINESS_TYPE_MECHANIC = 'mechanic';
+
+    public const BUSINESS_TYPE_ACCOUNTING = 'accounting';
+
+    public const BUSINESS_TYPE_GENERAL_SERVICES = 'general_services';
 
     /**
      * @var list<string>
@@ -39,6 +55,7 @@ class Contractor extends Model
         'brand_logo_url',
         'brand_avatar_url',
         'settings',
+        'business_type',
         'is_active',
     ];
 
@@ -62,6 +79,12 @@ class Contractor extends Model
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class)->withTimestamps();
+    }
+
+    public function modules(): BelongsToMany
+    {
+        return $this->belongsToMany(Module::class, 'contractor_module')
+            ->withTimestamps();
     }
 
     public function categories(): HasMany
@@ -170,7 +193,12 @@ class Contractor extends Model
         $settings = is_array($this->settings) ? $this->settings : [];
         $rawNiche = $settings['business_niche'] ?? self::defaultNiche();
 
-        return $this->normalizeNiche($rawNiche);
+        return self::normalizeNiche($rawNiche);
+    }
+
+    public function businessType(): string
+    {
+        return self::normalizeBusinessType($this->business_type, $this->niche());
     }
 
     public function activePlanName(): string
@@ -188,8 +216,15 @@ class Contractor extends Model
     public function setBusinessNiche(string $niche): self
     {
         $settings = is_array($this->settings) ? $this->settings : [];
-        $settings['business_niche'] = $this->normalizeNiche($niche);
+        $settings['business_niche'] = self::normalizeNiche($niche);
         $this->settings = $settings;
+
+        return $this;
+    }
+
+    public function setBusinessType(string $businessType): self
+    {
+        $this->business_type = self::normalizeBusinessType($businessType, $this->niche());
 
         return $this;
     }
@@ -210,15 +245,21 @@ class Contractor extends Model
      */
     public function enabledModules(): array
     {
-        return match ($this->niche()) {
-            self::NICHE_SERVICES => [self::MODULE_SERVICES],
-            default => [self::MODULE_COMMERCIAL],
-        };
+        if (! Schema::hasTable('modules') || ! Schema::hasTable('contractor_module')) {
+            return $this->legacyEnabledModules();
+        }
+
+        return app(ContractorCapabilitiesService::class)->enabledModuleCodesForContractor($this);
     }
 
     public function hasModule(string $module): bool
     {
-        return in_array($module, $this->enabledModules(), true);
+        $normalizedModule = strtolower(trim($module));
+        if ($normalizedModule === '') {
+            return false;
+        }
+
+        return in_array($normalizedModule, $this->enabledModules(), true);
     }
 
     public function requiresEmailVerification(): bool
@@ -228,12 +269,86 @@ class Contractor extends Model
         return (bool) ($settings['require_email_verification'] ?? true);
     }
 
-    private function normalizeNiche(mixed $value): string
+    /**
+     * @return list<string>
+     */
+    public static function availableBusinessTypes(?string $niche = null): array
+    {
+        if ($niche === null) {
+            return [
+                self::BUSINESS_TYPE_STORE,
+                self::BUSINESS_TYPE_CONFECTIONERY,
+                self::BUSINESS_TYPE_BARBERSHOP,
+                self::BUSINESS_TYPE_AUTO_ELECTRIC,
+                self::BUSINESS_TYPE_MECHANIC,
+                self::BUSINESS_TYPE_ACCOUNTING,
+                self::BUSINESS_TYPE_GENERAL_SERVICES,
+            ];
+        }
+
+        return match (self::normalizeNiche($niche)) {
+            self::NICHE_SERVICES => [
+                self::BUSINESS_TYPE_BARBERSHOP,
+                self::BUSINESS_TYPE_AUTO_ELECTRIC,
+                self::BUSINESS_TYPE_MECHANIC,
+                self::BUSINESS_TYPE_ACCOUNTING,
+                self::BUSINESS_TYPE_GENERAL_SERVICES,
+            ],
+            default => [
+                self::BUSINESS_TYPE_STORE,
+                self::BUSINESS_TYPE_CONFECTIONERY,
+            ],
+        };
+    }
+
+    public static function defaultBusinessType(string $niche): string
+    {
+        return self::normalizeNiche($niche) === self::NICHE_SERVICES
+            ? self::BUSINESS_TYPE_GENERAL_SERVICES
+            : self::BUSINESS_TYPE_STORE;
+    }
+
+    public static function normalizeBusinessType(mixed $value, string $niche): string
+    {
+        $normalized = strtolower(trim((string) $value));
+        $allowed = self::availableBusinessTypes($niche);
+
+        return in_array($normalized, $allowed, true)
+            ? $normalized
+            : self::defaultBusinessType($niche);
+    }
+
+    public static function labelForBusinessType(string $businessType): string
+    {
+        return match (strtolower(trim($businessType))) {
+            self::BUSINESS_TYPE_STORE => 'Loja',
+            self::BUSINESS_TYPE_CONFECTIONERY => 'Confeitaria',
+            self::BUSINESS_TYPE_BARBERSHOP => 'Barbearia',
+            self::BUSINESS_TYPE_AUTO_ELECTRIC => 'Autoelétrica',
+            self::BUSINESS_TYPE_MECHANIC => 'Mecânica',
+            self::BUSINESS_TYPE_ACCOUNTING => 'Contabilidade',
+            self::BUSINESS_TYPE_GENERAL_SERVICES => 'Serviços gerais',
+            default => ucfirst(strtolower(trim($businessType))),
+        };
+    }
+
+    public static function normalizeNiche(mixed $value): string
     {
         $normalized = strtolower(trim((string) $value));
 
         return in_array($normalized, self::availableNiches(), true)
             ? $normalized
             : self::defaultNiche();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function legacyEnabledModules(): array
+    {
+        return match ($this->niche()) {
+            self::NICHE_SERVICES => [self::MODULE_SERVICES],
+            default => [self::MODULE_COMMERCIAL],
+        };
     }
 }
