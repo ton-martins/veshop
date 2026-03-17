@@ -9,7 +9,6 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
-use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 class TwoFactorSetupController extends Controller
 {
@@ -44,7 +43,7 @@ class TwoFactorSetupController extends Controller
         ]);
     }
 
-    public function confirm(Request $request): RedirectResponse|HttpResponse
+    public function confirm(Request $request): RedirectResponse
     {
         $request->validate([
             'code' => ['required', 'string', 'max:32'],
@@ -65,12 +64,10 @@ class TwoFactorSetupController extends Controller
 
         $request->session()->put('two_factor_passed', true);
 
-        $targetUrl = (string) $request->session()->pull('url.intended', route('home', absolute: false));
-
-        return $this->redirectForInertia($request, $targetUrl);
+        return redirect()->intended(route('home', absolute: false));
     }
 
-    public function regenerate(Request $request): RedirectResponse|HttpResponse
+    public function regenerate(Request $request): RedirectResponse
     {
         $user = $request->user();
 
@@ -83,14 +80,12 @@ class TwoFactorSetupController extends Controller
 
         $request->session()->forget('two_factor_passed');
 
-        return $this->redirectForInertia(
-            $request,
-            route('two-factor.setup'),
-            'Nova chave gerada. Confirme o código do app autenticador para concluir.'
-        );
+        return redirect()
+            ->route('two-factor.setup')
+            ->with('status', 'Nova chave gerada. Confirme o código do app autenticador para concluir.');
     }
 
-    public function destroy(Request $request): RedirectResponse|HttpResponse
+    public function destroy(Request $request): RedirectResponse
     {
         $request->user()->forceFill([
             'two_factor_secret' => null,
@@ -99,32 +94,8 @@ class TwoFactorSetupController extends Controller
 
         $request->session()->forget('two_factor_passed');
 
-        return $this->redirectForInertia(
-            $request,
-            route('two-factor.setup'),
-            'Autenticação em dois fatores desativada.'
-        );
-    }
-
-    private function redirectForInertia(
-        Request $request,
-        string $targetUrl,
-        ?string $statusMessage = null
-    ): RedirectResponse|HttpResponse {
-        if ($request->headers->has('X-Inertia')) {
-            if ($statusMessage !== null) {
-                $request->session()->flash('status', $statusMessage);
-            }
-
-            return Inertia::location($targetUrl);
-        }
-
-        $redirect = redirect()->to($targetUrl);
-
-        if ($statusMessage !== null) {
-            $redirect->with('status', $statusMessage);
-        }
-
-        return $redirect;
+        return redirect()
+            ->route('two-factor.setup')
+            ->with('status', 'Autenticação em dois fatores desativada.');
     }
 }

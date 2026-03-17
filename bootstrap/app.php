@@ -4,10 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
-use Illuminate\Support\MessageBag;
-use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
-use Inertia\Inertia;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -58,16 +55,13 @@ return Application::configure(basePath: dirname(__DIR__))
                 $errorBag = 'default';
             }
 
-            $errors = new ViewErrorBag();
-            $errors->put($errorBag, new MessageBag($exception->errors()));
-
-            $request->session()->flash('errors', $errors);
-            $request->session()->flashInput($request->except([
-                'password',
-                'password_confirmation',
-                'current_password',
-            ]));
-
-            return Inertia::location(url()->previous());
+            return redirect()
+                ->back(status: 303)
+                ->withErrors($exception->errors(), $errorBag)
+                ->withInput($request->except([
+                    'password',
+                    'password_confirmation',
+                    'current_password',
+                ]));
         });
     })->create();
