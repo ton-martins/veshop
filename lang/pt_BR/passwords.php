@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 return [
     'reset' => 'Sua senha foi redefinida com sucesso.',

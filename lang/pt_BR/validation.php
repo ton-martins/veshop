@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 return [
     'accepted' => 'O campo :attribute deve ser aceito.',
