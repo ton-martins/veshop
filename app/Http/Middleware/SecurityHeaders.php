@@ -59,7 +59,7 @@ class SecurityHeaders
 
     private function ensureInertiaHeaders(Request $request, Response $response): void
     {
-        if (! $request->headers->has('X-Inertia') && ! $this->looksLikeInertiaResponse($response)) {
+        if (! $this->looksLikeInertiaResponse($response)) {
             return;
         }
 
