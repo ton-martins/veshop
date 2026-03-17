@@ -78,7 +78,7 @@ const deliveriesToday = computed(() => Number(props.stats?.deliveries_today ?? 0
                     <p class="mt-1 text-2xl font-bold text-slate-900">{{ item.value }}</p>
                     <p class="mt-1 text-xs text-slate-500">{{ item.subtitle }}</p>
                 </div>
-                <span class="inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="item.iconClass">
+                <span class="veshop-stat-icon inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="item.iconClass">
                     <component :is="item.icon" class="h-4 w-4" />
                 </span>
             </div>

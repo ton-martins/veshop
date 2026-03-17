@@ -1006,8 +1006,8 @@ const handleGlobalKeydown = (event) => {
                                         <div class="veshop-table-view-toggle">
                                             <button
                                                 type="button"
-                                                class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
-                                                :class="tableViewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'"
+                                                class="veshop-table-view-btn inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
+                                                :class="tableViewMode === 'list' ? 'is-active' : ''"
                                                 @click="tableViewMode = 'list'"
                                             >
                                                 <List class="h-3.5 w-3.5" />
@@ -1015,8 +1015,8 @@ const handleGlobalKeydown = (event) => {
                                             </button>
                                             <button
                                                 type="button"
-                                                class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
-                                                :class="tableViewMode === 'cards' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'"
+                                                class="veshop-table-view-btn inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
+                                                :class="tableViewMode === 'cards' ? 'is-active' : ''"
                                                 @click="tableViewMode = 'cards'"
                                             >
                                                 <LayoutGrid class="h-3.5 w-3.5" />
@@ -1031,8 +1031,8 @@ const handleGlobalKeydown = (event) => {
                                 <div class="veshop-table-view-toggle">
                                     <button
                                         type="button"
-                                        class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
-                                        :class="tableViewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'"
+                                        class="veshop-table-view-btn inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
+                                        :class="tableViewMode === 'list' ? 'is-active' : ''"
                                         @click="tableViewMode = 'list'"
                                     >
                                         <List class="h-3.5 w-3.5" />
@@ -1040,8 +1040,8 @@ const handleGlobalKeydown = (event) => {
                                     </button>
                                     <button
                                         type="button"
-                                        class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
-                                        :class="tableViewMode === 'cards' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'"
+                                        class="veshop-table-view-btn inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
+                                        :class="tableViewMode === 'cards' ? 'is-active' : ''"
                                         @click="tableViewMode = 'cards'"
                                     >
                                         <LayoutGrid class="h-3.5 w-3.5" />

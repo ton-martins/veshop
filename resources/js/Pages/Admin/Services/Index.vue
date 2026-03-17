@@ -1,5 +1,6 @@
 ﻿<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { Briefcase, ClipboardList, Clock3, CircleDollarSign, ChevronRight } from 'lucide-vue-next';
 
@@ -23,7 +24,7 @@ const todayAppointments = [];
 <template>
     <Head title="Serviços" />
 
-    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Serviços">
+    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Serviços" :show-table-view-toggle="false">
         <section class="space-y-4">
             <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <article v-for="stat in stats" :key="stat.key" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -32,7 +33,7 @@ const todayAppointments = [];
                             <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
                             <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
                         </div>
-                        <span class="inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
+                        <span class="veshop-stat-icon inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
                             <component :is="stat.icon" class="h-4 w-4" />
                         </span>
                     </div>
@@ -81,6 +82,10 @@ const todayAppointments = [];
 
             <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                 <h2 class="text-sm font-semibold text-slate-900">Atendimentos de hoje</h2>
+                                <div class="mt-3 flex justify-end">
+                    <TableViewToggle />
+                </div>
+
                 <div class="mt-4 overflow-hidden rounded-xl border border-slate-200">
                     <table class="min-w-full divide-y divide-slate-200 text-sm">
                         <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">

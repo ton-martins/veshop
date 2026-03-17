@@ -24,7 +24,7 @@ const timeline = [];
                             <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
                             <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
                         </div>
-                        <span class="inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
+                        <span class="veshop-stat-icon inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
                             <component :is="stat.icon" class="h-4 w-4" />
                         </span>
                     </div>

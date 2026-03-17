@@ -105,7 +105,7 @@ const formatCurrency = (value) => {
                             <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
                             <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
                         </div>
-                        <span class="inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
+                        <span class="veshop-stat-icon inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
                             <component :is="stat.icon" class="h-4 w-4" />
                         </span>
                     </div>
@@ -145,7 +145,7 @@ const formatCurrency = (value) => {
                             <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
                                     <p class="truncate text-sm font-semibold text-slate-800">{{ item.file }}</p>
-                                    <p class="text-xs text-slate-500">{{ item.by }} • {{ item.when }}</p>
+                                    <p class="text-xs text-slate-500">{{ item.by }} â€¢ {{ item.when }}</p>
                                     <p v-if="item.rows !== null" class="text-xs text-slate-500">{{ item.rows }} linhas</p>
                                     <p v-if="item.error" class="mt-1 text-xs text-rose-600">{{ item.error }}</p>
                                 </div>

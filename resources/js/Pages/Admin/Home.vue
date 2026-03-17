@@ -1,8 +1,10 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import CatalogBanner from '@/Components/App/AdminOverview/CatalogBanner.vue';
 import OperationsOverview from '@/Components/App/AdminOverview/OperationsOverview.vue';
 import PdvOverview from '@/Components/App/AdminOverview/PdvOverview.vue';
+import { useBranding } from '@/branding';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { Briefcase, ClipboardList, Clock3, CircleDollarSign } from 'lucide-vue-next';
@@ -16,6 +18,14 @@ const props = defineProps({
 
 const page = usePage();
 const currentContractor = computed(() => page.props.contractorContext?.current ?? null);
+const { normalizeHex, secondaryColor, withAlpha } = useBranding();
+const tabAccentColor = computed(() =>
+    normalizeHex(currentContractor.value?.brand_primary_color || '', secondaryColor.value),
+);
+const overviewUiStyles = computed(() => ({
+    '--overview-tab-active': tabAccentColor.value,
+    '--overview-tab-active-border': withAlpha(tabAccentColor.value, 0.28),
+}));
 const contractorName = computed(() => currentContractor.value?.brand_name || currentContractor.value?.name || 'Sua empresa');
 const contractorNiche = computed(() => String(currentContractor.value?.business_niche ?? 'commercial').toLowerCase());
 const contractorBusinessType = computed(() => String(currentContractor.value?.business_type ?? '').trim().toLowerCase());
@@ -160,8 +170,8 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
 <template>
     <Head title="Visão Geral" />
 
-    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Visão Geral">
-        <section class="space-y-4">
+    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Visão Geral" :show-table-view-toggle="false">
+        <section class="space-y-4" :style="overviewUiStyles">
             <template v-if="dashboardProfile === 'commercial'">
                 <CatalogBanner
                     v-if="showCatalogBanner"
@@ -170,14 +180,14 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
                 />
 
                 <div v-if="commercialTabs.length" class="space-y-4">
-                    <div v-if="commercialTabs.length > 1" class="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-                        <div class="grid grid-cols-2 gap-2 sm:inline-flex sm:items-center">
+                    <div v-if="commercialTabs.length > 1" class="overview-tabs-shell">
+                        <div class="overview-tabs-track">
                             <button
                                 v-for="tab in commercialTabs"
                                 :key="tab.key"
                                 type="button"
-                                class="inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition"
-                                :class="activeTab === tab.key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
+                                class="overview-tab"
+                                :class="activeTab === tab.key ? 'is-active' : ''"
                                 @click="activeTab = tab.key"
                             >
                                 {{ tab.label }}
@@ -213,7 +223,7 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
                                 <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
                                 <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
                             </div>
-                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
+                            <span class="veshop-stat-icon inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
                                 <component :is="stat.icon" class="h-4 w-4" />
                             </span>
                         </div>
@@ -248,6 +258,10 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
                         </div>
                     </div>
 
+                    <div v-if="canViewServiceOrders" class="mt-3 flex justify-end">
+                        <TableViewToggle />
+                    </div>
+
                     <div
                         v-if="!canViewServiceOrders"
                         class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
@@ -273,7 +287,7 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
                                     <td class="px-4 py-3">
                                         <span
                                             class="rounded-full px-2 py-1 text-[11px] font-semibold"
-                                            :class="item.status === 'Em execuÃ§Ã£o'
+                                            :class="item.status === 'Em execução'
                                                 ? 'bg-blue-100 text-blue-700'
                                                 : item.status === 'Triagem'
                                                     ? 'bg-amber-100 text-amber-700'
@@ -298,3 +312,59 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
         </section>
     </AuthenticatedLayout>
 </template>
+
+<style scoped>
+.overview-tabs-shell {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+
+.overview-tabs-shell::-webkit-scrollbar {
+    height: 6px;
+}
+
+.overview-tabs-shell::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: rgba(148, 163, 184, 0.45);
+}
+
+.overview-tabs-track {
+    display: inline-flex;
+    min-width: max-content;
+    gap: 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.95rem;
+    background: #ffffff;
+    padding: 0.3rem;
+}
+
+.overview-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: 1px solid transparent;
+    border-radius: 0.72rem;
+    min-height: 38px;
+    padding: 0.6rem 0.95rem;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.overview-tab:hover {
+    background: #f8fafc;
+    color: #0f172a;
+}
+
+.overview-tab.is-active {
+    border-color: var(--overview-tab-active-border);
+    background: var(--overview-tab-active);
+    color: #ffffff;
+}
+</style>

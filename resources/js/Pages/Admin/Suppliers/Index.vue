@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import Modal from '@/Components/Modal.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
@@ -320,7 +321,7 @@ const removeSupplier = () => {
 <template>
     <Head title="Fornecedores" />
 
-    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Fornecedores">
+    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Fornecedores" :show-table-view-toggle="false">
         <section class="space-y-4">
             <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <article v-for="stat in statsCards" :key="stat.key" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -329,7 +330,7 @@ const removeSupplier = () => {
                             <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
                             <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
                         </div>
-                        <span class="inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
+                        <span class="veshop-stat-icon inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
                             <component :is="stat.icon" class="h-4 w-4" />
                         </span>
                     </div>
@@ -381,6 +382,10 @@ const removeSupplier = () => {
                             Novo fornecedor
                         </button>
                     </div>
+                </div>
+
+                                <div class="mt-3 flex justify-end">
+                    <TableViewToggle />
                 </div>
 
                 <div class="mt-4 rounded-xl border border-slate-200 bg-white">

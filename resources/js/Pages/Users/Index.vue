@@ -5,6 +5,7 @@ import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
+import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import {
     CheckCircle2,
     ChevronLeft,
@@ -564,7 +565,7 @@ const destroyUser = () => {
 <template>
     <Head title="Usuários" />
 
-    <AuthenticatedLayout area="master" header-variant="compact" header-title="Usuários">
+    <AuthenticatedLayout area="master" header-variant="compact" header-title="Usuários" :show-table-view-toggle="false">
         <section class="space-y-4">
             <div v-if="flashStatus" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
                 {{ flashStatus }}
@@ -638,6 +639,10 @@ const destroyUser = () => {
                             Novo usuário
                         </button>
                     </div>
+                </div>
+
+                <div class="mt-3 flex justify-end">
+                    <TableViewToggle />
                 </div>
 
                 <div class="mt-4 overflow-hidden rounded-xl border border-slate-200">

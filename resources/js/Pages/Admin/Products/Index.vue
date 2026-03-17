@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import Modal from '@/Components/Modal.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
@@ -262,7 +263,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
 <template>
     <Head title="Produtos" />
 
-    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Produtos">
+    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Produtos" :show-table-view-toggle="false">
         <section class="space-y-4">
             <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <article
@@ -275,7 +276,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                             <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
                             <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
                         </div>
-                        <span class="inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
+                        <span class="veshop-stat-icon inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
                             <component :is="stat.icon" class="h-4 w-4" />
                         </span>
                     </div>
@@ -374,7 +375,11 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         </div>
                     </section>
 
-                    <div class="rounded-xl border border-slate-200 bg-white">
+                                    <div class="mt-3 flex justify-end">
+                    <TableViewToggle />
+                </div>
+
+                <div class="rounded-xl border border-slate-200 bg-white">
                         <table class="w-full min-w-[980px] divide-y divide-slate-200 text-sm">
                             <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                                 <tr>

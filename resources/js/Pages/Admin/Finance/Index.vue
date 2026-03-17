@@ -52,9 +52,7 @@ const financeUiStyles = computed(() => ({
     '--finance-tab-active': tabAccentColor.value,
     '--finance-tab-active-soft': withAlpha(tabAccentColor.value, 0.12),
     '--finance-tab-active-border': withAlpha(tabAccentColor.value, 0.28),
-    '--finance-toggle-color': secondaryColor.value,
     '--finance-toggle-color-soft': withAlpha(secondaryColor.value, 0.16),
-    '--finance-toggle-color-soft-hover': withAlpha(secondaryColor.value, 0.22),
 }));
 
 const allowedTabs = new Set(['payables', 'receivables', 'payments']);
@@ -509,7 +507,7 @@ const methodCodeLabel = (code) => {
                                 <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
                                 <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
                             </div>
-                            <span class="finance-stat-icon inline-flex h-10 w-10 items-center justify-center rounded-xl" :class="stat.tone">
+                            <span class="veshop-stat-icon finance-stat-icon inline-flex h-10 w-10 items-center justify-center rounded-xl" :class="stat.tone">
                                 <component :is="stat.icon" class="h-5 w-5" />
                             </span>
                         </div>
@@ -697,7 +695,7 @@ const methodCodeLabel = (code) => {
                                 <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
                                 <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
                             </div>
-                            <span class="finance-stat-icon inline-flex h-10 w-10 items-center justify-center rounded-xl" :class="stat.tone">
+                            <span class="veshop-stat-icon finance-stat-icon inline-flex h-10 w-10 items-center justify-center rounded-xl" :class="stat.tone">
                                 <component :is="stat.icon" class="h-5 w-5" />
                             </span>
                         </div>
@@ -741,7 +739,7 @@ const methodCodeLabel = (code) => {
                         <div class="veshop-table-view-toggle finance-table-view-toggle">
                             <button
                                 type="button"
-                                class="finance-view-btn inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
+                                class="veshop-table-view-btn inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
                                 :class="tableViewMode === 'list' ? 'is-active' : ''"
                                 @click="setTableViewMode('list')"
                             >
@@ -750,7 +748,7 @@ const methodCodeLabel = (code) => {
                             </button>
                             <button
                                 type="button"
-                                class="finance-view-btn inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
+                                class="veshop-table-view-btn inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
                                 :class="tableViewMode === 'cards' ? 'is-active' : ''"
                                 @click="setTableViewMode('cards')"
                             >
@@ -1064,21 +1062,6 @@ const methodCodeLabel = (code) => {
 .finance-table-view-toggle {
     border-color: var(--finance-toggle-color-soft);
     background: #ffffff;
-}
-
-.finance-view-btn {
-    background: transparent;
-    color: #334155;
-}
-
-.finance-view-btn:hover {
-    background: transparent;
-    color: #0f172a;
-}
-
-.finance-view-btn.is-active {
-    background: var(--finance-toggle-color);
-    color: #ffffff;
 }
 
 .finance-stat-icon {
