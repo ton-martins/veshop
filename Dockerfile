@@ -29,6 +29,8 @@ RUN apk add --no-cache \
     opcache \
     pdo_mysql \
     zip \
+    && pecl install redis \
+    && docker-php-ext-enable redis \
     && apk del .build-deps \
     && rm -rf /var/cache/apk/*
 

@@ -5,10 +5,12 @@ namespace Tests\Feature\Public;
 use App\Models\Contractor;
 use App\Models\ShopCustomer;
 use App\Notifications\Shop\VerifyShopCustomerEmailNotification;
+use App\Services\ShopVerificationNotificationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
+use Mockery;
 use Tests\TestCase;
 
 class ShopAuthTest extends TestCase
@@ -188,6 +190,66 @@ class ShopAuthTest extends TestCase
             'city',
             'state',
         ]);
+    }
+
+    public function test_customer_registration_does_not_fail_when_verification_dispatch_fails(): void
+    {
+        $contractor = $this->createContractor('loja-falha-dispatch');
+
+        $service = Mockery::mock(ShopVerificationNotificationService::class);
+        $service->shouldReceive('dispatch')
+            ->once()
+            ->andReturn(ShopVerificationNotificationService::RESULT_FAILED);
+        $this->app->instance(ShopVerificationNotificationService::class, $service);
+
+        $response = $this->post(route('shop.auth.register.store', ['slug' => $contractor->slug]), [
+            'name' => 'Cliente Falha',
+            'email' => 'cliente-falha@example.com',
+            'phone' => '(11) 99999-2222',
+            'cep' => '01001-000',
+            'street' => 'Praca da Se',
+            'neighborhood' => 'Se',
+            'city' => 'Sao Paulo',
+            'state' => 'SP',
+            'password' => 'Password@123',
+            'password_confirmation' => 'Password@123',
+        ]);
+
+        $response->assertRedirect(route('shop.verification.notice', ['slug' => $contractor->slug]));
+        $response->assertSessionHas('status', 'Conta criada, mas nao foi possivel enviar o e-mail agora. Use "Reenviar verificacao".');
+        $this->assertDatabaseHas('shop_customers', [
+            'contractor_id' => $contractor->id,
+            'email' => 'cliente-falha@example.com',
+        ]);
+    }
+
+    public function test_resend_verification_does_not_fail_when_dispatch_fails(): void
+    {
+        $contractor = $this->createContractor('loja-reenvio-falha');
+
+        $customer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Reenvio',
+            'email' => 'cliente-reenvio@example.com',
+            'phone' => '11999990000',
+            'password' => 'Password@123',
+            'is_active' => true,
+            'email_verified_at' => null,
+        ]);
+
+        $service = Mockery::mock(ShopVerificationNotificationService::class);
+        $service->shouldReceive('dispatch')
+            ->once()
+            ->andReturn(ShopVerificationNotificationService::RESULT_FAILED);
+        $this->app->instance(ShopVerificationNotificationService::class, $service);
+
+        $response = $this
+            ->actingAs($customer, 'shop')
+            ->from(route('shop.verification.notice', ['slug' => $contractor->slug]))
+            ->post(route('shop.verification.send', ['slug' => $contractor->slug]));
+
+        $response->assertRedirect(route('shop.verification.notice', ['slug' => $contractor->slug]));
+        $response->assertSessionHas('status', 'Nao foi possivel enviar o e-mail agora. Tente novamente em instantes.');
     }
 
     private function createContractor(string $slug, bool $requireEmailVerification = true): Contractor
