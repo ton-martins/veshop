@@ -78,7 +78,7 @@ Objetivos centrais:
 |---|---|---|---|
 | 1 | Login/cadastro da loja + UX de navegação + segmentação de layouts | Parcial | Alta |
 | 2 | Fluxo de pedidos online completo + QR-code + central de pedidos | Parcial | Crítica |
-| 3 | E-mail de verificação em produção + endereço obrigatório no cadastro | Parcial (com risco operacional) | Crítica |
+| 3 | E-mail de verificação em produção + endereço obrigatório no cadastro | Parcial (estabilizado em produção) | Alta |
 | 4 | Estratégia de gateways de pagamento (Mercado Pago e outros) | Parcial | Alta |
 | 5 | Notificações in-app + e-mail + WhatsApp para admin | Parcial | Alta |
 | 6 | Módulo de vendas e estoque (evolução funcional completa) | Parcial | Alta |
@@ -87,7 +87,7 @@ Objetivos centrais:
 | 9 | Relatórios assíncronos em PDF e Excel | Parcial | Média |
 | 10 | Adaptação por nicho de serviços e menus dinâmicos por cenário | Parcial | Crítica |
 | 11 | Centralizar módulos na página de planos (fonte única de permissões) | Parcial | Alta |
-| 12 | Correção de problemas de login/2FA em produção | Pendente (bug) | Crítica |
+| 12 | Correção de problemas de login/2FA em produção | Parcial (estabilizado; monitoramento) | Alta |
 | 13 | Termos e política na landing e consentimento no login | Pendente | Média |
 | 14 | Segurança e isolamento de dados multi-tenant (hardening completo) | Parcial (alto impacto) | Crítica |
 
@@ -143,20 +143,20 @@ Melhor prática recomendada:
 
 Status atual:
 
-- Parcial com risco operacional.
-- `ShopCustomer` usa verificação de e-mail e notification em fila.
-- Cadastro atual da loja ainda aceita endereço opcional.
+- Parcial estabilizado.
+- Envio de verificação de e-mail normalizado em produção com configuração SMTP validada.
+- Cadastro de cliente na loja exige endereço obrigatório (CEP, logradouro, bairro, cidade e UF).
 
 Lacunas:
 
-- garantir worker ativo para fila de e-mails em produção;
-- validar configuração SMTP real de homolog/produção;
-- tornar endereço obrigatório no cadastro da loja (CEP, logradouro, número, bairro, cidade, UF).
+- manter monitoramento do worker/fila `emails` e `failed_jobs`;
+- validar alertas operacionais para falhas de envio;
+- executar smoke test de cadastro + verificação após cada deploy.
 
 Melhor prática recomendada:
 
-- monitoramento de filas (`emails`, `failed_jobs`) com alertas;
-- health-check de envio SMTP e logs de rejeição;
+- monitoramento de filas com alerta ativo;
+- health-check de envio SMTP com rastreabilidade por log;
 - validações de endereço obrigatórias no backend e frontend.
 
 ### 5.4 Frente 4 - Estratégia de gateway de pagamento do contratante
@@ -313,18 +313,20 @@ Melhor prática recomendada:
 
 Status atual:
 
-- Pendente com impacto de UX e confiabilidade.
+- Parcial estabilizado, com monitoramento.
+- Ajustes de resposta Inertia e validação reduziram o erro de modal branco/falha de conexão.
+- Fluxo de login/2FA segue sem recarregamento manual nos cenários cobertos.
 
-Sintomas informados:
+Lacunas:
 
-- necessidade de recarregar página após 2FA para entrar no sistema;
-- em erro de senha aparece falha de conexão em vez de mensagem amigável.
+- validar regressão em produção com smoke test por navegador;
+- manter observabilidade de sessão, cookies e respostas 302/303 em erro de credencial.
 
 Melhor prática recomendada:
 
-- investigação orientada a evidência: logs de aplicação, sessão, cookies e reverse proxy;
-- validar `SESSION_DOMAIN`, `SESSION_SECURE_COOKIE`, `SameSite`, headers de proxy e comportamento Inertia;
-- testes E2E específicos para fluxo de autenticação e falha de credenciais.
+- manter testes de autenticação e Inertia no pipeline;
+- validar `SESSION_DOMAIN`, `SESSION_SECURE_COOKIE`, `SameSite` e headers de proxy;
+- manter checklist de validação rápida após deploy de auth.
 
 ### 5.13 Frente 13 - Termos e políticas + consentimento no login
 
@@ -378,8 +380,8 @@ Os itens abaixo dependem de decisão de produto e priorização com você para e
 
 ### Fase 0 - Correções críticas de produção
 
-1. Frente 3: estabilizar envio de e-mail de verificação e tornar endereço obrigatório no cadastro da loja.
-2. Frente 12: corrigir fluxo de login/2FA e mensagens de erro.
+1. Frente 3: manter monitoramento ativo de fila/e-mail e smoke test pós-deploy.
+2. Frente 12: validar regressões de login/2FA em produção (Chrome/Edge) e manter observabilidade de sessão.
 3. Frente 14: iniciar hardening de segurança e isolamento.
 
 ### Fase 1 - Conversão de receita (pedido + pagamento)
