@@ -4,8 +4,9 @@ import Modal from '@/Components/Modal.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
-import { Head, useForm } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { useBranding } from '@/branding';
+import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { computed, onMounted, ref, watch } from 'vue';
 import {
     CalendarClock,
     AlertTriangle,
@@ -16,6 +17,8 @@ import {
     Filter,
     Plus,
     CreditCard,
+    List,
+    LayoutGrid,
     PlugZap,
     HandCoins,
     ShieldCheck,
@@ -38,6 +41,21 @@ const props = defineProps({
         }),
     },
 });
+
+const page = usePage();
+const { normalizeHex, withAlpha, secondaryColor } = useBranding();
+const currentContractor = computed(() => page.props.contractorContext?.current ?? null);
+const tabAccentColor = computed(() =>
+    normalizeHex(currentContractor.value?.brand_primary_color || '', secondaryColor.value),
+);
+const financeUiStyles = computed(() => ({
+    '--finance-tab-active': tabAccentColor.value,
+    '--finance-tab-active-soft': withAlpha(tabAccentColor.value, 0.12),
+    '--finance-tab-active-border': withAlpha(tabAccentColor.value, 0.28),
+    '--finance-toggle-color': secondaryColor.value,
+    '--finance-toggle-color-soft': withAlpha(secondaryColor.value, 0.16),
+    '--finance-toggle-color-soft-hover': withAlpha(secondaryColor.value, 0.22),
+}));
 
 const allowedTabs = new Set(['payables', 'receivables', 'payments']);
 const activeTab = ref(allowedTabs.has(props.initialTab) ? props.initialTab : 'payables');
@@ -62,39 +80,74 @@ const setActiveTab = (tab) => {
     }
 };
 
+const TABLE_VIEW_STORAGE_KEY = 'veshop:table-view-mode';
+const allowedTableViewModes = new Set(['list', 'cards']);
+const tableViewMode = ref('list');
+
+const normalizeTableViewMode = (value) => {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return allowedTableViewModes.has(normalized) ? normalized : 'list';
+};
+
+const persistTableViewMode = (mode) => {
+    if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('data-table-view-mode', mode);
+    }
+
+    if (typeof window !== 'undefined') {
+        window.localStorage.setItem(TABLE_VIEW_STORAGE_KEY, mode);
+    }
+};
+
+const setTableViewMode = (mode) => {
+    const normalized = normalizeTableViewMode(mode);
+    tableViewMode.value = normalized;
+    persistTableViewMode(normalized);
+};
+
+onMounted(() => {
+    const fromDom =
+        typeof document !== 'undefined'
+            ? document.documentElement.getAttribute('data-table-view-mode')
+            : '';
+    const fromStorage =
+        typeof window !== 'undefined'
+            ? window.localStorage.getItem(TABLE_VIEW_STORAGE_KEY)
+            : '';
+
+    setTableViewMode(normalizeTableViewMode(fromDom || fromStorage));
+});
+
 const tabs = [
     {
         key: 'payables',
         label: 'Contas a pagar',
-        description: 'Despesas, fornecedores e saídas previstas.',
         icon: WalletCards,
     },
     {
         key: 'receivables',
         label: 'Contas a receber',
-        description: 'Cobranças, clientes e entradas previstas.',
         icon: Banknote,
     },
     {
         key: 'payments',
         label: 'Pagamentos',
-        description: 'Gateway e formas para o PDV.',
         icon: CreditCard,
     },
 ];
 
 const payablesStats = [
-    { key: 'next_7', label: 'A vencer (7 dias)', value: 'R$ 0,00', icon: CalendarClock, tone: 'bg-blue-100 text-blue-700' },
-    { key: 'late', label: 'Vencido', value: 'R$ 0,00', icon: AlertTriangle, tone: 'bg-amber-100 text-amber-700' },
-    { key: 'paid', label: 'Pago no mês', value: 'R$ 0,00', icon: CheckCircle2, tone: 'bg-emerald-100 text-emerald-700' },
-    { key: 'projection', label: 'Saída projetada', value: 'R$ 0,00', icon: WalletCards, tone: 'bg-slate-100 text-slate-700' },
+    { key: 'next_7', label: 'A vencer (7 dias)', value: 'R$ 0,00', icon: CalendarClock, tone: 'text-slate-700' },
+    { key: 'late', label: 'Vencido', value: 'R$ 0,00', icon: AlertTriangle, tone: 'text-slate-700' },
+    { key: 'paid', label: 'Pago no mês', value: 'R$ 0,00', icon: CheckCircle2, tone: 'text-slate-700' },
+    { key: 'projection', label: 'Saída projetada', value: 'R$ 0,00', icon: WalletCards, tone: 'text-slate-700' },
 ];
 
 const receivablesStats = [
-    { key: 'next_7', label: 'A receber (7 dias)', value: 'R$ 0,00', icon: CalendarClock, tone: 'bg-blue-100 text-blue-700' },
-    { key: 'late', label: 'Atrasado', value: 'R$ 0,00', icon: AlertTriangle, tone: 'bg-amber-100 text-amber-700' },
-    { key: 'received', label: 'Recebido no mês', value: 'R$ 0,00', icon: CheckCircle2, tone: 'bg-emerald-100 text-emerald-700' },
-    { key: 'default', label: 'Inadimplência', value: '0%', icon: Banknote, tone: 'bg-slate-100 text-slate-700' },
+    { key: 'next_7', label: 'A receber (7 dias)', value: 'R$ 0,00', icon: CalendarClock, tone: 'text-slate-700' },
+    { key: 'late', label: 'Atrasado', value: 'R$ 0,00', icon: AlertTriangle, tone: 'text-slate-700' },
+    { key: 'received', label: 'Recebido no mês', value: 'R$ 0,00', icon: CheckCircle2, tone: 'text-slate-700' },
+    { key: 'default', label: 'Inadimplência', value: '0%', icon: Banknote, tone: 'text-slate-700' },
 ];
 
 const payables = [];
@@ -165,28 +218,28 @@ const paymentStats = computed(() => {
             label: 'Gateways',
             value: String(stats.gateways_total ?? 0),
             icon: PlugZap,
-            tone: 'bg-blue-100 text-blue-700',
+            tone: 'text-slate-700',
         },
         {
             key: 'gateways_active',
             label: 'Gateways ativos',
             value: String(stats.gateways_active ?? 0),
             icon: ShieldCheck,
-            tone: 'bg-emerald-100 text-emerald-700',
+            tone: 'text-slate-700',
         },
         {
             key: 'methods_total',
             label: 'Formas cadastradas',
             value: String(stats.methods_total ?? 0),
             icon: HandCoins,
-            tone: 'bg-amber-100 text-amber-700',
+            tone: 'text-slate-700',
         },
         {
             key: 'methods_active',
             label: 'Formas ativas',
             value: String(stats.methods_active ?? 0),
             icon: CreditCard,
-            tone: 'bg-slate-100 text-slate-700',
+            tone: 'text-slate-700',
         },
     ];
 });
@@ -421,27 +474,27 @@ const methodCodeLabel = (code) => {
 <template>
     <Head title="Contas" />
 
-    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Contas">
-        <section class="space-y-4">
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <button
-                    v-for="tab in tabs"
-                    :key="tab.key"
-                    type="button"
-                    class="rounded-2xl border bg-white p-4 text-left shadow-sm transition"
-                    :class="activeTab === tab.key ? 'border-slate-900 ring-1 ring-slate-900/10' : 'border-slate-200 hover:border-slate-300'"
-                    @click="setActiveTab(tab.key)"
-                >
-                    <div class="flex items-start justify-between gap-3">
-                        <div>
-                            <p class="text-sm font-semibold text-slate-900">{{ tab.label }}</p>
-                            <p class="mt-1 text-xs text-slate-500">{{ tab.description }}</p>
-                        </div>
-                        <span class="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-                            <component :is="tab.icon" class="h-4 w-4" />
-                        </span>
-                    </div>
-                </button>
+    <AuthenticatedLayout
+        area="admin"
+        header-variant="compact"
+        header-title="Contas"
+        :show-table-view-toggle="false"
+    >
+        <section class="space-y-4" :style="financeUiStyles">
+            <div class="finance-tabs-shell">
+                <div class="finance-tabs-track">
+                    <button
+                        v-for="tab in tabs"
+                        :key="tab.key"
+                        type="button"
+                        class="finance-tab"
+                        :class="activeTab === tab.key ? 'is-active' : ''"
+                        @click="setActiveTab(tab.key)"
+                    >
+                        <component :is="tab.icon" class="h-4 w-4" />
+                        <span class="truncate">{{ tab.label }}</span>
+                    </button>
+                </div>
             </div>
 
             <template v-if="activeTab === 'payments'">
@@ -456,8 +509,8 @@ const methodCodeLabel = (code) => {
                                 <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
                                 <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
                             </div>
-                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
-                                <component :is="stat.icon" class="h-4 w-4" />
+                            <span class="finance-stat-icon inline-flex h-10 w-10 items-center justify-center rounded-xl" :class="stat.tone">
+                                <component :is="stat.icon" class="h-5 w-5" />
                             </span>
                         </div>
                     </article>
@@ -644,8 +697,8 @@ const methodCodeLabel = (code) => {
                                 <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
                                 <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
                             </div>
-                            <span class="inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
-                                <component :is="stat.icon" class="h-4 w-4" />
+                            <span class="finance-stat-icon inline-flex h-10 w-10 items-center justify-center rounded-xl" :class="stat.tone">
+                                <component :is="stat.icon" class="h-5 w-5" />
                             </span>
                         </div>
                     </article>
@@ -680,6 +733,29 @@ const methodCodeLabel = (code) => {
                             <button type="button" class="inline-flex w-full items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 sm:w-auto">
                                 <Plus class="h-3.5 w-3.5" />
                                 {{ actionLabel }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 flex justify-end">
+                        <div class="veshop-table-view-toggle finance-table-view-toggle">
+                            <button
+                                type="button"
+                                class="finance-view-btn inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
+                                :class="tableViewMode === 'list' ? 'is-active' : ''"
+                                @click="setTableViewMode('list')"
+                            >
+                                <List class="h-3.5 w-3.5" />
+                                Lista
+                            </button>
+                            <button
+                                type="button"
+                                class="finance-view-btn inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition"
+                                :class="tableViewMode === 'cards' ? 'is-active' : ''"
+                                @click="setTableViewMode('cards')"
+                            >
+                                <LayoutGrid class="h-3.5 w-3.5" />
+                                Cards
                             </button>
                         </div>
                     </div>
@@ -931,3 +1007,81 @@ const methodCodeLabel = (code) => {
     </AuthenticatedLayout>
 </template>
 
+<style scoped>
+.finance-tabs-shell {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+
+.finance-tabs-shell::-webkit-scrollbar {
+    height: 6px;
+}
+
+.finance-tabs-shell::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: rgba(148, 163, 184, 0.45);
+}
+
+.finance-tabs-track {
+    display: inline-flex;
+    min-width: max-content;
+    gap: 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.95rem;
+    background: #ffffff;
+    padding: 0.3rem;
+}
+
+.finance-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid transparent;
+    border-radius: 0.72rem;
+    min-height: 38px;
+    padding: 0.6rem 0.95rem;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.finance-tab:hover {
+    background: #f8fafc;
+    color: #0f172a;
+}
+
+.finance-tab.is-active {
+    border-color: var(--finance-tab-active-border);
+    background: var(--finance-tab-active);
+    color: #ffffff;
+}
+
+.finance-table-view-toggle {
+    border-color: var(--finance-toggle-color-soft);
+    background: #ffffff;
+}
+
+.finance-view-btn {
+    background: transparent;
+    color: #334155;
+}
+
+.finance-view-btn:hover {
+    background: transparent;
+    color: #0f172a;
+}
+
+.finance-view-btn.is-active {
+    background: var(--finance-toggle-color);
+    color: #ffffff;
+}
+
+.finance-stat-icon {
+    background: #f1f5f9;
+}
+</style>

@@ -11,6 +11,7 @@ import {
     Menu,
     X,
     ChevronDown,
+    ChevronUp,
     ChevronLeft,
     ChevronRight,
     List,
@@ -52,6 +53,7 @@ import trophyIcon from '@iconify-icons/iconoir/trophy';
 import navigatorAltIcon from '@iconify-icons/iconoir/navigator-alt';
 import sendMailIcon from '@iconify-icons/iconoir/send-mail';
 import circleIcon from '@iconify-icons/iconoir/circle';
+import logOutIcon from '@iconify-icons/iconoir/log-out';
 import angleDownIcon from '@iconify-icons/la/angle-down';
 import angleRightIcon from '@iconify-icons/la/angle-right';
 
@@ -61,6 +63,7 @@ const props = defineProps({
     headerVariant: { type: String, default: 'compact' },
     headerTitle: { type: String, default: '' },
     headerIcon: { type: String, default: '' },
+    showTableViewToggle: { type: Boolean, default: true },
 });
 
 const menuArrowIcons = {
@@ -401,6 +404,8 @@ const expandedGroups = ref(new Set());
 const slots = useSlots();
 const appMainRef = ref(null);
 const markNotificationsForm = useForm({ id: '' });
+const userMenuOpen = ref(false);
+const userMenuRef = ref(null);
 
 const TABLE_VIEW_STORAGE_KEY = 'veshop:table-view-mode';
 const allowedTableViewModes = new Set(['list', 'cards']);
@@ -507,6 +512,9 @@ const showDefaultHeader = computed(
         hasDefaultHeaderContent.value,
 );
 const showHeader = computed(() => hasHeaderSlot.value || showDefaultHeader.value);
+const shouldShowTableViewToggle = computed(
+    () => props.showTableViewToggle && hasAdaptiveTables.value,
+);
 
 const defaultHeaderTitleClass = computed(
     () => 'text-xl font-semibold text-slate-900',
@@ -559,6 +567,20 @@ const ensureExpandedGroups = () => {
     persistExpandedGroups();
 };
 
+const closeUserMenu = () => {
+    userMenuOpen.value = false;
+};
+
+const handleUserMenuClickOutside = (event) => {
+    if (!userMenuOpen.value) return;
+
+    const container = userMenuRef.value;
+    if (!container) return;
+    if (container.contains(event.target)) return;
+
+    closeUserMenu();
+};
+
 watch(menuGroups, ensureExpandedGroups, { immediate: true });
 
 onMounted(() => {
@@ -596,6 +618,10 @@ onMounted(() => {
     if (typeof window !== 'undefined') {
         window.addEventListener('keydown', handleGlobalKeydown);
     }
+
+    if (typeof document !== 'undefined') {
+        document.addEventListener('mousedown', handleUserMenuClickOutside);
+    }
 });
 
 watch(sidebarCollapsed, () => {
@@ -604,6 +630,8 @@ watch(sidebarCollapsed, () => {
     } catch {
         // ignore
     }
+
+    closeUserMenu();
 });
 
 watch(tableViewMode, (mode) => {
@@ -626,6 +654,7 @@ watch(
     () => page.url,
     () => {
         scheduleAdaptiveTablesHydration();
+        closeUserMenu();
     },
     { flush: 'post' },
 );
@@ -649,6 +678,10 @@ onBeforeUnmount(() => {
 
     if (typeof window !== 'undefined') {
         window.removeEventListener('keydown', handleGlobalKeydown);
+    }
+
+    if (typeof document !== 'undefined') {
+        document.removeEventListener('mousedown', handleUserMenuClickOutside);
     }
 });
 
@@ -739,6 +772,10 @@ const handleGlobalKeydown = (event) => {
 
     if (notificationsPanelOpen.value) {
         closeNotificationsPanel();
+    }
+
+    if (userMenuOpen.value) {
+        closeUserMenu();
     }
 
     if (sidebarOpen.value) {
@@ -891,40 +928,52 @@ const handleGlobalKeydown = (event) => {
                     </div>
 
                     <div class="veshop-sidebar-foot" :class="sidebarCollapsed ? 'is-collapsed' : ''">
-                        <div class="veshop-foot-user" :class="sidebarCollapsed ? 'justify-center' : ''">
-                            <div class="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-700 ring-1 ring-slate-200">
-                                <img v-if="userAvatarUrl" :src="userAvatarUrl" :alt="user?.name ?? 'Avatar'" class="h-full w-full object-cover" />
-                                <span v-else class="text-sm font-semibold text-slate-700">{{ userInitial }}</span>
-                                <span class="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
-                            </div>
-                            <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
-                                <p class="truncate text-sm font-semibold text-slate-900">{{ user?.name ?? 'Usuário' }}</p>
-                                <p class="truncate text-xs text-slate-600">{{ user?.email ?? '' }}</p>
-                            </div>
-                        </div>
+                        <div ref="userMenuRef" class="veshop-foot-popover">
+                            <button
+                                type="button"
+                                class="veshop-foot-user-trigger"
+                                :class="{ 'is-collapsed': sidebarCollapsed, 'is-open': userMenuOpen }"
+                                title="Menu do usuário"
+                                aria-haspopup="menu"
+                                :aria-expanded="userMenuOpen ? 'true' : 'false'"
+                                @click="userMenuOpen = !userMenuOpen"
+                            >
+                                <div class="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-700 ring-1 ring-slate-200">
+                                    <img v-if="userAvatarUrl" :src="userAvatarUrl" :alt="user?.name ?? 'Avatar'" class="h-full w-full object-cover" />
+                                    <span v-else class="text-sm font-semibold text-slate-700">{{ userInitial }}</span>
+                                    <span class="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
+                                </div>
+                                <div v-if="!sidebarCollapsed" class="veshop-foot-user-meta min-w-0 flex-1">
+                                    <p class="truncate text-sm font-semibold text-slate-900">{{ user?.name ?? 'Usuário' }}</p>
+                                    <p class="truncate text-xs text-slate-600">{{ user?.email ?? '' }}</p>
+                                </div>
+                                <span v-if="!sidebarCollapsed" class="veshop-foot-user-arrow-btn" aria-hidden="true">
+                                    <ChevronUp class="veshop-foot-user-arrow" />
+                                </span>
+                            </button>
 
-                        <template v-if="!sidebarCollapsed">
-                            <div class="veshop-foot-actions">
-                                <Link :href="safeRoute('profile.edit', '/profile')" class="veshop-foot-btn">
-                                    <UserCircle2 class="h-4 w-4" />
-                                    Perfil
-                                </Link>
-                                <button type="button" @click="doLogout" class="veshop-foot-btn is-danger">
-                                    <LogOut class="h-4 w-4" />
-                                    Sair
-                                </button>
-                            </div>
-                        </template>
-                        <template v-else>
-                            <div class="flex flex-col items-center gap-2">
-                                <Link :href="safeRoute('profile.edit', '/profile')" class="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-700 ring-1 ring-slate-200/80 transition hover:bg-slate-100" title="Perfil" aria-label="Perfil">
-                                    <UserCircle2 class="h-4 w-4" />
-                                </Link>
-                                <button type="button" @click="doLogout" class="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-700 ring-1 ring-rose-200/80 transition hover:bg-rose-100" title="Sair" aria-label="Sair">
-                                    <LogOut class="h-4 w-4" />
-                                </button>
-                            </div>
-                        </template>
+                            <transition name="fade">
+                                <div
+                                    v-if="userMenuOpen"
+                                    class="veshop-foot-menu-popover"
+                                    :class="sidebarCollapsed ? 'is-collapsed' : ''"
+                                    role="menu"
+                                >
+                                    <Link :href="safeRoute('profile.edit', '/profile')" class="veshop-foot-menu-link" @click="closeUserMenu">
+                                        <span class="veshop-foot-menu-main">
+                                            <Icon :icon="userIcon" class="veshop-foot-menu-icon" />
+                                            <span class="truncate">Perfil</span>
+                                        </span>
+                                    </Link>
+                                    <button type="button" @click="closeUserMenu(); doLogout()" class="veshop-foot-menu-link is-danger">
+                                        <span class="veshop-foot-menu-main">
+                                            <Icon :icon="logOutIcon" class="veshop-foot-menu-icon" />
+                                            <span class="truncate">Sair</span>
+                                        </span>
+                                    </button>
+                                </div>
+                            </transition>
+                        </div>
                     </div>
                 </aside>
 
@@ -953,7 +1002,7 @@ const handleGlobalKeydown = (event) => {
                                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                     <h1 v-if="resolvedHeaderTitle" :class="defaultHeaderTitleClass">{{ resolvedHeaderTitle }}</h1>
 
-                                    <div v-if="hasAdaptiveTables" class="flex justify-end">
+                                    <div v-if="shouldShowTableViewToggle" class="flex justify-end">
                                         <div class="veshop-table-view-toggle">
                                             <button
                                                 type="button"
@@ -978,7 +1027,7 @@ const handleGlobalKeydown = (event) => {
                                 </div>
                             </template>
 
-                            <div v-if="hasAdaptiveTables && !showDefaultHeader" class="mt-4 flex justify-end">
+                            <div v-if="shouldShowTableViewToggle && !showDefaultHeader" class="mt-4 flex justify-end">
                                 <div class="veshop-table-view-toggle">
                                     <button
                                         type="button"
@@ -1615,51 +1664,132 @@ const handleGlobalKeydown = (event) => {
     padding: 12px 8px;
 }
 
-.veshop-foot-user {
+.veshop-foot-popover {
+    position: relative;
+}
+
+.veshop-foot-user-trigger {
     display: flex;
+    width: 100%;
     align-items: center;
     gap: 12px;
     border-radius: 10px;
+    border: 1px solid transparent;
     padding: 6px 10px;
+    color: var(--veshop-menu-ink);
+    text-align: left;
+    transition: background-color 160ms ease, color 160ms ease;
 }
 
-.veshop-foot-actions {
-    margin-top: 10px;
-    display: grid;
-    gap: 8px;
+.veshop-foot-user-trigger:hover,
+.veshop-foot-user-trigger.is-open {
+    background-color: var(--veshop-menu-active-soft);
+    color: var(--veshop-menu-active);
 }
 
-.veshop-foot-btn {
+.veshop-foot-user-trigger.is-collapsed {
+    justify-content: center;
+    padding: 6px;
+}
+
+.veshop-foot-user-meta {
+    text-align: left;
+}
+
+.veshop-foot-user-arrow-btn {
     display: inline-flex;
+    width: 24px;
+    height: 24px;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    border: 1px solid #dbe2ee;
+    border: 1px solid #e2e8f0;
+    border-radius: 9999px;
+    background-color: #f8fafc;
+    flex-shrink: 0;
+    transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.veshop-foot-user-trigger:hover .veshop-foot-user-arrow-btn,
+.veshop-foot-user-trigger.is-open .veshop-foot-user-arrow-btn {
+    border-color: #cbd5e1;
+    background-color: #eef2f7;
+}
+
+.veshop-foot-user-arrow {
+    color: var(--veshop-menu-icon);
+    transition: color 160ms ease;
+}
+
+.veshop-foot-user-trigger:hover .veshop-foot-user-arrow,
+.veshop-foot-user-trigger.is-open .veshop-foot-user-arrow {
+    color: var(--veshop-menu-active);
+}
+
+.veshop-foot-menu-popover {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 8px);
+    border: 1px solid #e2e8f0;
     border-radius: 10px;
     background-color: #ffffff;
-    padding: 7px 10px;
-    color: #334155;
-    font-size: 12px;
+    padding: 4px;
+    box-shadow: 0 16px 32px -24px rgba(15, 23, 42, 0.85);
+    z-index: 30;
+}
+
+.veshop-foot-menu-popover.is-collapsed {
+    left: 50%;
+    right: auto;
+    width: 200px;
+    transform: translateX(-50%);
+}
+
+.veshop-foot-menu-link {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 9px 12px;
+    color: var(--veshop-menu-ink);
+    font-size: 13px;
     font-weight: 500;
-    transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+    line-height: 1.3;
+    transition: background-color 160ms ease, color 160ms ease;
 }
 
-.veshop-foot-btn:hover {
-    border-color: #cbd5e1;
-    background-color: #f8fafc;
-    color: #0f172a;
+.veshop-foot-menu-link:hover {
+    background-color: var(--veshop-menu-active-soft);
+    color: var(--veshop-menu-active);
 }
 
-.veshop-foot-btn.is-danger {
-    border-color: #fecdd3;
-    background-color: #fff1f2;
+.veshop-foot-menu-main {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+}
+
+.veshop-foot-menu-icon {
+    margin-right: 16px;
+    font-size: 20px;
+    color: var(--veshop-menu-icon);
+    flex-shrink: 0;
+    transition: color 160ms ease;
+}
+
+.veshop-foot-menu-link:hover .veshop-foot-menu-icon {
+    color: var(--veshop-menu-active);
+}
+
+.veshop-foot-menu-link.is-danger:hover {
+    background-color: rgba(225, 29, 72, 0.08);
     color: #be123c;
 }
 
-.veshop-foot-btn.is-danger:hover {
-    border-color: #fda4af;
-    background-color: #ffe4e6;
-    color: #9f1239;
+.veshop-foot-menu-link.is-danger:hover .veshop-foot-menu-icon {
+    color: #be123c;
 }
 
 .fade-enter-active,
