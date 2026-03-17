@@ -41,7 +41,8 @@ class VerifyShopCustomerEmailNotification extends Notification implements Should
             ->greeting('Olá!')
             ->line('Para continuar seu cadastro e finalizar pedidos, confirme seu endereço de e-mail.')
             ->action('Confirmar e-mail', $verificationUrl)
-            ->line('Se você não criou esta conta, ignore esta mensagem.');
+            ->line('Se você não criou esta conta, ignore esta mensagem.')
+            ->salutation("Atenciosamente,\nVeshop");
     }
 
     public function failed(Throwable $exception): void
