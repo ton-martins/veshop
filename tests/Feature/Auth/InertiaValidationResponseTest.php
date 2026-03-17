@@ -33,10 +33,8 @@ class InertiaValidationResponseTest extends TestCase
                 'password' => 'wrong-password',
             ]);
 
-        $this->assertTrue(
-            $response->isRedirect(),
-            'Inertia validation response should be a redirect, not plain JSON.'
-        );
+        $response->assertStatus(409);
+        $response->assertHeader('X-Inertia-Location', url('/login'));
     }
 
     public function test_invalid_shop_login_with_inertia_headers_does_not_return_plain_json_validation_payload(): void
@@ -79,9 +77,7 @@ class InertiaValidationResponseTest extends TestCase
                 'password' => 'wrong-password',
             ]);
 
-        $this->assertTrue(
-            $response->isRedirect(),
-            'Inertia validation response for shop login should be a redirect, not plain JSON.'
-        );
+        $response->assertStatus(409);
+        $response->assertHeader('X-Inertia-Location', url("/shop/{$contractor->slug}/entrar"));
     }
 }

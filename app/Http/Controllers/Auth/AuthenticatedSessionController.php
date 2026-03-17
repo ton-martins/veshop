@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 class AuthenticatedSessionController extends Controller
 {
@@ -28,7 +29,7 @@ class AuthenticatedSessionController extends Controller
     /**
      * Handle an incoming authentication request.
      */
-    public function store(LoginRequest $request): RedirectResponse
+    public function store(LoginRequest $request): RedirectResponse|HttpResponse
     {
         $request->authenticate();
 
@@ -47,10 +48,10 @@ class AuthenticatedSessionController extends Controller
         $request->session()->put('two_factor_passed', false);
 
         if (! $request->user()?->hasTwoFactorEnabled()) {
-            return redirect()->route('two-factor.setup');
+            return $this->redirectForInertia($request, route('two-factor.setup'));
         }
 
-        return redirect()->route('two-factor.challenge');
+        return $this->redirectForInertia($request, route('two-factor.challenge'));
     }
 
     /**
@@ -65,5 +66,14 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerateToken();
 
         return redirect('/');
+    }
+
+    private function redirectForInertia(Request $request, string $targetUrl): RedirectResponse|HttpResponse
+    {
+        if ($request->headers->has('X-Inertia')) {
+            return Inertia::location($targetUrl);
+        }
+
+        return redirect()->to($targetUrl);
     }
 }
