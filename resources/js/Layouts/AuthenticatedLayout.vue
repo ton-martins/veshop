@@ -6,37 +6,7 @@ import { useBranding } from '@/branding';
 import { masterMenuGroups } from '@/navigation/masterMenu';
 import { adminMenuGroups } from '@/navigation/adminMenu';
 import {
-    LayoutDashboard,
-    BarChart3,
-    ChartNoAxesCombined,
-    Box,
-    Boxes,
-    Tags,
-    Briefcase,
-    Cog,
-    ClipboardList,
-    ShoppingBag,
-    UsersRound,
-    Users,
-    Users2,
-    UserRound,
-    Building2,
-    ServerCog,
-    Truck,
-    Network,
-    LifeBuoy,
     UserCircle2,
-    History,
-    WalletCards,
-    CreditCard,
-    CircleDollarSign,
-    Banknote,
-    PieChart,
-    Clock3,
-    FileText,
-    CircleCheckBig,
-    CalendarClock,
-    ReceiptText,
     LogOut,
     Menu,
     X,
@@ -45,12 +15,45 @@ import {
     ChevronRight,
     List,
     LayoutGrid,
-    Palette,
-    Store,
-    Package,
-    BookOpenCheck,
     Bell,
 } from 'lucide-vue-next';
+import { Icon } from '@iconify/vue';
+import homeSimpleIcon from '@iconify-icons/iconoir/home-simple';
+import candlestickChartIcon from '@iconify-icons/iconoir/candlestick-chart';
+import boxIsoIcon from '@iconify-icons/iconoir/box-iso';
+import boxIcon from '@iconify-icons/iconoir/box';
+import onTagIcon from '@iconify-icons/iconoir/on-tag';
+import largeSuitcaseIcon from '@iconify-icons/iconoir/large-suitcase';
+import settingsIcon from '@iconify-icons/iconoir/settings';
+import clipboardCheckIcon from '@iconify-icons/iconoir/clipboard-check';
+import shoppingBagIcon from '@iconify-icons/iconoir/shopping-bag';
+import groupIcon from '@iconify-icons/iconoir/group';
+import userIcon from '@iconify-icons/iconoir/user';
+import cityIcon from '@iconify-icons/iconoir/city';
+import serverConnectionIcon from '@iconify-icons/iconoir/server-connection';
+import truckIcon from '@iconify-icons/iconoir/truck';
+import networkIcon from '@iconify-icons/iconoir/network';
+import lifebeltIcon from '@iconify-icons/iconoir/lifebelt';
+import clockIcon from '@iconify-icons/iconoir/clock';
+import walletIcon from '@iconify-icons/iconoir/wallet';
+import percentageCircleIcon from '@iconify-icons/iconoir/percentage-circle';
+import journalPageIcon from '@iconify-icons/iconoir/journal-page';
+import checkCircleIcon from '@iconify-icons/iconoir/check-circle';
+import calendarIcon from '@iconify-icons/iconoir/calendar';
+import notesIcon from '@iconify-icons/iconoir/notes';
+import paletteIcon from '@iconify-icons/iconoir/palette';
+import shopIcon from '@iconify-icons/iconoir/shop';
+import packageIcon from '@iconify-icons/iconoir/package';
+import bellIcon from '@iconify-icons/iconoir/bell';
+import compactDiscIcon from '@iconify-icons/iconoir/compact-disc';
+import peaceHandIcon from '@iconify-icons/iconoir/peace-hand';
+import tableRowsIcon from '@iconify-icons/iconoir/table-rows';
+import trophyIcon from '@iconify-icons/iconoir/trophy';
+import navigatorAltIcon from '@iconify-icons/iconoir/navigator-alt';
+import sendMailIcon from '@iconify-icons/iconoir/send-mail';
+import circleIcon from '@iconify-icons/iconoir/circle';
+import angleDownIcon from '@iconify-icons/la/angle-down';
+import angleRightIcon from '@iconify-icons/la/angle-right';
 
 const props = defineProps({
     hideNav: { type: Boolean, default: false },
@@ -60,49 +63,53 @@ const props = defineProps({
     headerIcon: { type: String, default: '' },
 });
 
-const iconMap = {
-    LayoutDashboard,
-    BarChart3,
-    ChartNoAxesCombined,
-    Box,
-    Boxes,
-    Tags,
-    Briefcase,
-    Cog,
-    ClipboardList,
-    ShoppingBag,
-    UsersRound,
-    Users,
-    Users2,
-    UserRound,
-    Building2,
-    ServerCog,
-    Truck,
-    Network,
-    LifeBuoy,
-    UserCircle2,
-    History,
-    WalletCards,
-    CreditCard,
-    CircleDollarSign,
-    Banknote,
-    PieChart,
-    Clock3,
-    FileText,
-    CircleCheckBig,
-    CalendarClock,
-    ReceiptText,
-    LogOut,
-    Menu,
-    X,
-    ChevronDown,
-    ChevronLeft,
-    ChevronRight,
-    Palette,
-    Store,
-    Package,
-    BookOpenCheck,
-    Bell,
+const menuArrowIcons = {
+    down: angleDownIcon,
+    right: angleRightIcon,
+};
+
+const menuIconMap = {
+    LayoutDashboard: homeSimpleIcon,
+    BarChart3: candlestickChartIcon,
+    ChartNoAxesCombined: candlestickChartIcon,
+    Box: boxIsoIcon,
+    Boxes: boxIcon,
+    Tags: onTagIcon,
+    Briefcase: largeSuitcaseIcon,
+    Cog: settingsIcon,
+    ClipboardList: clipboardCheckIcon,
+    ShoppingBag: shoppingBagIcon,
+    UsersRound: groupIcon,
+    Users: groupIcon,
+    Users2: groupIcon,
+    UserRound: userIcon,
+    Building2: cityIcon,
+    ServerCog: serverConnectionIcon,
+    Truck: truckIcon,
+    Network: networkIcon,
+    LifeBuoy: lifebeltIcon,
+    History: clockIcon,
+    WalletCards: walletIcon,
+    CreditCard: walletIcon,
+    CircleDollarSign: walletIcon,
+    Banknote: walletIcon,
+    PieChart: percentageCircleIcon,
+    Clock3: clockIcon,
+    FileText: journalPageIcon,
+    CircleCheckBig: checkCircleIcon,
+    CalendarClock: calendarIcon,
+    ReceiptText: notesIcon,
+    Palette: paletteIcon,
+    Store: shopIcon,
+    Package: packageIcon,
+    BookOpenCheck: journalPageIcon,
+    Bell: bellIcon,
+    CompactDisc: compactDiscIcon,
+    PeaceHand: peaceHandIcon,
+    TableRows: tableRowsIcon,
+    Trophy: trophyIcon,
+    Navigator: navigatorAltIcon,
+    SendMail: sendMailIcon,
 };
 
 const page = usePage();
@@ -177,11 +184,23 @@ const {
     themeStyles,
     normalizeHex,
     primaryColor,
+    secondaryColor,
 } = useBranding();
 
 const systemBrandName = computed(() => String(brandName.value || 'Veshop'));
+const menuAccentColor = computed(() =>
+    normalizeHex(currentContractor.value?.brand_primary_color || '', secondaryColor.value),
+);
+const sidebarMenuThemeStyles = computed(() => {
+    const baseColor = menuAccentColor.value;
+
+    return {
+        '--veshop-menu-active': baseColor,
+        '--veshop-menu-active-soft': withAlpha(baseColor, 0.08),
+    };
+});
 const activeMenuBackground = computed(() => {
-    const baseColor = resolveContractorColor(currentContractor.value);
+    const baseColor = menuAccentColor.value;
 
     return {
         background: `linear-gradient(145deg, ${withAlpha(baseColor, 0.96)} 0%, ${withAlpha(baseColor, 0.86)} 55%, ${withAlpha(baseColor, 0.8)} 100%)`,
@@ -190,7 +209,6 @@ const activeMenuBackground = computed(() => {
         transform: 'translateY(-1px)',
     };
 });
-
 const contractorName = computed(() => currentContractor.value?.brand_name || currentContractor.value?.name || '');
 const contractorLogoUrl = computed(() => currentContractor.value?.brand_avatar_url || currentContractor.value?.brand_logo_url || '');
 
@@ -288,10 +306,10 @@ const switchContractorTo = (contractor) => {
 const toMenuWithIcons = (groups) =>
     groups.map((group) => ({
         ...group,
-        iconComponent: iconMap[group.icon] ?? LayoutDashboard,
-        links: group.links.map((link) => ({
+        iconToken: menuIconMap[group.icon] ?? circleIcon,
+        links: (group.links ?? []).map((link) => ({
             ...link,
-            iconComponent: iconMap[link.icon] ?? LayoutDashboard,
+            iconToken: menuIconMap[link.icon] ?? circleIcon,
         })),
     }));
 
@@ -331,6 +349,7 @@ const isLinkActive = (link) => {
 
     return patterns.some((pattern) => safeRouteCurrent(pattern));
 };
+const isGroupActive = (group) => (group?.links ?? []).some((link) => isLinkActive(link));
 
 const mobileQuickLinks = computed(() => {
     const allLinks = collapsedLinks.value;
@@ -755,40 +774,48 @@ const handleGlobalKeydown = (event) => {
 
         <template v-else>
             <div class="flex min-h-screen min-w-0 md:h-screen md:overflow-hidden">
-                <aside class="relative hidden md:flex md:sticky md:top-0 md:h-screen flex-col border-r border-slate-200 bg-white shadow-lg transition-all duration-300" :class="sidebarCollapsed ? 'w-20' : 'w-72'">
+                <aside class="veshop-startbar relative hidden md:flex md:sticky md:top-0 md:h-screen flex-col border-r border-slate-200/80 bg-white transition-all duration-300" :class="sidebarCollapsed ? 'w-20' : 'w-72'" :style="sidebarMenuThemeStyles">
                     <button type="button" class="absolute -right-3 top-6 hidden h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow transition hover:bg-slate-100 md:flex" :title="sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'" @click="toggleSidebarCollapsed">
                         <component :is="sidebarCollapsed ? ChevronRight : ChevronLeft" class="h-4 w-4" />
                     </button>
 
-                    <div class="border-b border-slate-200 px-4 py-5">
-                        <Link :href="safeRoute('home', '/home')" class="flex w-full items-center gap-3" :class="sidebarCollapsed ? 'justify-center' : ''">
-                            <div class="flex h-10 w-10 items-center justify-center rounded-md bg-slate-900 text-base font-semibold text-white">
+                    <div class="veshop-sidebar-head">
+                        <Link
+                            :href="safeRoute('home', '/home')"
+                            class="veshop-head-brand"
+                            :class="sidebarCollapsed ? 'justify-center' : ''"
+                        >
+                            <div class="veshop-head-logo">
                                 <img :src="systemIconUrl" :alt="systemBrandName" class="h-6 w-6 object-contain" />
                             </div>
-                            <div v-if="!sidebarCollapsed" class="flex flex-col leading-tight">
-                                <span class="text-sm font-semibold text-slate-900">{{ systemBrandName }}</span>
-                                <span class="mt-1 inline-flex w-fit items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                            <div v-if="!sidebarCollapsed" class="veshop-head-brand-meta">
+                                <span class="veshop-head-brand-name">{{ systemBrandName }}</span>
+                                <span class="veshop-head-chip">
                                     {{ systemContextLabel }}
                                 </span>
                             </div>
                         </Link>
 
-                        <div v-if="showContractorContext" class="mt-4 rounded-xl border border-slate-200 bg-slate-50/70" :class="sidebarCollapsed ? 'px-2 py-2' : 'px-3 py-2'">
+                        <div
+                            v-if="showContractorContext"
+                            class="veshop-head-context"
+                            :class="sidebarCollapsed ? 'is-collapsed' : ''"
+                        >
                             <div class="flex items-center gap-3" :class="sidebarCollapsed ? 'justify-center' : ''">
                                 <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70" :style="contractorLogoUrl ? null : { background: 'var(--contractor-primary)' }">
                                     <img v-if="contractorLogoUrl" :src="contractorLogoUrl" :alt="contractorName" class="h-full w-full rounded-lg object-cover" />
                                     <span v-else class="text-xs font-semibold text-white">{{ contractorInitials }}</span>
                                 </div>
-                                <div v-if="!sidebarCollapsed" class="min-w-0">
+                                <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
                                     <p class="truncate text-xs font-semibold text-slate-900">{{ contractorName }}</p>
-                                    <span class="mt-1 inline-flex w-fit items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                    <span class="veshop-head-context-chip mt-1">
                                         {{ contractorPlanName }}
                                     </span>
                                 </div>
 
                                 <Dropdown v-if="canSwitchContractor && !sidebarCollapsed" align="right" width="48" content-classes="py-2 bg-white" class="ml-auto">
                                     <template #trigger>
-                                        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50" title="Trocar contratante" aria-label="Trocar contratante">
+                                        <button type="button" class="veshop-head-action" title="Trocar contratante" aria-label="Trocar contratante">
                                             <ChevronDown class="h-4 w-4" />
                                         </button>
                                     </template>
@@ -811,27 +838,49 @@ const handleGlobalKeydown = (event) => {
                     </div>
 
                     <div class="flex-1 overflow-y-auto">
-                        <nav :class="sidebarCollapsed ? 'flex flex-col items-center gap-3 p-3' : 'space-y-3 p-4'">
+                        <nav class="veshop-sidebar-nav" :class="sidebarCollapsed ? 'is-collapsed' : ''">
                             <template v-if="sidebarCollapsed">
-                                <Link v-for="link in collapsedLinks" :key="link.key" :href="safeRoute(link.route, '#')" class="flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition" :class="isLinkActive(link) ? 'text-white' : 'hover:bg-slate-100 hover:text-slate-900'" :style="isLinkActive(link) ? activeMenuBackground : null" :title="link.label" :aria-label="link.label">
-                                    <component :is="link.iconComponent" class="h-4 w-4 opacity-90" />
+                                <Link
+                                    v-for="link in collapsedLinks"
+                                    :key="link.key"
+                                    :href="safeRoute(link.route, '#')"
+                                    class="veshop-menu-collapsed-link"
+                                    :class="isLinkActive(link) ? 'is-active' : ''"
+                                    :title="link.label"
+                                    :aria-label="link.label"
+                                >
+                                    <Icon :icon="link.iconToken" class="veshop-menu-collapsed-icon" />
                                 </Link>
                             </template>
                             <template v-else>
-                                <div v-for="group in menuGroups" :key="group.key" class="relative">
-                                    <button type="button" class="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-100" @click="toggleGroup(group.key)">
-                                        <span class="flex items-center gap-3">
-                                            <component :is="group.iconComponent" class="h-4 w-4 text-slate-600" />
-                                            {{ group.label }}
+                                <div v-for="group in menuGroups" :key="group.key" class="veshop-menu-group">
+                                    <button
+                                        type="button"
+                                        class="veshop-menu-trigger"
+                                        :class="{
+                                            'is-active': isGroupActive(group),
+                                            'is-expanded': isGroupExpanded(group.key),
+                                        }"
+                                        @click="toggleGroup(group.key)"
+                                    >
+                                        <span class="veshop-menu-trigger-main">
+                                            <Icon :icon="group.iconToken" class="veshop-menu-icon" />
+                                            <span class="truncate">{{ group.label }}</span>
                                         </span>
-                                        <ChevronDown class="h-4 w-4 text-slate-500 transition" :class="isGroupExpanded(group.key) ? 'rotate-180' : ''" />
+                                        <Icon
+                                            :icon="isGroupExpanded(group.key) ? menuArrowIcons.down : menuArrowIcons.right"
+                                            class="veshop-menu-arrow"
+                                        />
                                     </button>
                                     <transition name="fade">
-                                        <ul v-show="isGroupExpanded(group.key)" class="mt-2 space-y-1 pl-2">
-                                            <li v-for="link in group.links" :key="link.key">
-                                                <Link :href="safeRoute(link.route, '#')" class="group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition" :class="isLinkActive(link) ? 'text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'" :style="isLinkActive(link) ? activeMenuBackground : null">
-                                                    <component :is="link.iconComponent" class="h-4 w-4 opacity-90" />
-                                                    <span class="text-sm">{{ link.label }}</span>
+                                        <ul v-show="isGroupExpanded(group.key)" class="veshop-submenu">
+                                            <li v-for="link in group.links" :key="link.key" class="veshop-submenu-item">
+                                                <Link
+                                                    :href="safeRoute(link.route, '#')"
+                                                    class="veshop-submenu-link"
+                                                    :class="isLinkActive(link) ? 'is-active' : ''"
+                                                >
+                                                    <span class="truncate">{{ link.label }}</span>
                                                 </Link>
                                             </li>
                                         </ul>
@@ -841,43 +890,41 @@ const handleGlobalKeydown = (event) => {
                         </nav>
                     </div>
 
-                    <div class="border-t border-slate-200" :class="sidebarCollapsed ? 'p-3' : 'p-4'">
-                        <div class="rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm" :class="sidebarCollapsed ? 'flex flex-col items-center gap-3' : ''">
-                            <div class="flex items-center gap-3" :class="sidebarCollapsed ? 'justify-center' : ''">
-                                <div class="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-700 ring-1 ring-slate-200">
-                                    <img v-if="userAvatarUrl" :src="userAvatarUrl" :alt="user?.name ?? 'Avatar'" class="h-full w-full object-cover" />
-                                    <span v-else class="text-sm font-semibold text-slate-700">{{ userInitial }}</span>
-                                    <span class="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
-                                </div>
-                                <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
-                                    <p class="truncate text-sm font-semibold text-slate-900">{{ user?.name ?? 'Usuário' }}</p>
-                                    <p class="truncate text-xs text-slate-600">{{ user?.email ?? '' }}</p>
-                                </div>
+                    <div class="veshop-sidebar-foot" :class="sidebarCollapsed ? 'is-collapsed' : ''">
+                        <div class="veshop-foot-user" :class="sidebarCollapsed ? 'justify-center' : ''">
+                            <div class="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-700 ring-1 ring-slate-200">
+                                <img v-if="userAvatarUrl" :src="userAvatarUrl" :alt="user?.name ?? 'Avatar'" class="h-full w-full object-cover" />
+                                <span v-else class="text-sm font-semibold text-slate-700">{{ userInitial }}</span>
+                                <span class="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
                             </div>
-
-                            <template v-if="!sidebarCollapsed">
-                                <div class="mt-3 grid gap-2">
-                                    <Link :href="safeRoute('profile.edit', '/profile')" class="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200/80 transition hover:bg-slate-100">
-                                        <UserCircle2 class="h-4 w-4" />
-                                        Perfil
-                                    </Link>
-                                    <button type="button" @click="doLogout" class="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700 ring-1 ring-rose-200/80 transition hover:bg-rose-100">
-                                        <LogOut class="h-4 w-4" />
-                                        Sair
-                                    </button>
-                                </div>
-                            </template>
-                            <template v-else>
-                                <div class="flex flex-col items-center gap-2">
-                                    <Link :href="safeRoute('profile.edit', '/profile')" class="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-700 ring-1 ring-slate-200/80 transition hover:bg-slate-100" title="Perfil" aria-label="Perfil">
-                                        <UserCircle2 class="h-4 w-4" />
-                                    </Link>
-                                    <button type="button" @click="doLogout" class="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-700 ring-1 ring-rose-200/80 transition hover:bg-rose-100" title="Sair" aria-label="Sair">
-                                        <LogOut class="h-4 w-4" />
-                                    </button>
-                                </div>
-                            </template>
+                            <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
+                                <p class="truncate text-sm font-semibold text-slate-900">{{ user?.name ?? 'Usuário' }}</p>
+                                <p class="truncate text-xs text-slate-600">{{ user?.email ?? '' }}</p>
+                            </div>
                         </div>
+
+                        <template v-if="!sidebarCollapsed">
+                            <div class="veshop-foot-actions">
+                                <Link :href="safeRoute('profile.edit', '/profile')" class="veshop-foot-btn">
+                                    <UserCircle2 class="h-4 w-4" />
+                                    Perfil
+                                </Link>
+                                <button type="button" @click="doLogout" class="veshop-foot-btn is-danger">
+                                    <LogOut class="h-4 w-4" />
+                                    Sair
+                                </button>
+                            </div>
+                        </template>
+                        <template v-else>
+                            <div class="flex flex-col items-center gap-2">
+                                <Link :href="safeRoute('profile.edit', '/profile')" class="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-700 ring-1 ring-slate-200/80 transition hover:bg-slate-100" title="Perfil" aria-label="Perfil">
+                                    <UserCircle2 class="h-4 w-4" />
+                                </Link>
+                                <button type="button" @click="doLogout" class="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-700 ring-1 ring-rose-200/80 transition hover:bg-rose-100" title="Sair" aria-label="Sair">
+                                    <LogOut class="h-4 w-4" />
+                                </button>
+                            </div>
+                        </template>
                     </div>
                 </aside>
 
@@ -977,7 +1024,7 @@ const handleGlobalKeydown = (event) => {
                                 :class="isLinkActive(link) ? 'text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
                                 :style="isLinkActive(link) ? activeMenuBackground : null"
                             >
-                                <component :is="link.iconComponent" class="h-4 w-4" />
+                                <Icon :icon="link.iconToken" class="h-4 w-4" />
                                 <span class="truncate">{{ link.label }}</span>
                             </Link>
 
@@ -1004,7 +1051,7 @@ const handleGlobalKeydown = (event) => {
 
                 <transition name="fade">
                     <div v-if="sidebarOpen" class="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm md:hidden" @click.self="closeSidebar">
-                        <div class="absolute left-0 top-0 flex h-full w-72 flex-col bg-white shadow-xl">
+                        <div class="veshop-startbar absolute left-0 top-0 flex h-full w-72 flex-col bg-white shadow-xl" :style="sidebarMenuThemeStyles">
                             <div class="border-b border-slate-200 px-4 py-4">
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="flex items-center gap-3">
@@ -1089,24 +1136,41 @@ const handleGlobalKeydown = (event) => {
                                         </Dropdown>
                                     </div>
                                 </div>
-                                <div v-for="group in menuGroups" :key="group.key" class="mb-3 space-y-2 border-b border-slate-100 pb-3 last:mb-0 last:border-b-0 last:pb-0">
-                                    <button type="button" class="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-100" @click="toggleGroup(group.key)">
-                                        <span class="flex items-center gap-3">
-                                            <component :is="group.iconComponent" class="h-4 w-4 text-slate-600" />
-                                            {{ group.label }}
-                                        </span>
-                                        <ChevronDown class="h-4 w-4 text-slate-500 transition" :class="isGroupExpanded(group.key) ? 'rotate-180' : ''" />
-                                    </button>
-                                    <transition name="fade">
-                                        <ul v-show="isGroupExpanded(group.key)" class="mt-2 space-y-1 pl-3">
-                                            <li v-for="link in group.links" :key="link.key">
-                                                <Link :href="safeRoute(link.route, '#')" class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition" :class="isLinkActive(link) ? 'text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'" :style="isLinkActive(link) ? activeMenuBackground : null" @click="closeSidebar">
-                                                    <component :is="link.iconComponent" class="h-4 w-4 opacity-90" />
-                                                    {{ link.label }}
-                                                </Link>
-                                            </li>
-                                        </ul>
-                                    </transition>
+                                <div class="veshop-sidebar-nav veshop-sidebar-nav--mobile">
+                                    <div v-for="group in menuGroups" :key="group.key" class="veshop-menu-group">
+                                        <button
+                                            type="button"
+                                            class="veshop-menu-trigger"
+                                            :class="{
+                                                'is-active': isGroupActive(group),
+                                                'is-expanded': isGroupExpanded(group.key),
+                                            }"
+                                            @click="toggleGroup(group.key)"
+                                        >
+                                            <span class="veshop-menu-trigger-main">
+                                                <Icon :icon="group.iconToken" class="veshop-menu-icon" />
+                                                <span class="truncate">{{ group.label }}</span>
+                                            </span>
+                                            <Icon
+                                                :icon="isGroupExpanded(group.key) ? menuArrowIcons.down : menuArrowIcons.right"
+                                                class="veshop-menu-arrow"
+                                            />
+                                        </button>
+                                        <transition name="fade">
+                                            <ul v-show="isGroupExpanded(group.key)" class="veshop-submenu">
+                                                <li v-for="link in group.links" :key="link.key" class="veshop-submenu-item">
+                                                    <Link
+                                                        :href="safeRoute(link.route, '#')"
+                                                        class="veshop-submenu-link"
+                                                        :class="isLinkActive(link) ? 'is-active' : ''"
+                                                        @click="closeSidebar"
+                                                    >
+                                                        <span class="truncate">{{ link.label }}</span>
+                                                    </Link>
+                                                </li>
+                                            </ul>
+                                        </transition>
+                                    </div>
                                 </div>
                             </div>
                             <div class="border-t border-slate-200 px-4 py-3">
@@ -1255,6 +1319,349 @@ const handleGlobalKeydown = (event) => {
 </template>
 
 <style scoped>
+.veshop-startbar {
+    --veshop-menu-active: #22c55e;
+    --veshop-menu-active-soft: rgba(34, 197, 94, 0.08);
+    --veshop-menu-ink: #061237;
+    --veshop-menu-icon: #96a0b5;
+    --veshop-menu-dot: #8997bd;
+    font-family: 'Be Vietnam Pro', sans-serif;
+}
+
+.veshop-sidebar-head {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 14px 10px 12px;
+}
+
+.veshop-head-brand {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 12px;
+    border-radius: 10px;
+    padding: 6px 10px;
+    color: var(--veshop-menu-ink);
+}
+
+.veshop-head-logo {
+    display: flex;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background-color: #0f172a;
+    color: #fff;
+}
+
+.veshop-head-brand-meta {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    line-height: 1.15;
+}
+
+.veshop-head-brand-name {
+    color: var(--veshop-menu-ink);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.veshop-head-chip {
+    margin-top: 6px;
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    border-radius: 9999px;
+    border: 1px solid #dbe2ee;
+    background-color: #f8fafc;
+    padding: 2px 8px;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.veshop-head-context {
+    margin-top: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background-color: #f8fafc;
+    padding: 8px 10px;
+}
+
+.veshop-head-context.is-collapsed {
+    padding: 8px;
+}
+
+.veshop-head-context-chip {
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    border-radius: 9999px;
+    background-color: #dcfce7;
+    padding: 2px 8px;
+    color: #15803d;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.veshop-head-action {
+    display: flex;
+    width: 28px;
+    height: 28px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #dbe2ee;
+    border-radius: 9999px;
+    background-color: #ffffff;
+    color: #64748b;
+    transition: background-color 160ms ease, color 160ms ease;
+}
+
+.veshop-head-action:hover {
+    background-color: #f1f5f9;
+    color: #0f172a;
+}
+
+.veshop-sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px 10px;
+    font-family: 'Be Vietnam Pro', sans-serif;
+}
+
+.veshop-sidebar-nav.is-collapsed {
+    align-items: center;
+    gap: 8px;
+    padding: 12px 8px;
+}
+
+.veshop-sidebar-nav--mobile {
+    padding: 2px 0 0;
+}
+
+.veshop-menu-group {
+    position: relative;
+}
+
+.veshop-menu-trigger {
+    position: relative;
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    padding: 10px 16px;
+    margin-bottom: 3px;
+    background-color: transparent;
+    color: var(--veshop-menu-ink);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
+    text-align: left;
+    transition: background-color 160ms ease, color 160ms ease;
+}
+
+.veshop-menu-trigger::before {
+    content: '';
+    position: absolute;
+    left: -12px;
+    top: 8px;
+    bottom: 8px;
+    width: 6px;
+    border-radius: 5px;
+    background-color: transparent;
+}
+
+.veshop-menu-trigger:hover {
+    color: var(--veshop-menu-active);
+}
+
+.veshop-menu-trigger.is-active,
+.veshop-menu-trigger.is-expanded {
+    background-color: var(--veshop-menu-active-soft);
+    color: var(--veshop-menu-active);
+    font-weight: 600;
+}
+
+.veshop-menu-trigger.is-active::before,
+.veshop-menu-trigger.is-expanded::before {
+    background-color: var(--veshop-menu-active);
+}
+
+.veshop-menu-trigger-main {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+}
+
+.veshop-menu-icon {
+    margin-right: 16px;
+    font-size: 20px;
+    color: var(--veshop-menu-icon);
+    flex-shrink: 0;
+    transition: color 160ms ease;
+}
+
+.veshop-menu-trigger:hover .veshop-menu-icon,
+.veshop-menu-trigger.is-active .veshop-menu-icon,
+.veshop-menu-trigger.is-expanded .veshop-menu-icon {
+    color: var(--veshop-menu-active);
+}
+
+.veshop-menu-arrow {
+    font-size: 14px;
+    color: currentColor;
+    flex-shrink: 0;
+}
+
+.veshop-submenu {
+    margin-top: 1px;
+}
+
+.veshop-submenu-item {
+    padding-left: 12px;
+}
+
+.veshop-submenu-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 32px;
+    border-radius: 8px;
+    padding: 6px 16px 6px 40px;
+    color: var(--veshop-menu-ink);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.25;
+    transition: color 160ms ease, background-color 160ms ease;
+}
+
+.veshop-submenu-link::before {
+    content: '';
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    border-radius: 9999px;
+    border: 1px solid var(--veshop-menu-dot);
+    background-color: rgba(137, 151, 189, 0.2);
+    transform: translateY(-50%);
+}
+
+.veshop-submenu-link:hover {
+    color: var(--veshop-menu-active);
+}
+
+.veshop-submenu-link.is-active {
+    color: var(--veshop-menu-active);
+}
+
+.veshop-submenu-link.is-active::before {
+    border-color: var(--veshop-menu-active);
+    background-color: var(--veshop-menu-active);
+}
+
+.veshop-menu-collapsed-link {
+    position: relative;
+    display: flex;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--veshop-menu-icon);
+    transition: background-color 160ms ease, color 160ms ease;
+}
+
+.veshop-menu-collapsed-link::before {
+    content: '';
+    position: absolute;
+    left: -12px;
+    top: 7px;
+    bottom: 7px;
+    width: 6px;
+    border-radius: 5px;
+    background-color: transparent;
+}
+
+.veshop-menu-collapsed-link:hover {
+    color: var(--veshop-menu-active);
+}
+
+.veshop-menu-collapsed-link.is-active {
+    background-color: var(--veshop-menu-active-soft);
+    color: var(--veshop-menu-active);
+}
+
+.veshop-menu-collapsed-link.is-active::before {
+    background-color: var(--veshop-menu-active);
+}
+
+.veshop-menu-collapsed-icon {
+    font-size: 20px;
+}
+
+.veshop-sidebar-foot {
+    border-top: 1px solid #e2e8f0;
+    padding: 12px 10px;
+}
+
+.veshop-sidebar-foot.is-collapsed {
+    padding: 12px 8px;
+}
+
+.veshop-foot-user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-radius: 10px;
+    padding: 6px 10px;
+}
+
+.veshop-foot-actions {
+    margin-top: 10px;
+    display: grid;
+    gap: 8px;
+}
+
+.veshop-foot-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid #dbe2ee;
+    border-radius: 10px;
+    background-color: #ffffff;
+    padding: 7px 10px;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 500;
+    transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.veshop-foot-btn:hover {
+    border-color: #cbd5e1;
+    background-color: #f8fafc;
+    color: #0f172a;
+}
+
+.veshop-foot-btn.is-danger {
+    border-color: #fecdd3;
+    background-color: #fff1f2;
+    color: #be123c;
+}
+
+.veshop-foot-btn.is-danger:hover {
+    border-color: #fda4af;
+    background-color: #ffe4e6;
+    color: #9f1239;
+}
+
 .fade-enter-active,
 .fade-leave-active {
     transition: opacity 150ms ease;

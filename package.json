@@ -22,6 +22,10 @@
         "vue": "^3.4.0"
     },
     "dependencies": {
+        "@fontsource/be-vietnam-pro": "^5.2.8",
+        "@iconify-icons/iconoir": "^1.2.30",
+        "@iconify-icons/la": "^1.2.3",
+        "@iconify/vue": "^5.0.0",
         "lucide-vue-next": "^0.577.0",
         "qrcode": "^1.5.4"
     }
