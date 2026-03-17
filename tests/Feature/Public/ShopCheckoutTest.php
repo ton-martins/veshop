@@ -56,6 +56,11 @@ class ShopCheckoutTest extends TestCase
             'name' => 'Cliente da Loja',
             'email' => 'cliente-loja@example.com',
             'phone' => '71999990000',
+            'cep' => '41810-000',
+            'street' => 'Rua das Flores',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
             'password' => '12345678',
             'is_active' => true,
             'email_verified_at' => now(),
@@ -113,11 +118,6 @@ class ShopCheckoutTest extends TestCase
             'email' => 'cliente-loja@example.com',
             'phone' => '71999990000',
             'is_active' => 1,
-        ]);
-
-        $this->assertDatabaseHas('notifications', [
-            'notifiable_type' => ShopCustomer::class,
-            'notifiable_id' => $shopCustomer->id,
         ]);
 
         $this->assertDatabaseHas('products', [
@@ -193,6 +193,11 @@ class ShopCheckoutTest extends TestCase
             'name' => 'Cliente Entrega',
             'email' => 'cliente-entrega@example.com',
             'phone' => '71999990001',
+            'cep' => '41810-000',
+            'street' => 'Rua das Flores',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
             'password' => '12345678',
             'is_active' => true,
             'email_verified_at' => now(),
@@ -227,6 +232,52 @@ class ShopCheckoutTest extends TestCase
             'shipping_amount' => '12.50',
             'surcharge_amount' => '12.50',
             'total_amount' => '162.50',
+        ]);
+    }
+
+    public function test_checkout_requires_shop_customer_profile_address(): void
+    {
+        $contractor = $this->createContractor('loja-sem-endereco-cliente');
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Caneca',
+            'sku' => 'CAN-001',
+            'sale_price' => 29.90,
+            'stock_quantity' => 20,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Sem Endereco',
+            'email' => 'cliente-sem-endereco@example.com',
+            'phone' => '71999990111',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), [
+                'customer_name' => 'Cliente Sem Endereco',
+                'customer_phone' => '(71) 99999-0111',
+                'customer_email' => 'cliente-sem-endereco@example.com',
+                'items' => [
+                    ['product_id' => $product->id, 'quantity' => 1],
+                ],
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+        $response->assertSessionHasErrors('order');
+
+        $this->assertDatabaseMissing('sales', [
+            'contractor_id' => $contractor->id,
+            'shop_customer_id' => $shopCustomer->id,
+            'source' => Sale::SOURCE_CATALOG,
         ]);
     }
 

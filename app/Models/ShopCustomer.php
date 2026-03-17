@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Notifications\Shop\VerifyShopCustomerEmailNotification;
+use App\Support\BrazilData;
 use Illuminate\Auth\MustVerifyEmail;
 use Illuminate\Contracts\Auth\MustVerifyEmail as MustVerifyEmailContract;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -82,5 +83,45 @@ class ShopCustomer extends Authenticatable implements MustVerifyEmailContract
     public function sendEmailVerificationNotification(): void
     {
         $this->notify(new VerifyShopCustomerEmailNotification());
+    }
+
+    public function hasRequiredAddressForCheckout(): bool
+    {
+        return $this->missingRequiredAddressFieldsForCheckout() === [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function missingRequiredAddressFieldsForCheckout(): array
+    {
+        $required = [
+            'cep' => trim((string) ($this->cep ?? '')),
+            'street' => trim((string) ($this->street ?? '')),
+            'neighborhood' => trim((string) ($this->neighborhood ?? '')),
+            'city' => trim((string) ($this->city ?? '')),
+            'state' => strtoupper(trim((string) ($this->state ?? ''))),
+        ];
+
+        $missing = [];
+
+        foreach ($required as $field => $value) {
+            if ($value === '') {
+                $missing[] = $field;
+            }
+        }
+
+        if ($required['cep'] !== '' && ! preg_match('/^\d{5}-\d{3}$/', $required['cep'])) {
+            $missing[] = 'cep';
+        }
+
+        if ($required['state'] !== '' && ! in_array($required['state'], BrazilData::STATE_CODES, true)) {
+            $missing[] = 'state';
+        }
+
+        return collect($missing)
+            ->unique()
+            ->values()
+            ->all();
     }
 }

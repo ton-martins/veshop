@@ -39,6 +39,24 @@ const verifyEmailUrl = computed(() => `/shop/${storeSlug.value}/verificar-email`
 const isShopAuthenticated = computed(() => Boolean(props.shop_auth?.authenticated));
 const requiresEmailVerification = computed(() => Boolean(props.shop_auth?.requires_email_verification ?? true));
 const isShopEmailVerified = computed(() => Boolean(props.shop_auth?.email_verified ?? false));
+const isShopAddressComplete = computed(() => Boolean(props.shop_auth?.address_complete ?? false));
+const missingShopAddressFields = computed(() => {
+    const raw = props.shop_auth?.missing_address_fields;
+    const fieldLabelMap = {
+        cep: 'CEP',
+        street: 'logradouro',
+        neighborhood: 'bairro',
+        city: 'cidade',
+        state: 'UF',
+    };
+
+    return Array.isArray(raw)
+        ? raw
+            .map((field) => String(field ?? '').trim().toLowerCase())
+            .filter(Boolean)
+            .map((field) => fieldLabelMap[field] ?? field)
+        : [];
+});
 const shopCustomer = computed(() => props.shop_auth?.customer ?? null);
 const accountOrLoginUrl = computed(() => {
     if (!isShopAuthenticated.value) return loginUrl.value;
@@ -468,6 +486,7 @@ watch(
 const canSubmitCheckout = computed(() => {
     if (!isShopAuthenticated.value) return false;
     if (requiresEmailVerification.value && !isShopEmailVerified.value) return false;
+    if (!isShopAddressComplete.value) return false;
 
     const name = String(checkoutForm.customer_name ?? '').trim();
     const hasContact = Boolean(String(checkoutForm.customer_phone ?? '').trim() || String(checkoutForm.customer_email ?? '').trim());
@@ -923,6 +942,16 @@ const openCartFromMenu = () => {
                         >
                             Confirme seu e-mail para finalizar pedidos.
                             <Link :href="verifyEmailUrl" class="ml-1 underline decoration-dotted underline-offset-2">Verificar e-mail</Link>
+                        </div>
+                        <div
+                            v-else-if="!isShopAddressComplete"
+                            class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700"
+                        >
+                            Complete seu endereço em Minha conta para finalizar pedidos.
+                            <Link :href="accountUrl" class="ml-1 underline decoration-dotted underline-offset-2">Atualizar endereço</Link>
+                            <span v-if="missingShopAddressFields.length" class="ml-1">
+                                (faltando: {{ missingShopAddressFields.join(', ') }})
+                            </span>
                         </div>
 
                         <div class="grid gap-2">

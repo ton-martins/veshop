@@ -36,6 +36,9 @@ return [
         'trace' => env('LOG_DEPRECATIONS_TRACE', false),
     ],
 
+    'shop_verification_debug' => (bool) env('SHOP_VERIFICATION_DEBUG', false),
+    'shop_verification_channel' => env('SHOP_VERIFICATION_LOG_CHANNEL', env('LOG_CHANNEL', 'stack')),
+
     /*
     |--------------------------------------------------------------------------
     | Log Channels

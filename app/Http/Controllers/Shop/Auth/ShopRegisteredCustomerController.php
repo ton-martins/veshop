@@ -11,11 +11,13 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class ShopRegisteredCustomerController extends Controller
 {
@@ -53,13 +55,13 @@ class ShopRegisteredCustomerController extends Controller
             'name' => ['required', 'string', 'max:160'],
             'email' => ['required', 'string', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'regex:/^\(\d{2}\)\s\d{5}-\d{4}$/'],
-            'cep' => ['nullable', 'string', 'regex:/^\d{5}-\d{3}$/'],
-            'street' => ['nullable', 'string', 'max:160'],
+            'cep' => ['required', 'string', 'regex:/^\d{5}-\d{3}$/'],
+            'street' => ['required', 'string', 'max:160'],
             'number' => ['nullable', 'string', 'max:20'],
             'complement' => ['nullable', 'string', 'max:120'],
-            'neighborhood' => ['nullable', 'string', 'max:120'],
-            'city' => ['nullable', 'string', 'max:120'],
-            'state' => ['nullable', 'string', Rule::in(BrazilData::STATE_CODES)],
+            'neighborhood' => ['required', 'string', 'max:120'],
+            'city' => ['required', 'string', 'max:120'],
+            'state' => ['required', 'string', Rule::in(BrazilData::STATE_CODES)],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
 
@@ -153,7 +155,36 @@ class ShopRegisteredCustomerController extends Controller
         ])->save();
 
         if ($requiresEmailVerification && ! $customer->hasVerifiedEmail()) {
-            $customer->sendEmailVerificationNotification();
+            $this->logVerificationDispatch(
+                'shop_verification.dispatch_requested',
+                $contractor,
+                $customer,
+                ['origin' => 'shop_register']
+            );
+
+            try {
+                $customer->sendEmailVerificationNotification();
+
+                $this->logVerificationDispatch(
+                    'shop_verification.dispatch_enqueued',
+                    $contractor,
+                    $customer,
+                    ['origin' => 'shop_register']
+                );
+            } catch (Throwable $exception) {
+                $this->logVerificationDispatch(
+                    'shop_verification.dispatch_failed',
+                    $contractor,
+                    $customer,
+                    [
+                        'origin' => 'shop_register',
+                        'error_class' => $exception::class,
+                        'error_message' => substr($exception->getMessage(), 0, 200),
+                    ]
+                );
+
+                throw $exception;
+            }
 
             return redirect()->route('shop.verification.notice', ['slug' => $contractor->slug])
                 ->with('status', 'verification-link-sent');
@@ -281,5 +312,30 @@ class ShopRegisteredCustomerController extends Controller
             'state' => $state !== '' ? $state : null,
             'is_active' => true,
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $extra
+     */
+    private function logVerificationDispatch(string $event, Contractor $contractor, ShopCustomer $customer, array $extra = []): void
+    {
+        if (! (bool) config('logging.shop_verification_debug', false)) {
+            return;
+        }
+
+        $channel = (string) config('logging.shop_verification_channel', config('logging.default', 'stack'));
+        $email = strtolower(trim((string) ($customer->email ?? '')));
+
+        Log::channel($channel)->info($event, array_merge([
+            'contractor_id' => (int) $contractor->id,
+            'shop_customer_id' => (int) $customer->id,
+            'shop_customer_email_hash' => $email !== '' ? hash('sha256', $email) : null,
+            'mail_queue_connection' => (string) config('queue.workloads.mail.connection', config('queue.default')),
+            'mail_queue_name' => (string) config('queue.workloads.mail.queue', 'emails'),
+            'mail_mailer' => (string) config('mail.default'),
+            'mail_host' => (string) config('mail.mailers.smtp.host', ''),
+            'mail_port' => (int) config('mail.mailers.smtp.port', 0),
+            'mail_scheme' => (string) config('mail.mailers.smtp.scheme', ''),
+        ], $extra));
     }
 }

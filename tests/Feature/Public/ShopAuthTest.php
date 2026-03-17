@@ -6,9 +6,9 @@ use App\Models\Contractor;
 use App\Models\ShopCustomer;
 use App\Notifications\Shop\VerifyShopCustomerEmailNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class ShopAuthTest extends TestCase
@@ -31,6 +31,11 @@ class ShopAuthTest extends TestCase
             'name' => 'Cliente Loja',
             'email' => 'cliente-auth@example.com',
             'phone' => '(11) 99999-0000',
+            'cep' => '01001-000',
+            'street' => 'Praca da Se',
+            'neighborhood' => 'Se',
+            'city' => 'Sao Paulo',
+            'state' => 'SP',
             'password' => 'Password@123',
             'password_confirmation' => 'Password@123',
         ]);
@@ -42,6 +47,11 @@ class ShopAuthTest extends TestCase
             'email' => 'cliente-auth@example.com',
             'is_active' => 1,
             'email_verified_at' => null,
+            'cep' => '01001-000',
+            'street' => 'Praca da Se',
+            'neighborhood' => 'Se',
+            'city' => 'Sao Paulo',
+            'state' => 'SP',
         ]);
 
         $customer = ShopCustomer::query()
@@ -59,9 +69,14 @@ class ShopAuthTest extends TestCase
         Notification::fake();
 
         $response = $this->post(route('shop.auth.register.store', ['slug' => $contractor->slug]), [
-            'name' => 'Cliente Sem Verificação',
+            'name' => 'Cliente Sem Verificacao',
             'email' => 'cliente-sem-verificacao@example.com',
             'phone' => '(11) 98888-0000',
+            'cep' => '01001-000',
+            'street' => 'Praca da Se',
+            'neighborhood' => 'Se',
+            'city' => 'Sao Paulo',
+            'state' => 'SP',
             'password' => 'Password@123',
             'password_confirmation' => 'Password@123',
         ]);
@@ -152,6 +167,27 @@ class ShopAuthTest extends TestCase
         $response->assertRedirect(route('shop.account', ['slug' => $contractor->slug]));
         $this->assertNotNull($customer->fresh()->email_verified_at);
         $this->assertAuthenticatedAs($customer->fresh(), 'shop');
+    }
+
+    public function test_store_registration_requires_required_address_fields(): void
+    {
+        $contractor = $this->createContractor('loja-endereco-obrigatorio');
+
+        $response = $this->post(route('shop.auth.register.store', ['slug' => $contractor->slug]), [
+            'name' => 'Cliente Endereco',
+            'email' => 'cliente-endereco@example.com',
+            'phone' => '(11) 97777-0000',
+            'password' => 'Password@123',
+            'password_confirmation' => 'Password@123',
+        ]);
+
+        $response->assertSessionHasErrors([
+            'cep',
+            'street',
+            'neighborhood',
+            'city',
+            'state',
+        ]);
     }
 
     private function createContractor(string $slug, bool $requireEmailVerification = true): Contractor

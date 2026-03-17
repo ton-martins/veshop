@@ -9,6 +9,7 @@ use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class ShopVerifyEmailController extends Controller
 {
@@ -32,6 +33,8 @@ class ShopVerifyEmailController extends Controller
         Auth::guard('shop')->login($customer, true);
         $request->session()->regenerate();
 
+        $this->logVerificationEvent('shop_verification.marked_as_verified', $contractor, $customer);
+
         return redirect()
             ->route('shop.account', ['slug' => $contractor->slug])
             ->with('status', 'E-mail verificado com sucesso. Agora você pode finalizar pedidos.');
@@ -43,5 +46,22 @@ class ShopVerifyEmailController extends Controller
             ->where('slug', $slug)
             ->where('is_active', true)
             ->firstOrFail();
+    }
+
+    private function logVerificationEvent(string $event, Contractor $contractor, ShopCustomer $customer): void
+    {
+        if (! (bool) config('logging.shop_verification_debug', false)) {
+            return;
+        }
+
+        $channel = (string) config('logging.shop_verification_channel', config('logging.default', 'stack'));
+        $email = strtolower(trim((string) ($customer->email ?? '')));
+
+        Log::channel($channel)->info($event, [
+            'contractor_id' => (int) $contractor->id,
+            'shop_customer_id' => (int) $customer->id,
+            'shop_customer_email_hash' => $email !== '' ? hash('sha256', $email) : null,
+            'verified_at' => optional($customer->email_verified_at)->toIso8601String() ?? now()->toIso8601String(),
+        ]);
     }
 }

@@ -223,7 +223,7 @@ const submit = () => {
                         <div class="sm:col-span-2">
                             <div class="flex flex-wrap items-end gap-2">
                                 <div class="min-w-[180px] flex-1">
-                                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">CEP (opcional)</label>
+                                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">CEP *</label>
                                     <input
                                         :value="form.cep"
                                         type="text"
@@ -249,7 +249,7 @@ const submit = () => {
                         </div>
 
                         <div class="sm:col-span-2">
-                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rua</label>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rua *</label>
                             <input v-model="form.street" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Logradouro">
                             <p v-if="form.errors.street" class="mt-1 text-xs font-semibold text-rose-600">{{ form.errors.street }}</p>
                         </div>
@@ -267,19 +267,19 @@ const submit = () => {
                         </div>
 
                         <div>
-                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Bairro</label>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Bairro *</label>
                             <input v-model="form.neighborhood" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Bairro">
                             <p v-if="form.errors.neighborhood" class="mt-1 text-xs font-semibold text-rose-600">{{ form.errors.neighborhood }}</p>
                         </div>
 
                         <div>
-                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cidade</label>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cidade *</label>
                             <input v-model="form.city" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Cidade">
                             <p v-if="form.errors.city" class="mt-1 text-xs font-semibold text-rose-600">{{ form.errors.city }}</p>
                         </div>
 
                         <div class="sm:col-span-2">
-                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">UF</label>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">UF *</label>
                             <select v-model="form.state" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                                 <option v-for="option in stateOptions" :key="`state-register-${option.value || 'empty'}`" :value="option.value">{{ option.label }}</option>
                             </select>

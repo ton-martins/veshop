@@ -153,6 +153,12 @@ class PublicShopController extends Controller
             ]);
         }
 
+        if (! $shopCustomer->hasRequiredAddressForCheckout()) {
+            throw ValidationException::withMessages([
+                'order' => 'Complete seu endereço (CEP, logradouro, bairro, cidade e UF) em Minha conta para finalizar o pedido.',
+            ]);
+        }
+
         $paymentMethod = null;
         $paymentMethodId = (int) ($data['payment_method_id'] ?? 0);
 
@@ -635,6 +641,8 @@ class PublicShopController extends Controller
             'email_verified' => $customer
                 ? (! $requiresEmailVerification || $customer->hasVerifiedEmail())
                 : false,
+            'address_complete' => $customer ? $customer->hasRequiredAddressForCheckout() : false,
+            'missing_address_fields' => $customer ? $customer->missingRequiredAddressFieldsForCheckout() : [],
             'favorite_product_ids' => $customer
                 ? $this->resolveFavoriteProductIds($contractor, $customer)
                 : [],
@@ -643,6 +651,11 @@ class PublicShopController extends Controller
                 'name' => (string) $customer->name,
                 'email' => (string) ($customer->email ?? ''),
                 'phone' => (string) ($customer->phone ?? ''),
+                'cep' => (string) ($customer->cep ?? ''),
+                'street' => (string) ($customer->street ?? ''),
+                'neighborhood' => (string) ($customer->neighborhood ?? ''),
+                'city' => (string) ($customer->city ?? ''),
+                'state' => (string) ($customer->state ?? ''),
             ] : null,
         ];
     }
