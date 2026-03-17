@@ -125,6 +125,7 @@ Status atual:
 
 - Parcial.
 - Checkout já cria `sale`, `sale_items` e `sale_payments` com status inicial.
+- Checkout agora aceita `idempotency_key` para evitar pedido duplicado em reenvio/clique duplo.
 - Administração de pedidos já tem fluxo de decisão (aprovar/rejeitar/pago/cancelar).
 
 Lacunas:
@@ -166,6 +167,7 @@ Status atual:
 - Parcial.
 - Existe estrutura para gateways e métodos de pagamento por contratante.
 - Existe endpoint de webhook genérico por provider.
+- Webhook agora tem deduplicação por `event_key` com recibo persistido em `payment_webhook_receipts`.
 
 Lacunas:
 

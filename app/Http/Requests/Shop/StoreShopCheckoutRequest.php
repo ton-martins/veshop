@@ -29,6 +29,7 @@ class StoreShopCheckoutRequest extends FormRequest
             'customer_phone' => $this->normalizeNullableText($this->input('customer_phone')),
             'customer_email' => $this->normalizeNullableText($this->input('customer_email')),
             'notes' => $this->normalizeNullableText($this->input('notes')),
+            'idempotency_key' => $this->normalizeIdempotencyKey($this->input('idempotency_key')),
             'payment_method_id' => $this->filled('payment_method_id') ? (int) $this->input('payment_method_id') : null,
             'delivery_mode' => $this->normalizeDeliveryMode($this->input('delivery_mode')),
             'shipping_postal_code' => $this->normalizeNullableText($this->input('shipping_postal_code')),
@@ -52,6 +53,7 @@ class StoreShopCheckoutRequest extends FormRequest
             'customer_phone' => ['nullable', 'string', 'max:32', 'required_without:customer_email'],
             'customer_email' => ['nullable', 'email', 'max:255', 'required_without:customer_phone'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'idempotency_key' => ['nullable', 'string', 'max:80', 'regex:/^[A-Za-z0-9:_\.\-]+$/'],
             'payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
             'delivery_mode' => ['required', 'string', 'in:pickup,delivery'],
             'shipping_postal_code' => ['nullable', 'string', 'max:16', 'required_if:delivery_mode,delivery'],
@@ -84,6 +86,13 @@ class StoreShopCheckoutRequest extends FormRequest
     private function normalizeState(mixed $value): ?string
     {
         $safe = strtoupper(trim((string) ($value ?? '')));
+
+        return $safe !== '' ? $safe : null;
+    }
+
+    private function normalizeIdempotencyKey(mixed $value): ?string
+    {
+        $safe = trim((string) ($value ?? ''));
 
         return $safe !== '' ? $safe : null;
     }

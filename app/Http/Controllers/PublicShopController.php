@@ -14,7 +14,9 @@ use App\Models\SalePayment;
 use App\Models\ShopCustomer;
 use App\Models\ShopCustomerFavorite;
 use App\Support\StorefrontSettings;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -140,6 +142,7 @@ class PublicShopController extends Controller
         $contractor = $this->resolveActiveContractorBySlug($slug);
         $data = $request->validated();
         $shopCustomer = $this->resolveCurrentShopCustomerForContractor($contractor);
+        $idempotencyKey = $this->resolveCheckoutIdempotencyKey($request, $data);
 
         if (! $shopCustomer) {
             throw ValidationException::withMessages([
@@ -157,6 +160,18 @@ class PublicShopController extends Controller
             throw ValidationException::withMessages([
                 'order' => 'Complete seu endereço (CEP, logradouro, bairro, cidade e UF) em Minha conta para finalizar o pedido.',
             ]);
+        }
+
+        if ($idempotencyKey !== null) {
+            $existingSale = Sale::query()
+                ->where('contractor_id', $contractor->id)
+                ->where('checkout_idempotency_key', $idempotencyKey)
+                ->latest('id')
+                ->first();
+
+            if ($existingSale) {
+                return back()->with('status', 'Pedido ja recebido. Estamos processando sua solicitacao.');
+            }
         }
 
         $paymentMethod = null;
@@ -190,7 +205,8 @@ class PublicShopController extends Controller
 
         $createdSaleId = null;
 
-        DB::transaction(function () use ($contractor, $data, $paymentMethod, $quantitiesByProduct, $shopCustomer, &$createdSaleId): void {
+        try {
+            DB::transaction(function () use ($contractor, $data, $paymentMethod, $quantitiesByProduct, $shopCustomer, $idempotencyKey, &$createdSaleId): void {
             $productIds = $quantitiesByProduct->keys()->map(static fn (mixed $id): int => (int) $id)->values();
 
             $products = Product::query()
@@ -263,15 +279,16 @@ class PublicShopController extends Controller
                 $shopCustomer->save();
             }
 
-            $sale = Sale::query()->create([
-                'contractor_id' => $contractor->id,
-                'cash_session_id' => null,
-                'client_id' => $client?->id,
-                'shop_customer_id' => $shopCustomer->id,
-                'user_id' => null,
-                'code' => $this->generateCatalogOrderCode($contractor),
-                'source' => Sale::SOURCE_CATALOG,
-                'status' => Sale::STATUS_PENDING_CONFIRMATION,
+                $sale = Sale::query()->create([
+                    'contractor_id' => $contractor->id,
+                    'cash_session_id' => null,
+                    'client_id' => $client?->id,
+                    'shop_customer_id' => $shopCustomer->id,
+                    'user_id' => null,
+                    'code' => $this->generateCatalogOrderCode($contractor),
+                    'checkout_idempotency_key' => $idempotencyKey,
+                    'source' => Sale::SOURCE_CATALOG,
+                    'status' => Sale::STATUS_PENDING_CONFIRMATION,
                 'subtotal_amount' => $subtotal,
                 'discount_amount' => 0,
                 'surcharge_amount' => $shippingAmount,
@@ -283,9 +300,10 @@ class PublicShopController extends Controller
                 'shipping_estimate_days' => $shippingQuote['estimate_days'],
                 'shipping_address' => $shippingQuote['address'],
                 'notes' => $data['notes'] ?? null,
-                'metadata' => [
-                    'checkout_channel' => 'public_shop',
-                    'customer_name' => $data['customer_name'] ?? $shopCustomer->name,
+                    'metadata' => [
+                        'checkout_channel' => 'public_shop',
+                        'checkout_idempotency_key' => $idempotencyKey,
+                        'customer_name' => $data['customer_name'] ?? $shopCustomer->name,
                     'customer_phone' => $this->normalizePhone($data['customer_phone'] ?? $shopCustomer->phone),
                     'customer_email' => $data['customer_email'] ?? $shopCustomer->email,
                     'shipping_mode' => $shippingQuote['mode'],
@@ -325,7 +343,14 @@ class PublicShopController extends Controller
             }
 
             $createdSaleId = (int) $sale->id;
-        });
+            });
+        } catch (QueryException $exception) {
+            if (! $this->isDuplicateCheckoutIdempotencyException($exception)) {
+                throw $exception;
+            }
+
+            return back()->with('status', 'Pedido ja recebido. Estamos processando sua solicitacao.');
+        }
 
         if ($createdSaleId) {
             $createdSale = Sale::query()->find($createdSaleId);
@@ -686,6 +711,43 @@ class PublicShopController extends Controller
         } while ($exists);
 
         return $code;
+    }
+
+    /**
+     * @param array<string, mixed> $validatedData
+     */
+    private function resolveCheckoutIdempotencyKey(Request $request, array $validatedData): ?string
+    {
+        $candidate = $validatedData['idempotency_key']
+            ?? $request->header('X-Idempotency-Key')
+            ?? null;
+
+        if ($candidate === null) {
+            return null;
+        }
+
+        $value = trim((string) $candidate);
+
+        if ($value === '') {
+            return null;
+        }
+
+        return substr($value, 0, 80);
+    }
+
+    private function isDuplicateCheckoutIdempotencyException(QueryException $exception): bool
+    {
+        $errorInfo = $exception->errorInfo;
+        $driverCode = is_array($errorInfo) ? (int) ($errorInfo[1] ?? 0) : 0;
+
+        if ($driverCode === 1062) {
+            return true;
+        }
+
+        return str_contains(
+            strtolower($exception->getMessage()),
+            'sales_contractor_checkout_idempotency_unique'
+        );
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\Contractor;
 use App\Models\SecurityAuditLog;
+use App\Models\User;
 use App\Services\SecurityAuditLogger;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
@@ -19,7 +20,7 @@ class EnsureRouteModelContractorScope
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-        if (! $user || ! $user->isAdmin()) {
+        if (! $user instanceof User || ! $user->isAdmin()) {
             return $next($request);
         }
 
@@ -68,4 +69,3 @@ class EnsureRouteModelContractorScope
         return $next($request);
     }
 }
-

@@ -428,6 +428,7 @@ const checkoutForm = useForm({
     customer_name: String(shopCustomer.value?.name ?? ''),
     customer_phone: String(shopCustomer.value?.phone ?? ''),
     customer_email: String(shopCustomer.value?.email ?? ''),
+    idempotency_key: '',
     payment_method_id: '',
     delivery_mode: shippingConfig.value.delivery_enabled && !shippingConfig.value.pickup_enabled ? 'delivery' : 'pickup',
     shipping_postal_code: '',
@@ -503,6 +504,14 @@ const canSubmitCheckout = computed(() => {
     return cartDetailed.value.length > 0 && name !== '' && hasContact && hasAddress;
 });
 
+const createCheckoutIdempotencyKey = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return `shop-${crypto.randomUUID()}`;
+    }
+
+    return `shop-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
 const productDetailsUrl = (productId) => {
     if (typeof route === 'function') {
         try {
@@ -559,6 +568,11 @@ const checkout = () => {
     if (!canSubmitCheckout.value) return;
 
     checkoutForm.clearErrors();
+
+    if (!String(checkoutForm.idempotency_key ?? '').trim()) {
+        checkoutForm.idempotency_key = createCheckoutIdempotencyKey();
+    }
+
     checkoutForm.items = cartDetailed.value.map((item) => ({
         product_id: Number(item.product.id),
         quantity: Number(item.quantity),
@@ -568,7 +582,7 @@ const checkout = () => {
         preserveScroll: true,
         onSuccess: () => {
             cartItems.value = [];
-            checkoutForm.reset('payment_method_id', 'notes', 'items');
+            checkoutForm.reset('payment_method_id', 'notes', 'items', 'idempotency_key');
             cartOpen.value = false;
         },
     });

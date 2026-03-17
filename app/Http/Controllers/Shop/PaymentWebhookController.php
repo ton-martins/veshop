@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Shop;
 use App\Http\Controllers\Controller;
 use App\Models\Contractor;
 use App\Models\PaymentGateway;
+use App\Models\PaymentWebhookReceipt;
 use App\Models\Sale;
 use App\Models\SalePayment;
 use Illuminate\Http\JsonResponse;
@@ -30,14 +31,14 @@ class PaymentWebhookController extends Controller
         if (! $gateway) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Gateway não encontrado para o contratante.',
+                'message' => 'Gateway nao encontrado para o contratante.',
             ], 404);
         }
 
         if (! $this->passesWebhookSecretValidation($request, $gateway)) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Webhook não autorizado.',
+                'message' => 'Webhook nao autorizado.',
             ], 403);
         }
 
@@ -47,34 +48,81 @@ class PaymentWebhookController extends Controller
         if ($status === null) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Status de pagamento ausente ou inválido.',
+                'message' => 'Status de pagamento ausente ou invalido.',
             ], 422);
         }
 
         $reference = $this->resolveTransactionReference($payload);
         $saleCode = $this->resolveSaleCode($payload);
+        $eventKey = $this->resolveWebhookEventKey($provider, $payload, $status, $reference, $saleCode);
 
-        $result = DB::transaction(function () use ($contractor, $gateway, $payload, $status, $reference, $saleCode): ?array {
+        $result = DB::transaction(function () use ($contractor, $gateway, $provider, $payload, $status, $reference, $saleCode, $eventKey): array {
+            $receipt = PaymentWebhookReceipt::query()
+                ->where('contractor_id', $contractor->id)
+                ->where('payment_gateway_id', $gateway->id)
+                ->where('event_key', $eventKey)
+                ->lockForUpdate()
+                ->first();
+
+            if ($receipt && $receipt->processed_at !== null) {
+                return [
+                    'deduplicated' => true,
+                    'data' => null,
+                ];
+            }
+
+            if (! $receipt) {
+                $receipt = PaymentWebhookReceipt::query()->create([
+                    'contractor_id' => (int) $contractor->id,
+                    'payment_gateway_id' => (int) $gateway->id,
+                    'provider' => $provider,
+                    'event_key' => $eventKey,
+                    'transaction_reference' => $reference !== '' ? $reference : null,
+                    'sale_code' => $saleCode !== '' ? $saleCode : null,
+                    'status' => $status,
+                    'payload' => $payload,
+                ]);
+            }
+
             $payment = $this->resolveTargetPayment($contractor, $reference, $saleCode);
             if (! $payment) {
-                return null;
+                $receipt->delete();
+
+                return [
+                    'deduplicated' => false,
+                    'data' => null,
+                ];
+            }
+
+            $lockedPayment = SalePayment::query()
+                ->where('id', $payment->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $lockedPayment) {
+                $receipt->delete();
+
+                return [
+                    'deduplicated' => false,
+                    'data' => null,
+                ];
             }
 
             $paymentStatus = $this->mapWebhookStatusToPaymentStatus($status);
-            $saleStatus = $this->mapWebhookStatusToSaleStatus($status, $payment->sale);
+            $saleStatus = $this->mapWebhookStatusToSaleStatus($status, $lockedPayment->sale);
 
-            $gatewayPayload = is_array($payment->gateway_payload) ? $payment->gateway_payload : [];
+            $gatewayPayload = is_array($lockedPayment->gateway_payload) ? $lockedPayment->gateway_payload : [];
             $gatewayPayload['last_webhook'] = $payload;
             $gatewayPayload['last_webhook_received_at'] = now()->toIso8601String();
 
-            $payment->fill([
+            $lockedPayment->fill([
                 'status' => $paymentStatus,
-                'transaction_reference' => $reference ?: $payment->transaction_reference,
-                'paid_at' => $paymentStatus === SalePayment::STATUS_PAID ? now() : $payment->paid_at,
+                'transaction_reference' => $reference !== '' ? $reference : $lockedPayment->transaction_reference,
+                'paid_at' => $paymentStatus === SalePayment::STATUS_PAID ? now() : $lockedPayment->paid_at,
                 'gateway_payload' => $gatewayPayload,
             ])->save();
 
-            $sale = $payment->sale;
+            $sale = $lockedPayment->sale;
             if ($sale) {
                 $sale->fill([
                     'status' => $saleStatus,
@@ -94,23 +142,40 @@ class PaymentWebhookController extends Controller
                 'last_health_check_at' => now(),
             ])->save();
 
+            $receipt->fill([
+                'status' => $status,
+                'payload' => $payload,
+                'processed_at' => now(),
+            ])->save();
+
             return [
-                'payment_id' => (int) $payment->id,
-                'sale_id' => (int) ($payment->sale_id ?? 0),
-                'payment_status' => $paymentStatus,
-                'sale_status' => $saleStatus,
+                'deduplicated' => false,
+                'data' => [
+                    'payment_id' => (int) $lockedPayment->id,
+                    'sale_id' => (int) ($lockedPayment->sale_id ?? 0),
+                    'payment_status' => $paymentStatus,
+                    'sale_status' => $saleStatus,
+                ],
             ];
         });
 
-        if (! $result) {
+        if ($result['deduplicated'] === true) {
+            return response()->json([
+                'ok' => true,
+                'deduplicated' => true,
+                'message' => 'Webhook ja processado.',
+            ]);
+        }
+
+        if (! is_array($result['data'])) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Pagamento não localizado para referência informada.',
+                'message' => 'Pagamento nao localizado para referencia informada.',
             ], 404);
         }
 
-        if ((int) ($result['sale_id'] ?? 0) > 0) {
-            $sale = Sale::query()->find((int) $result['sale_id']);
+        if ((int) ($result['data']['sale_id'] ?? 0) > 0) {
+            $sale = Sale::query()->find((int) $result['data']['sale_id']);
             if ($sale) {
                 app(\App\Services\OrderNotificationService::class)->notifyOrderStatusChanged($sale);
             }
@@ -118,7 +183,7 @@ class PaymentWebhookController extends Controller
 
         return response()->json([
             'ok' => true,
-            'data' => $result,
+            'data' => $result['data'],
         ]);
     }
 
@@ -174,6 +239,32 @@ class PaymentWebhookController extends Controller
             ?? '';
 
         return trim((string) $value);
+    }
+
+    private function resolveWebhookEventKey(string $provider, array $payload, string $status, string $reference, string $saleCode): string
+    {
+        $eventId = trim((string) (
+            $payload['event_id']
+            ?? $payload['id']
+            ?? $payload['event']['id']
+            ?? $payload['data']['id']
+            ?? $payload['resource']['id']
+            ?? ''
+        ));
+
+        if ($eventId !== '') {
+            return hash('sha256', strtolower($provider).'|'.$eventId);
+        }
+
+        $rawPayload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        return hash('sha256', implode('|', [
+            strtolower($provider),
+            $status,
+            $reference,
+            $saleCode,
+            (string) $rawPayload,
+        ]));
     }
 
     private function resolveTargetPayment(Contractor $contractor, string $reference, string $saleCode): ?SalePayment

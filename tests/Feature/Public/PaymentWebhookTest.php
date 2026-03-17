@@ -121,6 +121,94 @@ class PaymentWebhookTest extends TestCase
         $response->assertForbidden();
     }
 
+    public function test_webhook_deduplicates_repeated_event_payload(): void
+    {
+        $contractor = $this->createContractor('loja-webhook-dedupe');
+
+        $gateway = PaymentGateway::query()->create([
+            'contractor_id' => $contractor->id,
+            'provider' => PaymentGateway::PROVIDER_MANUAL,
+            'name' => 'Gateway Dedupe',
+            'is_active' => true,
+            'is_default' => true,
+            'is_sandbox' => true,
+            'credentials' => ['webhook_secret' => 'segredo-webhook'],
+            'settings' => null,
+        ]);
+
+        $method = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => $gateway->id,
+            'code' => PaymentMethod::CODE_PIX,
+            'name' => 'Pix',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $sale = Sale::query()->create([
+            'contractor_id' => $contractor->id,
+            'code' => 'PED-WEBHOOK-DEDUPE-001',
+            'source' => Sale::SOURCE_CATALOG,
+            'status' => Sale::STATUS_AWAITING_PAYMENT,
+            'subtotal_amount' => 100,
+            'discount_amount' => 0,
+            'surcharge_amount' => 0,
+            'total_amount' => 100,
+            'paid_amount' => 0,
+            'change_amount' => 0,
+        ]);
+
+        SalePayment::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'payment_method_id' => $method->id,
+            'payment_gateway_id' => $gateway->id,
+            'status' => SalePayment::STATUS_PENDING,
+            'amount' => 100,
+            'transaction_reference' => 'TX-DEDUPE-001',
+        ]);
+
+        $payload = [
+            'event_id' => 'evt-001',
+            'transaction_reference' => 'TX-DEDUPE-001',
+            'status' => 'paid',
+        ];
+
+        $firstResponse = $this
+            ->withHeader('X-Webhook-Secret', 'segredo-webhook')
+            ->postJson(route('shop.payments.webhook', [
+                'slug' => $contractor->slug,
+                'provider' => PaymentGateway::PROVIDER_MANUAL,
+            ]), $payload);
+
+        $secondResponse = $this
+            ->withHeader('X-Webhook-Secret', 'segredo-webhook')
+            ->postJson(route('shop.payments.webhook', [
+                'slug' => $contractor->slug,
+                'provider' => PaymentGateway::PROVIDER_MANUAL,
+            ]), $payload);
+
+        $firstResponse->assertOk()->assertJson([
+            'ok' => true,
+        ]);
+
+        $secondResponse->assertOk()->assertJson([
+            'ok' => true,
+            'deduplicated' => true,
+        ]);
+
+        $this->assertSame(1, \App\Models\PaymentWebhookReceipt::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('payment_gateway_id', $gateway->id)
+            ->count());
+    }
+
     private function createContractor(string $slug): Contractor
     {
         return Contractor::query()->create([

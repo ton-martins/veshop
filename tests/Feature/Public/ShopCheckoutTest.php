@@ -126,6 +126,67 @@ class ShopCheckoutTest extends TestCase
         ]);
     }
 
+    public function test_checkout_is_idempotent_when_same_key_is_sent_twice(): void
+    {
+        $contractor = $this->createContractor('loja-idempotencia');
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Moletom',
+            'sku' => 'MOL-001',
+            'sale_price' => 120.00,
+            'stock_quantity' => 8,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Idempotente',
+            'email' => 'cliente-idempotente@example.com',
+            'phone' => '71999990077',
+            'cep' => '41810-000',
+            'street' => 'Rua das Flores',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $payload = [
+            'customer_name' => 'Cliente Idempotente',
+            'customer_phone' => '(71) 99999-0077',
+            'customer_email' => 'cliente-idempotente@example.com',
+            'idempotency_key' => 'checkout-loja-idempotencia-001',
+            'items' => [
+                ['product_id' => $product->id, 'quantity' => 1],
+            ],
+        ];
+
+        $firstResponse = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), $payload);
+
+        $secondResponse = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), $payload);
+
+        $firstResponse->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+        $secondResponse->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+
+        $salesCount = Sale::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('source', Sale::SOURCE_CATALOG)
+            ->where('checkout_idempotency_key', 'checkout-loja-idempotencia-001')
+            ->count();
+
+        $this->assertSame(1, $salesCount);
+    }
+
     public function test_guest_is_redirected_to_shop_login_when_trying_checkout(): void
     {
         $contractor = $this->createContractor('loja-publica-login');

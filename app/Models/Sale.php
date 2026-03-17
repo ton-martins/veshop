@@ -54,6 +54,7 @@ class Sale extends Model
         'shop_customer_id',
         'user_id',
         'code',
+        'checkout_idempotency_key',
         'source',
         'status',
         'subtotal_amount',
