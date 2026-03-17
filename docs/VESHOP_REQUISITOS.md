@@ -351,12 +351,13 @@ Status atual:
 
 - Parcial, com prioridade crítica.
 - Já existe base multi-tenant, porém falta hardening formal para escala.
+- Trilha inicial de auditoria de segurança implementada (`security_audit_logs`) com eventos de violação de escopo multi-tenant.
 
 Lacunas:
 
 - auditoria de exposição de dados em payloads/HTML;
 - revisão de autorização por rota/ação (prevenção de IDOR);
-- política de segurança operacional contínua.
+- política de segurança operacional contínua e rotina de revisão dos eventos auditados.
 
 Melhor prática recomendada:
 

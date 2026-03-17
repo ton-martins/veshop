@@ -2,15 +2,25 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Models\Contractor;
 use App\Models\User;
 use App\Services\TwoFactorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
+use Inertia\Testing\AssertableInertia as Assert;
 use PragmaRX\Google2FA\Google2FA;
 use Tests\TestCase;
 
 class TwoFactorAuthenticationTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class);
+    }
 
     public function test_login_redirects_to_setup_when_two_factor_is_not_configured(): void
     {
@@ -68,5 +78,54 @@ class TwoFactorAuthenticationTest extends TestCase
         $response->assertRedirect(route('home', absolute: false));
         $this->assertNotNull($user->fresh()->two_factor_confirmed_at);
         $this->assertTrue((bool) session('two_factor_passed'));
+    }
+
+    public function test_two_factor_challenge_does_not_expose_auth_context_before_validation(): void
+    {
+        $twoFactorService = app(TwoFactorService::class);
+        $secret = $twoFactorService->generateSecret();
+
+        $user = User::factory()->create([
+            'role' => User::ROLE_ADMIN,
+            'two_factor_secret' => $twoFactorService->encryptSecret($secret),
+            'two_factor_confirmed_at' => now(),
+        ]);
+
+        $contractor = Contractor::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Contratante Sigiloso',
+            'email' => 'contratante-sigiloso@example.com',
+            'slug' => 'contratante-sigiloso',
+            'timezone' => 'America/Sao_Paulo',
+            'brand_name' => 'Contratante Sigiloso',
+            'brand_primary_color' => '#073341',
+            'settings' => [
+                'business_niche' => Contractor::NICHE_COMMERCIAL,
+                'active_plan_name' => 'Pro',
+            ],
+            'business_type' => Contractor::BUSINESS_TYPE_STORE,
+            'is_active' => true,
+        ]);
+
+        $user->contractors()->sync([$contractor->id]);
+
+        $this->post('/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ])->assertRedirect(route('two-factor.challenge', absolute: false));
+
+        $response = $this
+            ->withSession(['current_contractor_id' => $contractor->id, 'two_factor_passed' => false])
+            ->get(route('two-factor.challenge'));
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('Auth/TwoFactorChallenge')
+            ->where('auth.user', null)
+            ->where('contractorContext.current', null)
+            ->where('contractorContext.available', [])
+            ->where('notifications.unread_count', 0)
+            ->where('notifications.items', [])
+        );
     }
 }

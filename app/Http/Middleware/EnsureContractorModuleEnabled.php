@@ -4,6 +4,8 @@ namespace App\Http\Middleware;
 
 use App\Models\Contractor;
 use App\Models\Module;
+use App\Models\SecurityAuditLog;
+use App\Services\SecurityAuditLogger;
 use Closure;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,6 +14,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class EnsureContractorModuleEnabled
 {
+    public function __construct(
+        private readonly SecurityAuditLogger $securityAuditLogger,
+    ) {}
+
     /**
      * Handle an incoming request.
      */
@@ -29,7 +35,19 @@ class EnsureContractorModuleEnabled
             ->unique()
             ->values()
             ->all();
-        abort_if($requestedModules === [], 403, 'Modulo invalido.');
+        if ($requestedModules === []) {
+            $this->securityAuditLogger->log(
+                $request,
+                'module.access_denied',
+                SecurityAuditLog::SEVERITY_WARNING,
+                (int) $request->session()->get('current_contractor_id', 0),
+                [
+                    'reason' => 'invalid_module_constraint',
+                    'requested_modules' => $modules,
+                ],
+            );
+            abort(403, 'Modulo invalido.');
+        }
 
         $user->loadMissing('contractors.modules');
         $availableContractors = $user->contractors->values();
@@ -64,6 +82,18 @@ class EnsureContractorModuleEnabled
             );
 
         if (! $hasAnyRequestedModule) {
+            $this->securityAuditLogger->log(
+                $request,
+                'module.access_denied',
+                SecurityAuditLog::SEVERITY_WARNING,
+                (int) $currentContractor->id,
+                [
+                    'reason' => 'module_not_enabled_for_contractor',
+                    'requested_modules' => $requestedModules,
+                    'accepted_modules' => $acceptedModulesByRequest,
+                ],
+            );
+
             return $this->redirectToAdminHome('Modulo nao habilitado para o contratante ativo.');
         }
 

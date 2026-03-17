@@ -62,23 +62,30 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        $currentContractor = $this->resolveCurrentContractor($request);
         $authenticatedUser = Auth::guard('web')->user();
-
-        if ($authenticatedUser) {
-            $authenticatedUser->avatar_url = $this->resolveSharedUserAvatarUrl($authenticatedUser);
-        }
+        $canExposeSensitiveContext = $this->canExposeSensitiveContext($request, $authenticatedUser);
+        $currentContractor = $canExposeSensitiveContext
+            ? $this->resolveCurrentContractor($request)
+            : null;
+        $sharedAuthenticatedUser = $this->resolveSharedAuthenticatedUser(
+            $authenticatedUser,
+            $canExposeSensitiveContext,
+        );
 
         return [
             ...parent::share($request),
             'auth' => [
-                'user' => $authenticatedUser,
+                'user' => $sharedAuthenticatedUser,
             ],
             'flash' => [
                 'status' => fn () => $request->session()->get('status'),
             ],
-            'notifications' => fn () => $this->resolveNotificationsSummary($authenticatedUser),
-            'contractorContext' => fn () => $this->resolveContractorContext($request, $currentContractor),
+            'notifications' => fn () => $canExposeSensitiveContext
+                ? $this->resolveNotificationsSummary($authenticatedUser)
+                : ['unread_count' => 0, 'items' => []],
+            'contractorContext' => fn () => $canExposeSensitiveContext
+                ? $this->resolveContractorContext($request, $currentContractor)
+                : ['current' => null, 'available' => []],
             'systemBranding' => fn () => $this->resolveSystemBranding($request, $currentContractor),
         ];
     }
@@ -239,17 +246,9 @@ class HandleInertiaRequests extends Middleware
             ->map(fn ($contractor): array => [
                 'id' => $contractor->id,
                 'name' => $contractor->name,
-                'slug' => $contractor->slug,
                 'brand_name' => $contractor->brand_name,
                 'brand_primary_color' => $contractor->brand_primary_color,
-                'brand_logo_url' => $contractor->brand_logo_url,
                 'brand_avatar_url' => $contractor->brand_avatar_url,
-                'business_niche' => $contractor->niche(),
-                'business_niche_label' => $this->resolveNicheLabel($contractor->niche()),
-                'business_type' => $contractor->businessType(),
-                'business_type_label' => Contractor::labelForBusinessType($contractor->businessType()),
-                'active_plan_name' => $contractor->activePlanName(),
-                'enabled_modules' => $contractor->enabledModules(),
             ])
             ->values()
             ->all();
@@ -282,6 +281,55 @@ class HandleInertiaRequests extends Middleware
             'services' => 'Serviços',
             default => 'Comércio',
         };
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolveSharedAuthenticatedUser(
+        mixed $authenticatedUser,
+        bool $canExposeSensitiveContext = true,
+    ): ?array
+    {
+        if (! $authenticatedUser) {
+            return null;
+        }
+
+        if (! $canExposeSensitiveContext) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $authenticatedUser->id,
+            'name' => (string) ($authenticatedUser->name ?? ''),
+            'email' => (string) ($authenticatedUser->email ?? ''),
+            'role' => (string) ($authenticatedUser->role ?? ''),
+            'email_verified_at' => optional($authenticatedUser->email_verified_at)?->toIso8601String(),
+            'avatar_url' => $this->resolveSharedUserAvatarUrl($authenticatedUser),
+        ];
+    }
+
+    private function canExposeSensitiveContext(Request $request, mixed $authenticatedUser): bool
+    {
+        if (! $authenticatedUser) {
+            return false;
+        }
+
+        $routeName = (string) optional($request->route())->getName();
+
+        if (str_starts_with($routeName, 'two-factor.')) {
+            return false;
+        }
+
+        if (
+            method_exists($authenticatedUser, 'hasTwoFactorEnabled')
+            && $authenticatedUser->hasTwoFactorEnabled()
+            && ! $request->session()->get('two_factor_passed', false)
+        ) {
+            return false;
+        }
+
+        return true;
     }
 
     private function normalizePublicStorageUrl(?string $value): ?string
