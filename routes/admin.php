@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FinanceController;
 use App\Http\Controllers\Admin\ManualController;
 use App\Http\Controllers\Admin\OrderController;
+use App\Http\Controllers\Admin\SalesController;
 use App\Http\Controllers\Admin\PaymentGatewayController;
 use App\Http\Controllers\Admin\PaymentMethodController;
 use App\Http\Controllers\Admin\PdvController;
@@ -60,6 +61,7 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
 
         Route::middleware('contractor.module:orders')->group(function (): void {
             Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
+            Route::put('/orders/{sale}', [OrderController::class, 'update'])->name('orders.update');
             Route::post('/orders/{sale}/confirm', [OrderController::class, 'confirm'])->name('orders.confirm');
             Route::post('/orders/{sale}/reject', [OrderController::class, 'reject'])->name('orders.reject');
             Route::post('/orders/{sale}/paid', [OrderController::class, 'markAsPaid'])->name('orders.paid');
@@ -68,6 +70,7 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
 
         Route::middleware('contractor.module:pdv')->group(function (): void {
             Route::get('/pdv', [PdvController::class, 'index'])->name('pdv.index');
+            Route::get('/sales', [SalesController::class, 'index'])->name('sales.index');
             Route::post('/pdv/cash/open', [PdvController::class, 'openCashSession'])->name('pdv.cash.open');
             Route::post('/pdv/cash/close', [PdvController::class, 'closeCashSession'])->name('pdv.cash.close');
             Route::post('/pdv/sales', [PdvController::class, 'storeSale'])->name('pdv.sales.store');

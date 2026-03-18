@@ -1,6 +1,6 @@
 # Veshop - Guia Mestre
 
-Versão: v3.2  
+Versão: v3.3  
 Última atualização: 18/03/2026
 
 ## 1. Objetivo
@@ -58,6 +58,7 @@ Este é o documento único de referência do Veshop para:
 - Card de verificação de e-mail ajustado para o mesmo layout.
 - Fallback de logo por iniciais do contratante aplicado quando não houver logo.
 - Modal de favoritos ajustado para padrão de modal lateral, similar ao carrinho.
+- Cards de produto com cursor de ação (`pointer`) no hover.
 
 ### 3.4 Pedidos e visão geral
 
@@ -66,6 +67,9 @@ Este é o documento único de referência do Veshop para:
 - Modal de detalhes de pedido compartilhado entre tela de pedidos e visão geral.
 - Visão Geral com abas no topo (`Loja virtual` e `PDV`) e ícones.
 - Sessões de pedidos recentes e vendas recentes usando o mesmo modal de detalhes.
+- Edição de pedido (MVP) no admin com modal dedicado.
+- Auditoria de segurança para edição de pedido (`order.updated.admin`).
+- Página `Vendas` criada para o PDV no mesmo padrão visual da página de pedidos (filtros, abas, cards, tabela e modal de detalhes).
 
 ### 3.5 Paginação já implementada
 
@@ -99,10 +103,10 @@ Paginação backend/frontend confirmada em:
 
 | ID | Item | Status | Prioridade |
 | --- | --- | --- | --- |
-| 1 | UX/UI da loja virtual (feedback visual, carrinho mobile, consistência dos modais) | Parcial | Crítica |
-| 2 | Edição de pedido/venda no admin com auditoria | Pendente | Alta |
+| 1 | UX/UI da loja virtual (feedback visual, carrinho mobile, consistência dos modais) | Concluído (MVP) | Crítica |
+| 2 | Edição de pedido/venda no admin com auditoria | Parcial (pedido MVP) | Alta |
 | 3 | Módulo financeiro (contas a pagar/receber + anexos + status + observações) | Pendente | Crítica |
-| 4 | Finalizar páginas de estoque e pedidos + botão "Novo pedido" | Parcial | Alta |
+| 4 | Finalizar páginas de estoque e pedidos + botão "Novo pedido" | Parcial (página Vendas concluída) | Alta |
 | 5 | Produto com até 5 fotos + variações + promoção (%) | Pendente | Alta |
 | 6 | Categorias com subcategorias | Pendente | Alta |
 | 7 | Mover "Manuais" para item independente no menu | Pendente | Média |
@@ -114,15 +118,13 @@ Paginação backend/frontend confirmada em:
 
 ## 5. Diretrizes de arquitetura para os pendentes críticos
 
-### 5.1 ID 1 - UX/UI da loja virtual
+### 5.1 ID 2 - Edição de pedido/venda
 
-- Aplicar loading visual padrão Veshop em ações críticas:
-  - adicionar ao carrinho;
-  - finalizar compra;
-  - confirmar etapas do checkout.
-- Ajustar carrinho mobile para impedir sobreposição de blocos (entrega/pagamento/itens).
-- Manter padrão único entre modais de Minha Conta, Favoritos e Carrinho.
-- Garantir feedback imediato de sucesso/erro em todas as ações de compra.
+- MVP de pedido já implementado.
+- Próximos passos:
+  - expandir para edição de venda (PDV);
+  - definir campos editáveis por status;
+  - manter trilha auditável por campo alterado.
 
 ### 5.2 ID 3 - Financeiro
 
@@ -164,16 +166,16 @@ Toda implementação só é considerada concluída se tiver:
 
 ## 7. Próximo item recomendado de desenvolvimento
 
-Próximo passo: **ID 1 - UX/UI da loja virtual**.
+Próximo passo: **ID 3 - Módulo financeiro (AP/AR)**.
 
 Motivo:
 
-1. impacto direto na conversão de compra;
-2. remove fricção crítica no mobile;
-3. prepara base visual/funcional para próximos módulos (financeiro e checkout dual).
+1. impacto direto na gestão diária do contratante;
+2. fecha lacuna funcional crítica da plataforma;
+3. prepara base para alertas/notificações financeiras e relatórios.
 
 Escopo objetivo da próxima entrega:
 
-1. loading visual padrão nos botões de compra/checkout;
-2. correção completa do modal de carrinho no mobile;
-3. revisão final dos modais de conta/favoritos/carrinho para padrão único desktop + mobile.
+1. estrutura de dados de lançamentos financeiros (pagar/receber);
+2. formulários com campos obrigatórios e status padronizado;
+3. upload de documento por lançamento com trilha de alteração.

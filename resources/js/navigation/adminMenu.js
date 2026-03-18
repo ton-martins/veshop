@@ -76,6 +76,14 @@
                 module: 'orders',
             },
             {
+                key: 'admin-sales',
+                label: 'Vendas',
+                route: 'admin.sales.index',
+                match: ['admin.sales.*'],
+                icon: 'ReceiptText',
+                module: 'pdv',
+            },
+            {
                 key: 'admin-inventory',
                 label: 'Estoque',
                 route: 'admin.inventory.index',

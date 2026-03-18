@@ -1,6 +1,6 @@
 <script setup>
 import Modal from '@/Components/Modal.vue';
-import { Ban, CheckCircle2, ShoppingBag, Wallet, X, XCircle } from 'lucide-vue-next';
+import { Ban, CheckCircle2, Pencil, ShoppingBag, Wallet, X, XCircle } from 'lucide-vue-next';
 import { computed } from 'vue';
 
 const props = defineProps({
@@ -159,6 +159,15 @@ const requestAction = (type) => {
                 </div>
 
                 <div class="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                        v-if="showActions && order?.can_edit"
+                        type="button"
+                        class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                        @click="requestAction('edit')"
+                    >
+                        <Pencil class="h-4 w-4" />
+                        Editar
+                    </button>
                     <button
                         v-if="showActions && order?.can_confirm"
                         type="button"

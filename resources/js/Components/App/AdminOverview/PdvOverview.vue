@@ -164,10 +164,10 @@ const pdvPaymentSummary = computed(() => {
         <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
             <header class="mb-4 flex items-center justify-between">
                 <h2 class="text-lg font-semibold text-slate-900">Vendas Recentes do PDV</h2>
-                <button type="button" class="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-700">
+                <Link :href="route('admin.sales.index')" class="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-700">
                     Ver histórico
                     <ChevronRight class="h-3.5 w-3.5" />
-                </button>
+                </Link>
             </header>
 
             <ul v-if="pdvRecentSales.length" class="space-y-3">

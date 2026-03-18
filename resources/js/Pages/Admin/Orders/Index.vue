@@ -7,7 +7,7 @@ import UiSelect from '@/Components/App/UiSelect.vue';
 import OrderDetailsModal from '@/Components/App/Orders/OrderDetailsModal.vue';
 import { useBranding } from '@/branding';
 import { Head, useForm, usePage, router } from '@inertiajs/vue3';
-import { ShoppingBag, Search, CheckCircle2, XCircle, Ban, Wallet, ListFilter } from 'lucide-vue-next';
+import { ShoppingBag, Search, CheckCircle2, XCircle, Ban, Wallet, ListFilter, Pencil } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 const props = defineProps({
@@ -33,9 +33,19 @@ const actionConfirmModalOpen = ref(false);
 const actionOrder = ref(null);
 const actionType = ref('');
 const rejectReason = ref('');
+const editModalOpen = ref(false);
+const editOrder = ref(null);
 
 const rejectForm = useForm({ reason: '' });
 const actionForm = useForm({ notes: '' });
+const editForm = useForm({
+    customer_name: '',
+    customer_contact: '',
+    shipping_mode: '',
+    shipping_amount: '0',
+    shipping_estimate_days: '',
+    notes: '',
+});
 const page = usePage();
 const { normalizeHex, withAlpha, secondaryColor } = useBranding();
 const currentContractor = computed(() => page.props.contractorContext?.current ?? null);
@@ -219,6 +229,48 @@ const closeActionConfirmModal = () => {
     rejectForm.clearErrors();
 };
 
+const closeEditModal = () => {
+    editModalOpen.value = false;
+    editOrder.value = null;
+    editForm.reset();
+    editForm.clearErrors();
+};
+
+const openEditModal = (order) => {
+    if (!order?.id || !order?.can_edit) return;
+
+    editOrder.value = order;
+    editForm.defaults({
+        customer_name: String(order.customer ?? ''),
+        customer_contact: String(order.customer_contact ?? ''),
+        shipping_mode: String(order.shipping_mode ?? ''),
+        shipping_amount: Number(order.shipping_amount ?? 0).toFixed(2),
+        shipping_estimate_days: order.shipping_estimate_days === null || order.shipping_estimate_days === undefined
+            ? ''
+            : String(order.shipping_estimate_days),
+        notes: String(order.notes ?? ''),
+    });
+    editForm.reset();
+    editForm.clearErrors();
+    editModalOpen.value = true;
+};
+
+const submitOrderEdit = () => {
+    if (!editOrder.value?.id || editForm.processing) return;
+
+    editForm.transform((data) => ({
+        customer_name: String(data.customer_name ?? '').trim() || null,
+        customer_contact: String(data.customer_contact ?? '').trim() || null,
+        shipping_mode: String(data.shipping_mode ?? '').trim() || null,
+        shipping_amount: String(data.shipping_amount ?? '').trim() === '' ? null : Number(data.shipping_amount),
+        shipping_estimate_days: String(data.shipping_estimate_days ?? '').trim() === '' ? null : Number(data.shipping_estimate_days),
+        notes: String(data.notes ?? '').trim() || null,
+    })).put(route('admin.orders.update', editOrder.value.id), {
+        preserveScroll: true,
+        onSuccess: closeEditModal,
+    });
+};
+
 const openActionConfirmModal = (type, order) => {
     if (!order?.id) return;
 
@@ -277,6 +329,11 @@ const handleOrderDetailsAction = (payload) => {
     closeOrderDetails();
 
     setTimeout(() => {
+        if (type === 'edit') {
+            openEditModal(order);
+            return;
+        }
+
         openActionConfirmModal(type, order);
     }, 0);
 };
@@ -376,6 +433,16 @@ const handleOrderDetailsAction = (payload) => {
                                         <td class="px-4 py-3">
                                             <div class="flex items-center justify-end gap-1">
                                                 <button
+                                                    v-if="order.can_edit"
+                                                    type="button"
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                                                    title="Editar pedido"
+                                                    aria-label="Editar pedido"
+                                                    @click.stop="openEditModal(order)"
+                                                >
+                                                    <Pencil class="h-4 w-4" />
+                                                </button>
+                                                <button
                                                     v-if="order.can_confirm"
                                                     type="button"
                                                     class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
@@ -447,6 +514,16 @@ const handleOrderDetailsAction = (payload) => {
 
                                 <div class="mt-3 flex items-center gap-1.5">
                                     <button
+                                        v-if="order.can_edit"
+                                        type="button"
+                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700"
+                                        title="Editar pedido"
+                                        aria-label="Editar pedido"
+                                        @click.stop="openEditModal(order)"
+                                    >
+                                        <Pencil class="h-4 w-4" />
+                                    </button>
+                                    <button
                                         v-if="order.can_confirm"
                                         type="button"
                                         class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700"
@@ -507,6 +584,109 @@ const handleOrderDetailsAction = (payload) => {
             @close="closeOrderDetails"
             @action="handleOrderDetailsAction"
         />
+
+        <Modal :show="editModalOpen" max-width="2xl" @close="closeEditModal">
+            <div class="space-y-4 p-5">
+                <div>
+                    <h3 class="text-base font-semibold text-slate-900">Editar pedido</h3>
+                    <p class="mt-1 text-sm text-slate-500">
+                        Atualize os dados operacionais do pedido
+                        <span v-if="editOrder?.code" class="font-semibold text-slate-700">
+                            {{ editOrder.code }}.
+                        </span>
+                    </p>
+                </div>
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cliente</span>
+                        <input
+                            v-model="editForm.customer_name"
+                            type="text"
+                            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Nome do cliente"
+                        >
+                    </label>
+                    <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Contato</span>
+                        <input
+                            v-model="editForm.customer_contact"
+                            type="text"
+                            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Telefone ou e-mail"
+                        >
+                    </label>
+                    <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Modo de entrega</span>
+                        <select
+                            v-model="editForm.shipping_mode"
+                            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        >
+                            <option value="">Não informado</option>
+                            <option value="pickup">Retirada</option>
+                            <option value="delivery">Entrega</option>
+                        </select>
+                    </label>
+                    <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor de entrega (R$)</span>
+                        <input
+                            v-model="editForm.shipping_amount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="0,00"
+                        >
+                    </label>
+                    <label class="space-y-1 sm:col-span-2">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Estimativa (dias)</span>
+                        <input
+                            v-model="editForm.shipping_estimate_days"
+                            type="number"
+                            min="0"
+                            step="1"
+                            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Ex: 2"
+                        >
+                    </label>
+                </div>
+
+                <label class="space-y-1">
+                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Observações</span>
+                    <textarea
+                        v-model="editForm.notes"
+                        rows="4"
+                        class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        placeholder="Anotações do pedido"
+                    />
+                </label>
+
+                <p v-if="editForm.errors.order" class="text-xs font-semibold text-rose-600">
+                    {{ editForm.errors.order }}
+                </p>
+                <div v-if="Object.keys(editForm.errors).some((key) => key !== 'order')" class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                    Verifique os campos do formulário antes de salvar.
+                </div>
+
+                <div class="flex items-center justify-end gap-2">
+                    <button
+                        type="button"
+                        class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        @click="closeEditModal"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        type="button"
+                        class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+                        :disabled="editForm.processing"
+                        @click="submitOrderEdit"
+                    >
+                        {{ editForm.processing ? 'Salvando...' : 'Salvar alterações' }}
+                    </button>
+                </div>
+            </div>
+        </Modal>
 
         <Modal :show="actionConfirmModalOpen" max-width="lg" @close="closeActionConfirmModal">
             <div class="space-y-4 p-5">

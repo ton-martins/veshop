@@ -8,10 +8,13 @@ use App\Models\InventoryMovement;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SalePayment;
+use App\Models\SecurityAuditLog;
+use App\Services\SecurityAuditLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -109,6 +112,118 @@ class OrderController extends Controller
                     : 'all',
             ],
         ]);
+    }
+
+    public function update(Request $request, Sale $sale): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $validated = $request->validate([
+            'customer_name' => ['nullable', 'string', 'max:120'],
+            'customer_contact' => ['nullable', 'string', 'max:160'],
+            'shipping_mode' => ['nullable', Rule::in([Sale::SHIPPING_MODE_PICKUP, Sale::SHIPPING_MODE_DELIVERY])],
+            'shipping_amount' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_estimate_days' => ['nullable', 'integer', 'min:0', 'max:365'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $updatedSaleId = null;
+        $updatedSaleCode = null;
+        $changedFields = [];
+
+        DB::transaction(function () use ($contractor, $sale, $validated, &$updatedSaleId, &$updatedSaleCode, &$changedFields): void {
+            $lockedSale = $this->lockOrderForContractor($contractor, $sale->id);
+
+            if (! $this->canEditOrder($lockedSale)) {
+                throw ValidationException::withMessages([
+                    'order' => 'Este pedido não pode ser editado no status atual.',
+                ]);
+            }
+
+            $metadata = is_array($lockedSale->metadata) ? $lockedSale->metadata : [];
+            $before = [
+                'customer_name' => trim((string) ($metadata['customer_name'] ?? ($lockedSale->client?->name ?? ''))),
+                'customer_contact' => trim((string) ($metadata['customer_contact'] ?? ($lockedSale->client?->phone ?? ($lockedSale->client?->email ?? '')))),
+                'shipping_mode' => (string) ($lockedSale->shipping_mode ?? ''),
+                'shipping_amount' => (float) ($lockedSale->shipping_amount ?? 0),
+                'shipping_estimate_days' => $lockedSale->shipping_estimate_days !== null ? (int) $lockedSale->shipping_estimate_days : null,
+                'notes' => trim((string) ($lockedSale->notes ?? '')),
+            ];
+
+            $nextCustomerName = trim((string) ($validated['customer_name'] ?? ''));
+            $nextCustomerContact = trim((string) ($validated['customer_contact'] ?? ''));
+            $nextShippingMode = array_key_exists('shipping_mode', $validated)
+                ? (string) ($validated['shipping_mode'] ?? '')
+                : (string) ($lockedSale->shipping_mode ?? '');
+            $nextShippingAmount = array_key_exists('shipping_amount', $validated)
+                ? (float) ($validated['shipping_amount'] ?? 0)
+                : (float) ($lockedSale->shipping_amount ?? 0);
+            $nextShippingEstimateDays = array_key_exists('shipping_estimate_days', $validated)
+                ? ($validated['shipping_estimate_days'] !== null ? (int) $validated['shipping_estimate_days'] : null)
+                : ($lockedSale->shipping_estimate_days !== null ? (int) $lockedSale->shipping_estimate_days : null);
+            $nextNotes = trim((string) ($validated['notes'] ?? ''));
+
+            if ($nextCustomerName === '') {
+                unset($metadata['customer_name']);
+            } else {
+                $metadata['customer_name'] = $nextCustomerName;
+            }
+
+            if ($nextCustomerContact === '') {
+                unset($metadata['customer_contact']);
+            } else {
+                $metadata['customer_contact'] = $nextCustomerContact;
+            }
+
+            $lockedSale->fill([
+                'shipping_mode' => $nextShippingMode !== '' ? $nextShippingMode : null,
+                'shipping_amount' => $nextShippingAmount,
+                'shipping_estimate_days' => $nextShippingEstimateDays,
+                'notes' => $nextNotes !== '' ? $nextNotes : null,
+                'metadata' => $metadata,
+            ])->save();
+
+            $after = [
+                'customer_name' => $nextCustomerName,
+                'customer_contact' => $nextCustomerContact,
+                'shipping_mode' => $nextShippingMode,
+                'shipping_amount' => $nextShippingAmount,
+                'shipping_estimate_days' => $nextShippingEstimateDays,
+                'notes' => $nextNotes,
+            ];
+
+            foreach ($after as $field => $afterValue) {
+                $beforeValue = $before[$field] ?? null;
+                if ($beforeValue !== $afterValue) {
+                    $changedFields[] = $field;
+                }
+            }
+
+            $updatedSaleId = (int) $lockedSale->id;
+            $updatedSaleCode = (string) $lockedSale->code;
+        });
+
+        if ($changedFields !== [] && $updatedSaleId) {
+            app(SecurityAuditLogger::class)->log(
+                $request,
+                'order.updated.admin',
+                SecurityAuditLog::SEVERITY_INFO,
+                $contractor->id,
+                [
+                    'sale_id' => $updatedSaleId,
+                    'sale_code' => $updatedSaleCode,
+                    'changed_fields' => $changedFields,
+                ],
+            );
+        }
+
+        return back()->with(
+            'status',
+            $changedFields !== []
+                ? 'Pedido atualizado com sucesso.'
+                : 'Nenhuma alteração foi aplicada no pedido.'
+        );
     }
 
     public function confirm(Request $request, Sale $sale): RedirectResponse
@@ -521,14 +636,14 @@ class OrderController extends Controller
             ->values()
             ->implode(' + ');
 
-        $customerName = trim((string) ($sale->client?->name ?? ($metadata['customer_name'] ?? '')));
+        $customerName = trim((string) (($metadata['customer_name'] ?? null) ?? ($sale->client?->name ?? '')));
         if ($customerName === '') {
             $customerName = 'Consumidor final';
         }
 
-        $customerContact = trim((string) ($sale->client?->phone ?? ($metadata['customer_phone'] ?? '')));
+        $customerContact = trim((string) (($metadata['customer_contact'] ?? null) ?? ($sale->client?->phone ?? '')));
         if ($customerContact === '') {
-            $customerContact = trim((string) ($sale->client?->email ?? ($metadata['customer_email'] ?? '')));
+            $customerContact = trim((string) ($sale->client?->email ?? ($metadata['customer_email'] ?? ($metadata['customer_phone'] ?? ''))));
         }
 
         return [
@@ -554,10 +669,15 @@ class OrderController extends Controller
             'status' => $status,
             'payment_label' => $paymentLabel !== '' ? $paymentLabel : 'Não informado',
             'created_at' => optional($sale->created_at)->format('d/m/Y H:i'),
+            'shipping_mode' => $sale->shipping_mode !== null ? (string) $sale->shipping_mode : null,
+            'shipping_amount' => (float) $sale->shipping_amount,
+            'shipping_estimate_days' => $sale->shipping_estimate_days !== null ? (int) $sale->shipping_estimate_days : null,
+            'notes' => $sale->notes !== null ? (string) $sale->notes : null,
             'can_confirm' => in_array($sale->status, [Sale::STATUS_NEW, Sale::STATUS_PENDING_CONFIRMATION], true),
             'can_reject' => in_array($sale->status, [Sale::STATUS_NEW, Sale::STATUS_PENDING_CONFIRMATION], true),
             'can_mark_paid' => in_array($sale->status, [Sale::STATUS_CONFIRMED, Sale::STATUS_AWAITING_PAYMENT], true),
             'can_cancel' => ! in_array($sale->status, [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED], true),
+            'can_edit' => $this->canEditOrder($sale),
         ];
     }
 
@@ -576,6 +696,16 @@ class OrderController extends Controller
             Sale::STATUS_CANCELLED => ['value' => $status, 'label' => 'Cancelado', 'tone' => 'bg-rose-100 text-rose-700'],
             default => ['value' => $status, 'label' => ucfirst($status), 'tone' => 'bg-slate-100 text-slate-700'],
         };
+    }
+
+    private function canEditOrder(Sale $sale): bool
+    {
+        return ! in_array($sale->status, [
+            Sale::STATUS_CANCELLED,
+            Sale::STATUS_REJECTED,
+            Sale::STATUS_COMPLETED,
+            Sale::STATUS_REFUNDED,
+        ], true);
     }
 
     private function appendNote(?string $base, ?string $extra): ?string

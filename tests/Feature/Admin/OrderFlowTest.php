@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SalePayment;
+use App\Models\SecurityAuditLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -229,6 +230,110 @@ class OrderFlowTest extends TestCase
         $this->assertDatabaseHas('products', [
             'id' => $product->id,
             'stock_quantity' => 6,
+        ]);
+    }
+
+    public function test_admin_can_edit_order_and_generate_audit_log(): void
+    {
+        $contractor = $this->createContractor('pedidos-edicao');
+        $user = $this->createAdminUser([$contractor]);
+
+        $sale = Sale::query()->create([
+            'contractor_id' => $contractor->id,
+            'code' => 'PED-20260318-001',
+            'source' => Sale::SOURCE_CATALOG,
+            'status' => Sale::STATUS_PENDING_CONFIRMATION,
+            'subtotal_amount' => 120,
+            'discount_amount' => 0,
+            'surcharge_amount' => 0,
+            'total_amount' => 120,
+            'paid_amount' => 0,
+            'change_amount' => 0,
+            'shipping_mode' => Sale::SHIPPING_MODE_PICKUP,
+            'shipping_amount' => 0,
+            'shipping_estimate_days' => null,
+            'metadata' => [
+                'customer_name' => 'Cliente Original',
+                'customer_contact' => '51999990000',
+            ],
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->put(route('admin.orders.update', $sale->id), [
+                'customer_name' => 'Cliente Atualizado',
+                'customer_contact' => 'cliente@exemplo.com',
+                'shipping_mode' => Sale::SHIPPING_MODE_DELIVERY,
+                'shipping_amount' => 12.5,
+                'shipping_estimate_days' => 2,
+                'notes' => 'Ajuste manual feito pelo admin.',
+            ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('sales', [
+            'id' => $sale->id,
+            'shipping_mode' => Sale::SHIPPING_MODE_DELIVERY,
+            'shipping_amount' => '12.50',
+            'shipping_estimate_days' => 2,
+            'notes' => 'Ajuste manual feito pelo admin.',
+        ]);
+        $this->assertDatabaseHas('security_audit_logs', [
+            'contractor_id' => $contractor->id,
+            'user_id' => $user->id,
+            'event' => 'order.updated.admin',
+            'severity' => SecurityAuditLog::SEVERITY_INFO,
+        ]);
+
+        $sale->refresh();
+        $this->assertSame('Cliente Atualizado', (string) data_get($sale->metadata, 'customer_name'));
+        $this->assertSame('cliente@exemplo.com', (string) data_get($sale->metadata, 'customer_contact'));
+    }
+
+    public function test_admin_cannot_edit_cancelled_order(): void
+    {
+        $contractor = $this->createContractor('pedidos-edicao-bloqueio');
+        $user = $this->createAdminUser([$contractor]);
+
+        $sale = Sale::query()->create([
+            'contractor_id' => $contractor->id,
+            'code' => 'PED-20260318-002',
+            'source' => Sale::SOURCE_CATALOG,
+            'status' => Sale::STATUS_CANCELLED,
+            'subtotal_amount' => 75,
+            'discount_amount' => 0,
+            'surcharge_amount' => 0,
+            'total_amount' => 75,
+            'paid_amount' => 0,
+            'change_amount' => 0,
+            'shipping_mode' => Sale::SHIPPING_MODE_PICKUP,
+            'shipping_amount' => 0,
+            'metadata' => [
+                'customer_name' => 'Cliente Cancelado',
+            ],
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->from(route('admin.orders.index'))
+            ->put(route('admin.orders.update', $sale->id), [
+                'customer_name' => 'Tentativa de alteração',
+            ]);
+
+        $response->assertRedirect(route('admin.orders.index'));
+        $response->assertSessionHasErrors(['order']);
+
+        $sale->refresh();
+        $this->assertSame('Cliente Cancelado', (string) data_get($sale->metadata, 'customer_name'));
+        $this->assertDatabaseMissing('security_audit_logs', [
+            'contractor_id' => $contractor->id,
+            'user_id' => $user->id,
+            'event' => 'order.updated.admin',
         ]);
     }
 
