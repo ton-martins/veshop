@@ -242,7 +242,7 @@ const { brandName, tagline, systemIconUrl, publicFaviconHref, publicFaviconType 
     box-shadow: 0 30px 70px -45px rgba(7, 51, 65, 0.7);
 }
 
-.veshop-auth-logo {
+:deep(.veshop-auth-logo) {
     width: 46px;
     height: 46px;
     border-radius: 12px;
@@ -255,13 +255,13 @@ const { brandName, tagline, systemIconUrl, publicFaviconHref, publicFaviconType 
     box-shadow: 0 20px 35px -24px rgba(2, 17, 22, 0.85);
 }
 
-.veshop-auth-logo-img {
+:deep(.veshop-auth-logo-img) {
     width: 27px;
     height: 27px;
     object-fit: contain;
 }
 
-.veshop-auth-subbrand {
+:deep(.veshop-auth-subbrand) {
     font-size: 10px;
     color: #073341;
     font-weight: 600;

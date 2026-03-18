@@ -56,6 +56,24 @@ const storeInitials = computed(() => {
 
     return `${first}${last}`.toUpperCase() || 'LJ';
 });
+const storeInitialsColor = computed(() => {
+    const normalized = storePrimaryColor.value.slice(1);
+    const red = Number.parseInt(normalized.slice(0, 2), 16);
+    const green = Number.parseInt(normalized.slice(2, 4), 16);
+    const blue = Number.parseInt(normalized.slice(4, 6), 16);
+    const luminance = ((red * 299) + (green * 587) + (blue * 114)) / 255000;
+
+    return luminance > 0.62 ? '#0f172a' : '#ffffff';
+});
+const storeIconStyle = computed(() => {
+    if (storeLogo.value) return null;
+
+    return {
+        background: storePrimaryColor.value,
+        color: storeInitialsColor.value,
+        borderColor: withAlpha(storePrimaryColor.value, 0.6),
+    };
+});
 
 const stateOptions = computed(() => ([
     { value: '', label: 'Selecione a UF' },
@@ -220,7 +238,7 @@ const submit = () => {
 
         <template #brand>
             <Link :href="shopUrl" class="d-inline-flex align-items-center gap-3 text-decoration-none">
-                <span class="veshop-auth-logo">
+                <span class="veshop-auth-logo" :style="storeIconStyle">
                     <img
                         v-if="storeLogo"
                         :src="storeLogo"
