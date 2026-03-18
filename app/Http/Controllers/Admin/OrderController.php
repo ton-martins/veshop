@@ -38,7 +38,8 @@ class OrderController extends Controller
         $ordersQuery = (clone $baseQuery)
             ->with([
                 'client:id,name,email,phone',
-                'items:id,sale_id,quantity',
+                'items:id,sale_id,product_id,description,sku,quantity,unit_price,discount_amount,total_amount',
+                'items.product:id,image_url',
                 'payments:id,sale_id,payment_method_id,status,amount',
                 'payments.paymentMethod:id,name',
             ])
@@ -516,6 +517,18 @@ class OrderController extends Controller
             'channel' => 'Loja virtual',
             'total_amount' => (float) $sale->total_amount,
             'total_items' => (int) $sale->items->sum(static fn ($item): int => (int) $item->quantity),
+            'items' => $sale->items
+                ->map(static fn ($item): array => [
+                    'description' => (string) $item->description,
+                    'sku' => $item->sku !== null ? (string) $item->sku : null,
+                    'image_url' => $item->product?->image_url !== null ? (string) $item->product->image_url : null,
+                    'quantity' => (int) $item->quantity,
+                    'unit_price' => (float) $item->unit_price,
+                    'discount_amount' => (float) $item->discount_amount,
+                    'total_amount' => (float) $item->total_amount,
+                ])
+                ->values()
+                ->all(),
             'status' => $status,
             'payment_label' => $paymentLabel !== '' ? $paymentLabel : 'Não informado',
             'created_at' => optional($sale->created_at)->format('d/m/Y H:i'),

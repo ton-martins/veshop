@@ -2,8 +2,10 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import Modal from '@/Components/Modal.vue';
-import { Head, useForm } from '@inertiajs/vue3';
-import { ShoppingBag, Boxes, CircleDollarSign, AlertTriangle, Search, Filter, CheckCircle2, XCircle, Ban, Wallet } from 'lucide-vue-next';
+import UiSelect from '@/Components/App/UiSelect.vue';
+import { useBranding } from '@/branding';
+import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { ShoppingBag, Search, CheckCircle2, XCircle, Ban, Wallet, ListFilter, X } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 
 const props = defineProps({
@@ -16,51 +18,94 @@ const props = defineProps({
 
 const orderSearch = ref(String(props.filters?.search ?? ''));
 const selectedStatus = ref(String(props.filters?.status ?? ''));
-const rejectModalOpen = ref(false);
-const orderToReject = ref(null);
+const selectedPipelineKey = ref('all');
+const orderDetailsModalOpen = ref(false);
+const orderDetails = ref(null);
+const actionConfirmModalOpen = ref(false);
+const actionOrder = ref(null);
+const actionType = ref('');
+const rejectReason = ref('');
 
 const rejectForm = useForm({ reason: '' });
 const actionForm = useForm({ notes: '' });
+const page = usePage();
+const { normalizeHex, withAlpha, secondaryColor } = useBranding();
+const currentContractor = computed(() => page.props.contractorContext?.current ?? null);
+const tabAccentColor = computed(() =>
+    normalizeHex(currentContractor.value?.brand_primary_color || '', secondaryColor.value),
+);
+const ordersUiStyles = computed(() => ({
+    '--orders-pipeline-active': tabAccentColor.value,
+    '--orders-pipeline-active-border': withAlpha(tabAccentColor.value, 0.28),
+}));
 
-const stats = computed(() => [
-    {
-        key: 'pending_confirmation',
-        label: 'Aguardando confirmação',
-        value: String(props.orderStats?.pending_confirmation ?? 0),
-        icon: ShoppingBag,
-        tone: 'bg-slate-100 text-slate-700',
-    },
-    {
-        key: 'awaiting_payment',
-        label: 'Aguardando pagamento',
-        value: String(props.orderStats?.awaiting_payment ?? 0),
-        icon: Boxes,
-        tone: 'bg-blue-100 text-blue-700',
-    },
-    {
-        key: 'paid_today',
-        label: 'Pagos hoje',
-        value: String(props.orderStats?.paid_today ?? 0),
-        icon: CircleDollarSign,
-        tone: 'bg-emerald-100 text-emerald-700',
-    },
-    {
-        key: 'cancelled',
-        label: 'Rejeitados/cancelados',
-        value: String(props.orderStats?.cancelled ?? 0),
-        icon: AlertTriangle,
-        tone: 'bg-amber-100 text-amber-700',
-    },
-]);
+const pipelineStatusMap = {
+    all: [],
+    pending_confirmation: ['pending_confirmation', 'new'],
+    awaiting_payment: ['awaiting_payment', 'confirmed'],
+    paid: ['paid'],
+    cancelled: ['cancelled', 'rejected'],
+};
+
+const pipelineIconMap = {
+    pending_confirmation: ShoppingBag,
+    awaiting_payment: Wallet,
+    paid: CheckCircle2,
+    cancelled: XCircle,
+};
+
+const pipelineTabs = computed(() => {
+    const baseTabs = (props.pipeline ?? []).map((item) => ({
+        key: String(item?.key ?? ''),
+        label: String(item?.label ?? ''),
+        qty: Number(item?.qty ?? 0),
+        icon: pipelineIconMap[String(item?.key ?? '')] ?? ListFilter,
+    }));
+
+    return [
+        {
+            key: 'all',
+            label: 'Todos',
+            qty: Number(props.orders?.length ?? 0),
+            icon: ListFilter,
+        },
+        ...baseTabs,
+    ];
+});
 
 const asCurrency = (value) => Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const orderDetailsItems = computed(() => (
+    Array.isArray(orderDetails.value?.items)
+        ? orderDetails.value.items
+        : []
+));
+const orderDetailsItemsSubtotal = computed(() => (
+    orderDetailsItems.value.reduce(
+        (sum, item) => sum + (Number(item?.unit_price ?? 0) * Number(item?.quantity ?? 0)),
+        0,
+    )
+));
+const orderDetailsItemsDiscount = computed(() => (
+    orderDetailsItems.value.reduce(
+        (sum, item) => sum + Number(item?.discount_amount ?? 0),
+        0,
+    )
+));
 
 const filteredOrders = computed(() => {
     const query = String(orderSearch.value ?? '').trim().toLowerCase();
     const status = String(selectedStatus.value ?? '').trim();
+    const pipelineKey = String(selectedPipelineKey.value ?? 'all').trim();
+    const pipelineStatuses = pipelineStatusMap[pipelineKey] ?? [];
 
     return (props.orders ?? []).filter((order) => {
-        if (status && String(order?.status?.value ?? '') !== status) {
+        const orderStatusValue = String(order?.status?.value ?? '').trim();
+
+        if (pipelineStatuses.length && !pipelineStatuses.includes(orderStatusValue)) {
+            return false;
+        }
+
+        if (status && orderStatusValue !== status) {
             return false;
         }
 
@@ -78,50 +123,124 @@ const clearSearch = () => {
     orderSearch.value = '';
 };
 
-const confirmOrder = (order) => {
-    if (!order?.id || actionForm.processing) return;
-
-    actionForm.transform(() => ({ notes: '' })).post(route('admin.orders.confirm', order.id), {
-        preserveScroll: true,
-    });
-};
-
-const markOrderPaid = (order) => {
-    if (!order?.id || actionForm.processing) return;
-
-    actionForm.transform(() => ({ notes: '' })).post(route('admin.orders.paid', order.id), {
-        preserveScroll: true,
-    });
-};
-
-const cancelOrder = (order) => {
-    if (!order?.id || actionForm.processing) return;
-
-    actionForm.transform(() => ({ reason: '' })).post(route('admin.orders.cancel', order.id), {
-        preserveScroll: true,
-    });
-};
-
-const openRejectModal = (order) => {
+const openOrderDetails = (order) => {
     if (!order?.id) return;
+    orderDetails.value = order;
+    orderDetailsModalOpen.value = true;
+};
 
-    orderToReject.value = order;
+const closeOrderDetails = () => {
+    orderDetailsModalOpen.value = false;
+    orderDetails.value = null;
+};
+
+const actionMeta = computed(() => {
+    const currentType = String(actionType.value ?? '');
+
+    if (currentType === 'confirm') {
+        return {
+            title: 'Confirmar pedido',
+            description: 'Este pedido será confirmado e seguirá para o próximo estágio.',
+            confirmLabel: 'Confirmar pedido',
+            confirmClass: 'bg-emerald-600 hover:bg-emerald-700',
+        };
+    }
+
+    if (currentType === 'paid') {
+        return {
+            title: 'Marcar como pago',
+            description: 'Confirme para marcar este pedido como pago.',
+            confirmLabel: 'Marcar como pago',
+            confirmClass: 'bg-blue-600 hover:bg-blue-700',
+        };
+    }
+
+    if (currentType === 'reject') {
+        return {
+            title: 'Rejeitar pedido',
+            description: 'Confirme para rejeitar este pedido.',
+            confirmLabel: 'Confirmar rejeição',
+            confirmClass: 'bg-amber-600 hover:bg-amber-700',
+        };
+    }
+
+    return {
+        title: 'Cancelar pedido',
+        description: 'Confirme para cancelar este pedido.',
+        confirmLabel: 'Confirmar cancelamento',
+        confirmClass: 'bg-rose-600 hover:bg-rose-700',
+    };
+});
+
+const closeActionConfirmModal = () => {
+    actionConfirmModalOpen.value = false;
+    actionOrder.value = null;
+    actionType.value = '';
+    rejectReason.value = '';
+    actionForm.clearErrors();
     rejectForm.reset();
     rejectForm.clearErrors();
-    rejectModalOpen.value = true;
 };
 
-const submitReject = () => {
-    if (!orderToReject.value?.id || rejectForm.processing) return;
+const openActionConfirmModal = (type, order) => {
+    if (!order?.id) return;
 
-    rejectForm.post(route('admin.orders.reject', orderToReject.value.id), {
+    actionType.value = String(type ?? '');
+    actionOrder.value = order;
+    rejectReason.value = 'Pedido rejeitado manualmente pelo operador.';
+    actionForm.clearErrors();
+    rejectForm.reset();
+    rejectForm.clearErrors();
+    actionConfirmModalOpen.value = true;
+};
+
+const submitActionConfirm = () => {
+    if (!actionOrder.value?.id) return;
+    if (actionForm.processing || rejectForm.processing) return;
+
+    const orderId = actionOrder.value.id;
+    const type = String(actionType.value ?? '');
+
+    if (type === 'confirm') {
+        actionForm.transform(() => ({ notes: '' })).post(route('admin.orders.confirm', orderId), {
+            preserveScroll: true,
+            onSuccess: closeActionConfirmModal,
+        });
+        return;
+    }
+
+    if (type === 'paid') {
+        actionForm.transform(() => ({ notes: '' })).post(route('admin.orders.paid', orderId), {
+            preserveScroll: true,
+            onSuccess: closeActionConfirmModal,
+        });
+        return;
+    }
+
+    if (type === 'reject') {
+        rejectForm.reason = String(rejectReason.value ?? '').trim() || 'Pedido rejeitado manualmente pelo operador.';
+        rejectForm.post(route('admin.orders.reject', orderId), {
+            preserveScroll: true,
+            onSuccess: closeActionConfirmModal,
+        });
+        return;
+    }
+
+    actionForm.transform(() => ({ reason: '' })).post(route('admin.orders.cancel', orderId), {
         preserveScroll: true,
-        onSuccess: () => {
-            rejectModalOpen.value = false;
-            orderToReject.value = null;
-            rejectForm.reset();
-        },
+        onSuccess: closeActionConfirmModal,
     });
+};
+
+const openOrderActionFromDetails = (type) => {
+    const order = orderDetails.value;
+    if (!order?.id) return;
+
+    closeOrderDetails();
+
+    setTimeout(() => {
+        openActionConfirmModal(type, order);
+    }, 0);
 };
 </script>
 
@@ -129,19 +248,24 @@ const submitReject = () => {
     <Head title="Pedidos" />
 
     <AuthenticatedLayout area="admin" header-variant="compact" header-title="Pedidos" :show-table-view-toggle="false">
-        <section class="space-y-4">
-            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <article v-for="stat in stats" :key="stat.key" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div class="flex items-start justify-between gap-3">
-                        <div>
-                            <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
-                            <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
-                        </div>
-                        <span class="veshop-stat-icon inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
-                            <component :is="stat.icon" class="h-4 w-4" />
+        <section class="space-y-4" :style="ordersUiStyles">
+            <div class="orders-pipeline-shell">
+                <div class="orders-pipeline-track">
+                    <button
+                        v-for="tab in pipelineTabs"
+                        :key="`pipeline-tab-${tab.key}`"
+                        type="button"
+                        class="orders-pipeline-tab"
+                        :class="selectedPipelineKey === tab.key ? 'is-active' : ''"
+                        @click="selectedPipelineKey = tab.key"
+                    >
+                        <component :is="tab.icon" class="h-4 w-4 shrink-0" />
+                        <span class="truncate">{{ tab.label }}</span>
+                        <span class="orders-pipeline-badge">
+                            {{ tab.qty }}
                         </span>
-                    </div>
-                </article>
+                    </button>
+                </div>
             </div>
 
             <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
@@ -166,27 +290,19 @@ const submitReject = () => {
                     </div>
 
                     <div class="flex w-full items-center gap-2 lg:w-auto">
-                        <div class="relative w-full lg:w-56">
-                            <Filter class="pointer-events-none absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                            <select v-model="selectedStatus" class="w-full rounded-xl border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs font-semibold text-slate-700">
-                                <option
-                                    v-for="option in statusOptions"
-                                    :key="`status-${option.value || 'all'}`"
-                                    :value="option.value"
-                                >
-                                    {{ option.label }}
-                                </option>
-                            </select>
-                        </div>
+                        <UiSelect
+                            v-model="selectedStatus"
+                            :options="statusOptions"
+                            button-class="w-full lg:w-56"
+                        />
                     </div>
                 </div>
 
-                                <div class="mt-3 flex justify-end">
+                <div class="mt-3 flex justify-end">
                     <TableViewToggle />
                 </div>
 
-                <div class="mt-4 grid gap-4 xl:grid-cols-[1.7fr_1fr]">
-                    <div class="space-y-3">
+                <div class="mt-4 space-y-3">
                         <div class="hidden overflow-hidden rounded-xl border border-slate-200 md:block">
                             <table class="min-w-full divide-y divide-slate-200 text-sm">
                                 <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -199,7 +315,12 @@ const submitReject = () => {
                                     </tr>
                                 </thead>
                                 <tbody v-if="filteredOrders.length" class="divide-y divide-slate-100 bg-white">
-                                    <tr v-for="order in filteredOrders" :key="order.id">
+                                    <tr
+                                        v-for="order in filteredOrders"
+                                        :key="order.id"
+                                        class="cursor-pointer transition hover:bg-slate-50/70"
+                                        @click="openOrderDetails(order)"
+                                    >
                                         <td class="px-4 py-3">
                                             <p class="font-semibold text-slate-900">{{ order.code }}</p>
                                             <p class="text-xs text-slate-500">{{ order.customer }}</p>
@@ -219,38 +340,42 @@ const submitReject = () => {
                                                 <button
                                                     v-if="order.can_confirm"
                                                     type="button"
-                                                    class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
-                                                    @click="confirmOrder(order)"
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                                    title="Confirmar pedido"
+                                                    aria-label="Confirmar pedido"
+                                                    @click.stop="openActionConfirmModal('confirm', order)"
                                                 >
-                                                    <CheckCircle2 class="h-3.5 w-3.5" />
-                                                    Confirmar
+                                                    <CheckCircle2 class="h-4 w-4" />
                                                 </button>
                                                 <button
                                                     v-if="order.can_mark_paid"
                                                     type="button"
-                                                    class="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
-                                                    @click="markOrderPaid(order)"
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                                    title="Marcar como pago"
+                                                    aria-label="Marcar como pago"
+                                                    @click.stop="openActionConfirmModal('paid', order)"
                                                 >
-                                                    <Wallet class="h-3.5 w-3.5" />
-                                                    Marcar pago
+                                                    <Wallet class="h-4 w-4" />
                                                 </button>
                                                 <button
                                                     v-if="order.can_reject"
                                                     type="button"
-                                                    class="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100"
-                                                    @click="openRejectModal(order)"
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                                    title="Rejeitar pedido"
+                                                    aria-label="Rejeitar pedido"
+                                                    @click.stop="openActionConfirmModal('reject', order)"
                                                 >
-                                                    <XCircle class="h-3.5 w-3.5" />
-                                                    Rejeitar
+                                                    <XCircle class="h-4 w-4" />
                                                 </button>
                                                 <button
                                                     v-if="order.can_cancel"
                                                     type="button"
-                                                    class="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100"
-                                                    @click="cancelOrder(order)"
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                                    title="Cancelar pedido"
+                                                    aria-label="Cancelar pedido"
+                                                    @click.stop="openActionConfirmModal('cancel', order)"
                                                 >
-                                                    <Ban class="h-3.5 w-3.5" />
-                                                    Cancelar
+                                                    <Ban class="h-4 w-4" />
                                                 </button>
                                             </div>
                                         </td>
@@ -263,7 +388,8 @@ const submitReject = () => {
                             <article
                                 v-for="order in filteredOrders"
                                 :key="`mobile-order-${order.id}`"
-                                class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                                class="cursor-pointer rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:bg-slate-50/70"
+                                @click="openOrderDetails(order)"
                             >
                                 <div class="flex items-start justify-between gap-2">
                                     <div>
@@ -281,103 +407,340 @@ const submitReject = () => {
                                     <p>Quando: <span class="font-semibold">{{ order.created_at }}</span></p>
                                 </div>
 
-                                <div class="mt-3 flex flex-wrap gap-1.5">
+                                <div class="mt-3 flex items-center gap-1.5">
                                     <button
                                         v-if="order.can_confirm"
                                         type="button"
-                                        class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700"
-                                        @click="confirmOrder(order)"
+                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700"
+                                        title="Confirmar pedido"
+                                        aria-label="Confirmar pedido"
+                                        @click.stop="openActionConfirmModal('confirm', order)"
                                     >
-                                        <CheckCircle2 class="h-3.5 w-3.5" />
-                                        Confirmar
+                                        <CheckCircle2 class="h-4 w-4" />
                                     </button>
                                     <button
                                         v-if="order.can_mark_paid"
                                         type="button"
-                                        class="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700"
-                                        @click="markOrderPaid(order)"
+                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700"
+                                        title="Marcar como pago"
+                                        aria-label="Marcar como pago"
+                                        @click.stop="openActionConfirmModal('paid', order)"
                                     >
-                                        <Wallet class="h-3.5 w-3.5" />
-                                        Pago
+                                        <Wallet class="h-4 w-4" />
                                     </button>
                                     <button
                                         v-if="order.can_reject"
                                         type="button"
-                                        class="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700"
-                                        @click="openRejectModal(order)"
+                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700"
+                                        title="Rejeitar pedido"
+                                        aria-label="Rejeitar pedido"
+                                        @click.stop="openActionConfirmModal('reject', order)"
                                     >
-                                        <XCircle class="h-3.5 w-3.5" />
-                                        Rejeitar
+                                        <XCircle class="h-4 w-4" />
                                     </button>
                                     <button
                                         v-if="order.can_cancel"
                                         type="button"
-                                        class="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700"
-                                        @click="cancelOrder(order)"
+                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700"
+                                        title="Cancelar pedido"
+                                        aria-label="Cancelar pedido"
+                                        @click.stop="openActionConfirmModal('cancel', order)"
                                     >
-                                        <Ban class="h-3.5 w-3.5" />
-                                        Cancelar
+                                        <Ban class="h-4 w-4" />
                                     </button>
                                 </div>
                             </article>
                         </div>
 
-                        <div v-if="!filteredOrders.length" class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-                            Nenhum pedido registrado para este contratante.
-                        </div>
+                    <div v-if="!filteredOrders.length" class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                        Nenhum pedido registrado para este contratante.
                     </div>
-
-                    <aside class="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
-                        <h2 class="text-sm font-semibold text-slate-900">Pipeline de pedidos</h2>
-                        <ul class="space-y-2">
-                            <li v-for="item in pipeline" :key="item.key" class="flex items-center justify-between rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200">
-                                <span class="text-sm font-semibold text-slate-700">{{ item.label }}</span>
-                                <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="item.tone">{{ item.qty }}</span>
-                            </li>
-                        </ul>
-                    </aside>
                 </div>
             </section>
         </section>
 
-        <Modal :show="rejectModalOpen" max-width="lg" @close="rejectModalOpen = false">
+        <Modal :show="orderDetailsModalOpen" max-width="3xl" @close="closeOrderDetails">
+            <div class="flex max-h-[85vh] flex-col">
+                <header class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-5">
+                    <div class="min-w-0">
+                        <p class="truncate text-base font-semibold text-slate-900">{{ orderDetails?.code || 'Detalhes do pedido' }}</p>
+                        <p class="mt-1 text-xs text-slate-500">Pedido da loja virtual • {{ orderDetails?.created_at || '-' }}</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span
+                            v-if="orderDetails?.status"
+                            class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                            :class="orderDetails.status.tone"
+                        >
+                            {{ orderDetails.status.label }}
+                        </span>
+                        <button
+                            type="button"
+                            class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                            aria-label="Fechar detalhes"
+                            @click="closeOrderDetails"
+                        >
+                            <X class="h-4 w-4" />
+                        </button>
+                    </div>
+                </header>
+
+                <div class="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
+                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cliente</p>
+                            <p class="mt-1 text-sm font-semibold text-slate-900">{{ orderDetails?.customer || '-' }}</p>
+                            <p class="mt-1 text-xs text-slate-500">{{ orderDetails?.customer_contact || 'Sem contato' }}</p>
+                        </div>
+                        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Canal</p>
+                            <p class="mt-1 text-sm font-semibold text-slate-900">{{ orderDetails?.channel || '-' }}</p>
+                        </div>
+                        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pagamento</p>
+                            <p class="mt-1 text-sm font-semibold text-slate-900">{{ orderDetails?.payment_label || 'Não informado' }}</p>
+                        </div>
+                    </div>
+
+                    <section class="rounded-2xl border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
+                        <div class="flex items-center justify-between gap-2">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Itens do pedido</p>
+                            <span class="text-[11px] font-semibold text-slate-500">{{ orderDetailsItems.length }} item(ns)</span>
+                        </div>
+
+                        <div v-if="orderDetailsItems.length" class="mt-3 space-y-2">
+                        <article
+                            v-for="(item, idx) in orderDetailsItems"
+                            :key="`order-item-${orderDetails?.id ?? 'x'}-${idx}`"
+                            class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                        >
+                            <div class="flex items-start gap-3">
+                                <div class="h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                                    <img
+                                        v-if="item.image_url"
+                                        :src="item.image_url"
+                                        :alt="item.description || `Produto ${idx + 1}`"
+                                        class="h-full w-full object-cover"
+                                    >
+                                    <span v-else class="inline-flex h-full w-full items-center justify-center text-slate-500">
+                                        <ShoppingBag class="h-4 w-4" />
+                                    </span>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="truncate text-sm font-semibold text-slate-900">
+                                        {{ item.description || `Produto ${idx + 1}` }}
+                                    </p>
+                                        <p class="mt-1 text-xs text-slate-500">
+                                            <span>Qtd: {{ item.quantity }}</span>
+                                            <span v-if="item.sku"> • SKU: {{ item.sku }}</span>
+                                        </p>
+                                        <div class="mt-2 flex items-center justify-between text-xs text-slate-500">
+                                            <span>Unitário: {{ asCurrency(item.unit_price ?? 0) }}</span>
+                                            <span v-if="Number(item.discount_amount ?? 0) > 0">Desconto: {{ asCurrency(item.discount_amount) }}</span>
+                                        </div>
+                                    </div>
+                                    <p class="shrink-0 text-sm font-bold text-slate-900">{{ asCurrency(item.total_amount ?? 0) }}</p>
+                                </div>
+                            </article>
+                        </div>
+                        <p v-else class="mt-3 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">
+                            Nenhum item detalhado neste pedido.
+                        </p>
+                    </section>
+                </div>
+
+                <footer class="space-y-3 border-t border-slate-200 p-4 sm:p-5">
+                    <div class="grid gap-2 sm:grid-cols-3">
+                        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Subtotal itens</p>
+                            <p class="mt-1 text-sm font-bold text-slate-900">{{ asCurrency(orderDetailsItemsSubtotal) }}</p>
+                        </div>
+                        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Desconto itens</p>
+                            <p class="mt-1 text-sm font-bold text-slate-900">{{ asCurrency(orderDetailsItemsDiscount) }}</p>
+                        </div>
+                        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total pedido</p>
+                            <p class="mt-1 text-sm font-bold text-slate-900">{{ asCurrency(orderDetails?.total_amount ?? 0) }}</p>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-end gap-2">
+                        <button
+                            v-if="orderDetails?.can_confirm"
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                            @click="openOrderActionFromDetails('confirm')"
+                        >
+                            <CheckCircle2 class="h-4 w-4" />
+                            Confirmar
+                        </button>
+                        <button
+                            v-if="orderDetails?.can_mark_paid"
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                            @click="openOrderActionFromDetails('paid')"
+                        >
+                            <Wallet class="h-4 w-4" />
+                            Marcar pago
+                        </button>
+                        <button
+                            v-if="orderDetails?.can_reject"
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                            @click="openOrderActionFromDetails('reject')"
+                        >
+                            <XCircle class="h-4 w-4" />
+                            Rejeitar
+                        </button>
+                        <button
+                            v-if="orderDetails?.can_cancel"
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                            @click="openOrderActionFromDetails('cancel')"
+                        >
+                            <Ban class="h-4 w-4" />
+                            Cancelar
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                            @click="closeOrderDetails"
+                        >
+                            Fechar
+                        </button>
+                    </div>
+                </footer>
+            </div>
+        </Modal>
+
+        <Modal :show="actionConfirmModalOpen" max-width="lg" @close="closeActionConfirmModal">
             <div class="space-y-4 p-5">
                 <div>
-                    <h3 class="text-base font-semibold text-slate-900">Rejeitar pedido</h3>
+                    <h3 class="text-base font-semibold text-slate-900">{{ actionMeta.title }}</h3>
                     <p class="mt-1 text-sm text-slate-500">
-                        Informe o motivo da rejeição para o pedido
-                        <span class="font-semibold text-slate-700">{{ orderToReject?.code }}</span>.
+                        {{ actionMeta.description }}
+                        <span v-if="actionOrder?.code" class="font-semibold text-slate-700">
+                            Pedido {{ actionOrder.code }}.
+                        </span>
                     </p>
                 </div>
 
                 <textarea
-                    v-model="rejectForm.reason"
+                    v-if="actionType === 'reject'"
+                    :value="rejectReason"
                     rows="4"
                     class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                     placeholder="Motivo da rejeição"
+                    @input="rejectReason = $event.target.value"
                 />
-                <p v-if="rejectForm.errors.reason || rejectForm.errors.order" class="text-xs font-semibold text-rose-600">
+                <p v-if="actionType === 'reject' && (rejectForm.errors.reason || rejectForm.errors.order)" class="text-xs font-semibold text-rose-600">
                     {{ rejectForm.errors.reason || rejectForm.errors.order }}
+                </p>
+
+                <p v-if="actionType !== 'reject' && actionForm.errors.order" class="text-xs font-semibold text-rose-600">
+                    {{ actionForm.errors.order }}
                 </p>
 
                 <div class="flex items-center justify-end gap-2">
                     <button
                         type="button"
                         class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                        @click="rejectModalOpen = false"
+                        @click="closeActionConfirmModal"
                     >
-                        Cancelar
+                        Voltar
                     </button>
                     <button
                         type="button"
-                        class="rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
-                        :disabled="rejectForm.processing"
-                        @click="submitReject"
+                        class="rounded-xl px-3 py-2 text-xs font-semibold text-white transition disabled:opacity-60"
+                        :class="actionMeta.confirmClass"
+                        :disabled="actionForm.processing || rejectForm.processing"
+                        @click="submitActionConfirm"
                     >
-                        {{ rejectForm.processing ? 'Rejeitando...' : 'Confirmar rejeição' }}
+                        {{
+                            actionForm.processing || rejectForm.processing
+                                ? 'Processando...'
+                                : actionMeta.confirmLabel
+                        }}
                     </button>
                 </div>
             </div>
         </Modal>
     </AuthenticatedLayout>
 </template>
+
+<style scoped>
+.orders-pipeline-shell {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+
+.orders-pipeline-shell::-webkit-scrollbar {
+    height: 6px;
+}
+
+.orders-pipeline-shell::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: rgba(148, 163, 184, 0.45);
+}
+
+.orders-pipeline-track {
+    display: inline-flex;
+    min-width: max-content;
+    gap: 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.95rem;
+    background: #ffffff;
+    padding: 0.3rem;
+}
+
+.orders-pipeline-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid transparent;
+    border-radius: 0.72rem;
+    min-height: 38px;
+    padding: 0.52rem 0.8rem;
+    color: #334155;
+    font-size: 0.79rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.orders-pipeline-tab:hover {
+    background: #f8fafc;
+    color: #0f172a;
+}
+
+.orders-pipeline-tab.is-active {
+    border-color: var(--orders-pipeline-active-border);
+    background: var(--orders-pipeline-active);
+    color: #ffffff;
+}
+
+.orders-pipeline-badge {
+    display: inline-flex;
+    min-width: 20px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: #f8fafc;
+    padding: 0 0.38rem;
+    font-size: 0.66rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: #475569;
+}
+
+.orders-pipeline-tab.is-active .orders-pipeline-badge {
+    border-color: rgba(255, 255, 255, 0.36);
+    background: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+}
+</style>
