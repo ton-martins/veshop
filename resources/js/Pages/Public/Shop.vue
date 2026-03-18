@@ -205,6 +205,7 @@ const sortMode = ref('featured');
 const currentPage = ref(1);
 const PAGE_SIZE = 20;
 const cartOpen = ref(false);
+const cartMobileStep = ref(1);
 const leftMenuOpen = ref(false);
 const favoritesOnly = ref(false);
 const accountModalOpen = ref(false);
@@ -212,9 +213,16 @@ const favoritesModalOpen = ref(false);
 const productModalOpen = ref(false);
 const productModalQuantity = ref(1);
 const productModalId = ref(null);
+const addToCartProcessing = ref(false);
 const profileCepLookupLoading = ref(false);
 const profileCepLookupError = ref('');
 const categorySectionRef = ref(null);
+const uiFeedback = ref({
+    visible: false,
+    message: '',
+    tone: 'success',
+});
+let uiFeedbackTimer = null;
 
 const categoryList = computed(() => [
     { id: 'all', name: 'Todos', products_count: props.products.length },
@@ -436,6 +444,7 @@ const closeProductModal = () => {
     productModalOpen.value = false;
     productModalId.value = null;
     productModalQuantity.value = 1;
+    addToCartProcessing.value = false;
     syncModalQueryString();
 };
 
@@ -646,6 +655,24 @@ const checkoutPaymentPolling = ref(false);
 const checkoutPaymentCopied = ref(false);
 let checkoutPaymentPollTimer = null;
 
+const showUiFeedback = (message, tone = 'success') => {
+    if (uiFeedbackTimer) {
+        clearTimeout(uiFeedbackTimer);
+        uiFeedbackTimer = null;
+    }
+
+    uiFeedback.value = {
+        visible: true,
+        message: String(message ?? '').trim(),
+        tone: tone === 'warning' ? 'warning' : 'success',
+    };
+
+    uiFeedbackTimer = setTimeout(() => {
+        uiFeedback.value.visible = false;
+        uiFeedbackTimer = null;
+    }, 2200);
+};
+
 const normalizeCheckoutPaymentPayload = (payload) => {
     if (!payload || typeof payload !== 'object') return null;
 
@@ -805,6 +832,11 @@ watch(
 
 onBeforeUnmount(() => {
     clearCheckoutPaymentPolling();
+
+    if (uiFeedbackTimer) {
+        clearTimeout(uiFeedbackTimer);
+        uiFeedbackTimer = null;
+    }
 });
 
 const shippingFee = computed(() => {
@@ -884,7 +916,10 @@ const addProductToCart = (id, quantity = 1) => {
     if (!product) return;
 
     const stock = Math.max(0, Number(product.stock_quantity || 0));
-    if (stock <= 0) return;
+    if (stock <= 0) {
+        showUiFeedback('Produto sem estoque no momento.', 'warning');
+        return;
+    }
 
     const existing = cartItems.value.find((item) => Number(item.product_id) === safeId);
     if (!existing) {
@@ -892,10 +927,12 @@ const addProductToCart = (id, quantity = 1) => {
             product_id: safeId,
             quantity: Math.min(stock, safeQty),
         });
+        showUiFeedback('Produto adicionado ao carrinho.');
         return;
     }
 
     existing.quantity = Math.min(stock, Math.max(1, Number(existing.quantity || 1)) + safeQty);
+    showUiFeedback('Quantidade atualizada no carrinho.');
 };
 
 const increment = (id) => {
@@ -926,6 +963,7 @@ const toggleFavorite = async (productId) => {
     favoriteProductIds.value = wasFavorite
         ? favoriteProductIds.value.filter((id) => Number(id) !== targetId)
         : normalizeFavoriteIds([...favoriteProductIds.value, targetId]);
+    showUiFeedback(wasFavorite ? 'Produto removido dos favoritos.' : 'Produto adicionado aos favoritos.');
 
     if (!isShopAuthenticated.value) return;
 
@@ -935,6 +973,7 @@ const toggleFavorite = async (productId) => {
 
     if (!saved) {
         favoriteProductIds.value = previous;
+        showUiFeedback('Não foi possível atualizar favoritos agora.', 'warning');
         return;
     }
 };
@@ -951,8 +990,14 @@ const decrementModalProductQty = () => {
 const addActiveModalProductToCart = () => {
     const product = activeModalProduct.value;
     if (!product) return;
-    addProductToCart(product.id, productModalQuantity.value);
-    cartOpen.value = true;
+    if (addToCartProcessing.value) return;
+
+    addToCartProcessing.value = true;
+    window.setTimeout(() => {
+        addProductToCart(product.id, productModalQuantity.value);
+        cartOpen.value = true;
+        addToCartProcessing.value = false;
+    }, 350);
 };
 
 const onProfilePhoneInput = (event) => {
@@ -1044,6 +1089,8 @@ const checkout = () => {
             cartItems.value = [];
             checkoutForm.reset('payment_method_id', 'notes', 'items', 'idempotency_key');
             cartOpen.value = false;
+            cartMobileStep.value = 1;
+            showUiFeedback('Pedido enviado com sucesso.');
         },
     });
 };
@@ -1058,8 +1105,24 @@ const scrollCategories = () => {
 
 const openCartFromMenu = () => {
     leftMenuOpen.value = false;
+    cartMobileStep.value = 1;
     cartOpen.value = true;
 };
+
+const goToCartCheckoutStep = () => {
+    if (!cartDetailed.value.length) return;
+    cartMobileStep.value = 2;
+};
+
+const goToCartItemsStep = () => {
+    cartMobileStep.value = 1;
+};
+
+watch(cartOpen, (isOpen) => {
+    if (isOpen) {
+        cartMobileStep.value = 1;
+    }
+});
 </script>
 
 <template>
@@ -1068,6 +1131,19 @@ const openCartFromMenu = () => {
     </Head>
 
     <div class="min-h-screen bg-slate-100 text-slate-900" :style="pageStyles">
+        <transition name="cart-overlay">
+            <div
+                v-if="uiFeedback.visible && uiFeedback.message"
+                class="fixed inset-x-0 top-20 z-[95] flex justify-center px-4"
+            >
+                <div
+                    class="inline-flex max-w-md items-center rounded-xl border px-3 py-2 text-xs font-semibold shadow-lg"
+                    :class="uiFeedback.tone === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'"
+                >
+                    {{ uiFeedback.message }}
+                </div>
+            </div>
+        </transition>
         <header class="sticky top-0 z-40 border-b border-white/70 bg-white/95 backdrop-blur">
             <div class="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
                 <div class="flex min-w-0 items-center gap-3">
@@ -1419,7 +1495,30 @@ const openCartFromMenu = () => {
                         <div><p class="text-sm font-semibold text-slate-900">Carrinho</p><p class="text-xs text-slate-500">{{ cartCount }} item(ns)</p></div>
                         <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" @click="cartOpen = false"><X class="h-4 w-4" /></button>
                     </header>
-                    <div class="flex-1 space-y-3 overflow-y-auto p-4">
+                    <div class="border-b border-slate-200 px-4 py-2 md:hidden">
+                        <div class="grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                class="rounded-xl border px-3 py-2 text-xs font-semibold transition"
+                                :class="cartMobileStep === 1 ? 'border-transparent text-white shadow-inner shadow-black/10' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                                :style="cartMobileStep === 1 ? { background: 'var(--catalog-primary-strong)' } : null"
+                                @click="goToCartItemsStep"
+                            >
+                                1. Itens
+                            </button>
+                            <button
+                                type="button"
+                                class="rounded-xl border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
+                                :class="cartMobileStep === 2 ? 'border-transparent text-white shadow-inner shadow-black/10' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                                :style="cartMobileStep === 2 ? { background: 'var(--catalog-primary-strong)' } : null"
+                                :disabled="!cartDetailed.length"
+                                @click="goToCartCheckoutStep"
+                            >
+                                2. Finalizar
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex-1 space-y-3 overflow-y-auto p-4" :class="cartMobileStep === 2 ? 'hidden md:block' : 'block'">
                         <div v-if="!cartDetailed.length" class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">Seu carrinho está vazio.</div>
                         <article v-for="item in cartDetailed" :key="`cart-${item.product.id}`" class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                             <div class="flex items-start gap-3">
@@ -1441,6 +1540,23 @@ const openCartFromMenu = () => {
                         </article>
                     </div>
                     <footer class="space-y-3 border-t border-slate-200 p-4">
+                        <div v-if="cartMobileStep === 1" class="md:hidden">
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-slate-500">Subtotal</span>
+                                <span class="text-base font-bold text-slate-900">{{ currency(cartSubtotal) }}</span>
+                            </div>
+                            <button
+                                type="button"
+                                class="mt-3 inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                                style="background: var(--catalog-primary-strong)"
+                                :disabled="!cartDetailed.length"
+                                @click="goToCartCheckoutStep"
+                            >
+                                Ir para finalizar
+                            </button>
+                        </div>
+
+                        <div :class="cartMobileStep === 1 ? 'hidden md:block' : 'block'">
                         <div
                             v-if="!isShopAuthenticated"
                             class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700"
@@ -1596,8 +1712,17 @@ const openCartFromMenu = () => {
                             :disabled="checkoutForm.processing || !canSubmitCheckout"
                             @click="checkout"
                         >
+                            <span v-if="checkoutForm.processing" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
                             {{ checkoutForm.processing ? 'Enviando pedido...' : 'Finalizar pedido' }}
                         </button>
+                        <button
+                            type="button"
+                            class="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 md:hidden"
+                            @click="goToCartItemsStep"
+                        >
+                            Voltar para itens
+                        </button>
+                        </div>
                     </footer>
                 </aside>
             </div>
@@ -1651,10 +1776,11 @@ const openCartFromMenu = () => {
                                                 type="button"
                                                 class="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
                                                 style="background: var(--catalog-primary-strong)"
-                                                :disabled="!modalProductHasStock"
+                                                :disabled="!modalProductHasStock || addToCartProcessing"
                                                 @click="addActiveModalProductToCart"
                                             >
-                                                Adicionar ao carrinho
+                                                <span v-if="addToCartProcessing" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                                                {{ addToCartProcessing ? 'Adicionando...' : 'Adicionar ao carrinho' }}
                                             </button>
                                             <button
                                                 type="button"
@@ -1759,9 +1885,9 @@ const openCartFromMenu = () => {
             </div>
         </transition>
         <transition name="cart-overlay">
-            <div v-if="accountModalOpen" class="fixed inset-0 z-[72]">
+            <div v-if="accountModalOpen" class="fixed inset-0 z-[60]">
                 <div class="absolute inset-0 bg-slate-900/45 backdrop-blur-[1px]" @click="closeAccountModal"></div>
-                <section class="absolute inset-0 flex flex-col bg-white">
+                <aside class="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl">
                     <header class="flex items-center justify-between border-b border-slate-200 px-4 py-4">
                         <div>
                             <p class="text-sm font-semibold text-slate-900">Minha conta</p>
@@ -1772,8 +1898,8 @@ const openCartFromMenu = () => {
                         </button>
                     </header>
 
-                    <div class="flex-1 overflow-y-auto p-4 sm:p-6">
-                        <div class="mx-auto w-full max-w-5xl space-y-5">
+                    <div class="flex-1 overflow-y-auto p-4">
+                        <div class="w-full space-y-5">
                             <div v-if="flashStatusMessage" class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
                                 {{ flashStatusMessage }}
                             </div>
@@ -1938,7 +2064,16 @@ const openCartFromMenu = () => {
                             </template>
                         </div>
                     </div>
-                </section>
+                    <footer class="border-t border-slate-200 p-4">
+                        <button
+                            type="button"
+                            class="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="closeAccountModal"
+                        >
+                            Fechar
+                        </button>
+                    </footer>
+                </aside>
             </div>
         </transition>
         <transition name="cart-overlay">

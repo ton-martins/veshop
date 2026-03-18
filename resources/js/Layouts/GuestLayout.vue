@@ -1,6 +1,7 @@
 <script setup>
 import { useBranding } from '@/branding';
 import { Head, Link } from '@inertiajs/vue3';
+import { onMounted, ref } from 'vue';
 
 const props = defineProps({
     showAside: {
@@ -17,6 +18,51 @@ const highlights = [
 
 const currentYear = new Date().getFullYear();
 const { brandName, tagline, systemIconUrl, publicFaviconHref, publicFaviconType } = useBranding();
+const authLayoutReady = ref(false);
+
+const waitAuthStyles = async () => {
+    if (typeof document === 'undefined') return;
+
+    const styleHrefs = [
+        '/landing/css/remixicon.css',
+        '/landing/css/bootstrap.min.css',
+        '/landing/css/style.min.css',
+    ];
+
+    const waiters = styleHrefs
+        .map((href) => document.querySelector(`link[href="${href}"]`))
+        .filter(Boolean)
+        .map((link) => new Promise((resolve) => {
+            if (link.sheet) {
+                resolve();
+                return;
+            }
+
+            const done = () => {
+                link.removeEventListener('load', done);
+                link.removeEventListener('error', done);
+                resolve();
+            };
+
+            link.addEventListener('load', done, { once: true });
+            link.addEventListener('error', done, { once: true });
+            window.setTimeout(done, 1800);
+        }));
+
+    await Promise.all(waiters);
+};
+
+onMounted(async () => {
+    const waitFonts = typeof document !== 'undefined' && document.fonts?.ready
+        ? document.fonts.ready.catch(() => {})
+        : Promise.resolve();
+
+    await Promise.all([waitAuthStyles(), waitFonts]);
+
+    requestAnimationFrame(() => {
+        authLayoutReady.value = true;
+    });
+});
 </script>
 
 <template>
@@ -31,7 +77,14 @@ const { brandName, tagline, systemIconUrl, publicFaviconHref, publicFaviconType 
         <link head-key="landing-style" rel="stylesheet" href="/landing/css/style.min.css" />
     </Head>
 
-    <section class="veshop-auth-shell">
+    <section v-if="!authLayoutReady" class="veshop-auth-loading" aria-busy="true" aria-live="polite">
+        <div class="veshop-auth-loading-card">
+            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+            <span>Carregando...</span>
+        </div>
+    </section>
+
+    <section v-else class="veshop-auth-shell">
         <div class="veshop-auth-bg" aria-hidden="true">
             <div class="veshop-auth-gradient-base"></div>
             <div class="veshop-auth-gradient-overlay"></div>
@@ -110,6 +163,27 @@ const { brandName, tagline, systemIconUrl, publicFaviconHref, publicFaviconType 
     min-height: 100vh;
     padding-top: 0;
     overflow: hidden;
+}
+
+.veshop-auth-loading {
+    display: flex;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+    background: #f8fef9;
+}
+
+.veshop-auth-loading-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 0.75rem;
+    background: #ffffff;
+    padding: 0.65rem 0.9rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #334155;
 }
 
 .veshop-auth-bg {

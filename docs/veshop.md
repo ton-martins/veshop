@@ -107,7 +107,7 @@ O Veshop é uma plataforma multi-tenant para contratantes de comércio e serviç
 
 | ID | Frente | Status | Prioridade | Resultado esperado |
 |---|---|---|---|---|
-| 1 | UX/UI da loja virtual (feedback de ação + carrinho mobile) | Pendente | Crítica | Jornada de compra clara, sem sobreposição e com confirmação visual |
+| 1 | UX/UI da loja virtual (feedback de ação + carrinho mobile) | Parcial | Crítica | Jornada de compra clara, sem sobreposição e com confirmação visual |
 | 2 | Edição de pedido/venda no admin | Pendente | Alta | Permitir correção operacional com rastreabilidade |
 | 3 | Financeiro (contas a pagar/receber + anexos + OCR) | Pendente | Crítica | Gestão financeira completa com lançamentos, status e documentos |
 | 4 | Finalizar páginas de estoque e pedidos (+ botão novo pedido) | Parcial | Alta | Fluxo operacional completo de pedidos/estoque |
@@ -295,4 +295,3 @@ Iniciar pelo combo **ID 1 + ID 8**, porque entrega valor direto ao contratante e
 
 1. fechar UX/UI do carrinho mobile com etapas claras;
 2. formalizar o modo de checkout por contratante (integrado x manual) com status unificado.
-

@@ -1,6 +1,6 @@
 ﻿<script setup>
 import { Head, Link } from '@inertiajs/vue3';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Heart, Home, LogIn, Menu, Minus, Plus, ShoppingCart, UserCircle2, X } from 'lucide-vue-next';
 import { useBranding } from '@/branding';
 
@@ -98,7 +98,10 @@ const quantity = ref(1);
 const cartCount = ref(0);
 const favoritesOnly = ref(false);
 const justAdded = ref(false);
+const addToCartProcessing = ref(false);
 const leftMenuOpen = ref(false);
+let justAddedTimer = null;
+let addToCartTimer = null;
 
 const cartStorageKey = computed(() => `veshop:shop-cart:${storeSlug.value}`);
 const favoritesStorageKey = computed(() => `veshop:shop-favorites:${storeSlug.value}`);
@@ -279,6 +282,7 @@ const productDetailsUrl = (productId) => {
 
 const addCurrentToCart = () => {
     if (typeof window === 'undefined') return;
+    if (addToCartProcessing.value) return;
 
     const targetId = Number(props.product?.id);
     if (!targetId) return;
@@ -286,32 +290,45 @@ const addCurrentToCart = () => {
     const stock = Number(props.product?.stock_quantity || 0);
     if (stock <= 0) return;
 
-    let current = [];
+    addToCartProcessing.value = true;
 
-    try {
-        const raw = window.localStorage.getItem(cartStorageKey.value);
-        const parsed = raw ? JSON.parse(raw) : [];
-        current = Array.isArray(parsed) ? parsed : [];
-    } catch {
-        current = [];
-    }
+    addToCartTimer = window.setTimeout(() => {
+        let current = [];
 
-    const existing = current.find((item) => Number(item?.product_id) === targetId);
-    const qtyToAdd = Math.max(1, Number(quantity.value || 1));
+        try {
+            const raw = window.localStorage.getItem(cartStorageKey.value);
+            const parsed = raw ? JSON.parse(raw) : [];
+            current = Array.isArray(parsed) ? parsed : [];
+        } catch {
+            current = [];
+        }
 
-    if (!existing) {
-        current.push({ product_id: targetId, quantity: Math.min(stock, qtyToAdd) });
-    } else {
-        existing.quantity = Math.min(stock, Math.max(1, Number(existing.quantity || 1)) + qtyToAdd);
-    }
+        const existing = current.find((item) => Number(item?.product_id) === targetId);
+        const qtyToAdd = Math.max(1, Number(quantity.value || 1));
 
-    window.localStorage.setItem(cartStorageKey.value, JSON.stringify(current));
-    loadCartCount();
+        if (!existing) {
+            current.push({ product_id: targetId, quantity: Math.min(stock, qtyToAdd) });
+        } else {
+            existing.quantity = Math.min(stock, Math.max(1, Number(existing.quantity || 1)) + qtyToAdd);
+        }
 
-    justAdded.value = true;
-    window.setTimeout(() => {
-        justAdded.value = false;
-    }, 1200);
+        window.localStorage.setItem(cartStorageKey.value, JSON.stringify(current));
+        loadCartCount();
+
+        if (justAddedTimer) {
+            clearTimeout(justAddedTimer);
+            justAddedTimer = null;
+        }
+
+        justAdded.value = true;
+        justAddedTimer = window.setTimeout(() => {
+            justAdded.value = false;
+            justAddedTimer = null;
+        }, 1200);
+
+        addToCartProcessing.value = false;
+        addToCartTimer = null;
+    }, 350);
 };
 
 const incrementQty = () => {
@@ -324,6 +341,17 @@ const decrementQty = () => {
 };
 
 const hasStock = computed(() => Number(props.product?.stock_quantity || 0) > 0);
+
+onBeforeUnmount(() => {
+    if (justAddedTimer) {
+        clearTimeout(justAddedTimer);
+        justAddedTimer = null;
+    }
+    if (addToCartTimer) {
+        clearTimeout(addToCartTimer);
+        addToCartTimer = null;
+    }
+});
 </script>
 
 <template>
@@ -443,10 +471,11 @@ const hasStock = computed(() => Number(props.product?.stock_quantity || 0) > 0);
                                     type="button"
                                     class="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
                                     style="background: var(--catalog-primary-strong)"
-                                    :disabled="!hasStock"
+                                    :disabled="!hasStock || addToCartProcessing"
                                     @click="addCurrentToCart"
                                 >
-                                    Adicionar ao carrinho
+                                    <span v-if="addToCartProcessing" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                                    {{ addToCartProcessing ? 'Adicionando...' : 'Adicionar ao carrinho' }}
                                 </button>
                             </div>
 
