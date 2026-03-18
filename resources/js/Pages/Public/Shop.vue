@@ -1285,7 +1285,7 @@ watch(cartOpen, (isOpen) => {
                     <div
                         v-for="product in promotionProducts"
                         :key="`promo-${product.id}`"
-                        class="group block overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                        class="group block cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                         @click="openProductModal(product.id)"
                     >
                         <div class="relative aspect-square overflow-hidden bg-slate-100">
@@ -1336,7 +1336,7 @@ watch(cartOpen, (isOpen) => {
                     <div
                         v-for="product in paginatedProducts"
                         :key="`prod-${product.id}`"
-                        class="group block overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                        class="group block cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                         @click="openProductModal(product.id)"
                     >
                         <div class="relative aspect-square overflow-hidden bg-slate-100">

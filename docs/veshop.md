@@ -1,297 +1,179 @@
-# Veshop - Guia Mestre de Produto, Arquitetura e Execução
+# Veshop - Guia Mestre
 
-Versão: v3.0  
+Versão: v3.2  
 Última atualização: 18/03/2026
 
-## 1. Finalidade deste documento
+## 1. Objetivo
 
-Este arquivo é a referência única do Veshop para:
+Este é o documento único de referência do Veshop para:
 
-1. visão do produto e escopo atual;
+1. visão atual do produto;
 2. padrão de arquitetura, segurança e qualidade;
-3. backlog priorizado com critérios claros de entrega;
-4. direcionamento de implementação para reduzir risco técnico e de suporte.
+3. backlog priorizado com status real;
+4. sequência de implementação para reduzir risco e retrabalho.
 
-## 2. Visão consolidada do Veshop
+## 2. Regras obrigatórias da plataforma
 
-O Veshop é uma plataforma multi-tenant para contratantes de comércio e serviços, com:
+### 2.1 Idioma e codificação
 
-- painel admin para operação diária (cadastros, vendas, pedidos, financeiro, configurações);
-- loja virtual pública por contratante (catálogo, carrinho, checkout, conta do cliente);
-- governança master (planos, módulos, contratantes, usuários);
-- trilhas de segurança e isolamento por contratante.
+- Todo texto funcional da aplicação deve estar em português (pt-BR).
+- Arquivos e conteúdo devem ser mantidos em UTF-8.
+- Não publicar telas com texto quebrado, sem acentuação correta ou mistura de idioma sem necessidade.
 
-## 3. Responsabilidades técnicas obrigatórias
+### 2.2 Multi-tenant e autorização
 
-## 3.1 Arquitetura e isolamento multi-tenant
+- Toda regra de negócio deve respeitar `contractor_id`.
+- Nenhum usuário pode acessar dados de outro contratante sem permissão explícita.
+- Rotas, policies e queries devem validar escopo de contratante.
+- Módulos devem respeitar plano e permissões habilitadas.
 
-- Toda entidade de negócio deve respeitar `contractor_id`.
-- Route model binding e consultas devem bloquear acesso cruzado entre contratantes.
-- Autorização deve validar perfil (`master`/`admin`) e módulo habilitado por plano/contratante.
-- Não expor dados sensíveis ou desnecessários no payload Inertia/HTML inicial.
+### 2.3 Segurança e dados no frontend
 
-## 3.2 Segurança e auditoria
+- Evitar exposição desnecessária de dados no payload inicial do Inertia.
+- Não incluir segredo, token, senha ou dado sensível em logs.
+- Eventos críticos devem gerar trilha de auditoria.
 
-- Manter trilha de auditoria para eventos críticos de segurança.
-- Sanitizar contexto de logs (sem segredo, token, senha, dados sensíveis em texto puro).
-- Registrar e monitorar:
-  - `tenant.resource_scope_violation`;
-  - `auth.role_denied`;
-  - `module.access_denied`.
-- Evoluir retenção, filtros e visualização da auditoria por perfil.
+## 3. O que já está validado no sistema
 
-## 3.3 Padrão de desenvolvimento e qualidade
+### 3.1 Base de produto e operação
 
-- Backend: testes de feature para fluxos críticos e autorização.
-- Frontend: UX consistente desktop/mobile.
-- Filas e jobs: robustez para e-mail, exportações e notificações.
-- Regras de negócio versionadas no banco e no código (migrations + validações).
-- Deploy com build atualizado e limpeza de cache/config quando necessário.
+- Painel admin multi-tenant com contexto de contratante.
+- Loja virtual por contratante (`/shop/{slug}`) com catálogo, carrinho e checkout.
+- Fluxo de pedidos com pipeline operacional no admin.
+- Integração inicial de pagamentos com Mercado Pago (MVP Pix) e webhook.
+- Fluxo de checkout manual previsto para cenários sem gateway ativo.
 
-## 3.4 Requisitos de conteúdo e idioma
+### 3.2 UX/UI já implementada e padronizada
 
-- Textos da plataforma em português brasileiro.
-- Codificação UTF-8 em arquivos e conteúdo persistido.
-- Labels, mensagens de erro e e-mails padronizados em PT-BR.
+- Menu lateral em padrão profissional, mantendo identidade do Veshop.
+- Header/footer do menu harmonizados com o mesmo padrão visual.
+- Uso de cor do contratante no menu com fallback para cor secundária do sistema.
+- Página de Contas com abas no topo e padrão replicado para outras telas principais.
+- Ajustes de layout para manter consistência em desktop e mobile.
 
-## 4. Estado atual validado no sistema
+### 3.3 Loja virtual
 
-## 4.1 Base de plataforma
+- Login e cadastro do cliente alinhados ao padrão visual do Veshop, com identidade do contratante.
+- Recuperação de senha do cliente criada no mesmo padrão visual.
+- Card de verificação de e-mail ajustado para o mesmo layout.
+- Fallback de logo por iniciais do contratante aplicado quando não houver logo.
+- Modal de favoritos ajustado para padrão de modal lateral, similar ao carrinho.
 
-- Stack Laravel + Inertia + Vue.
-- Multi-tenant por `contractor_id`.
-- Perfis `master` e `admin`.
-- Relação N:N usuário/contratante.
-- Login com 2FA.
-- Filas separadas (`emails`, `exports`, `notifications`).
+### 3.4 Pedidos e visão geral
 
-## 4.2 Governança master
+- Página de pedidos com abas de pipeline em padrão visual do sistema.
+- Ações de pedido no card/lista com melhor organização para mobile.
+- Modal de detalhes de pedido compartilhado entre tela de pedidos e visão geral.
+- Visão Geral com abas no topo (`Loja virtual` e `PDV`) e ícones.
+- Sessões de pedidos recentes e vendas recentes usando o mesmo modal de detalhes.
 
-- CRUD de usuários, contratantes e planos.
-- Catálogo de módulos com habilitação por contratante.
-- Arquitetura modular por `business_niche`, `business_type` e módulos.
+### 3.5 Paginação já implementada
 
-## 4.3 Operação comercial (admin)
+Paginação backend/frontend confirmada em:
 
-- Dashboard e visão operacional.
-- CRUD de produtos, categorias, clientes e fornecedores.
-- Pedidos com ações operacionais.
-- PDV funcional com movimento de estoque.
-- Financeiro com base para gateways/métodos.
-- Página de manuais de uso.
+- Pedidos: `20` por página.
+- Notificações: `20` por página.
+- Produtos: `10` por página.
+- Categorias: `10` por página.
+- Clientes: `10` por página.
+- Fornecedores: `10` por página.
+- Usuários: `10` por página.
+- Catálogo de serviços: `10` por página.
+- Planos (master): `10` por página.
+- Contratantes (master): `10` por página.
 
-## 4.4 Loja virtual pública
+### 3.6 E-mail e autenticação
 
-- Loja por slug (`/shop/{slug}`) e página pública de produto.
-- Busca, filtros, ordenação, carrinho e favoritos.
-- Login/cadastro/conta do cliente por loja.
-- Verificação de e-mail no fluxo do cliente.
-- Fluxo de recuperação de senha do cliente.
-- Fallback visual de identidade do contratante (logo ou iniciais).
+- Envio de e-mail de verificação da loja corrigido em produção (SMTP/porta/esquema).
+- Template do e-mail de verificação traduzido para pt-BR.
+- Correções no fluxo de erro de login para evitar modal branco/iframe indevido.
+- Endereço obrigatório no cadastro público da loja (cliente final), conforme regra de negócio.
 
-## 4.5 Pagamentos e checkout
+### 3.7 Segurança técnica já aplicada
 
-- Checkout Pix com `idempotency_key`.
-- Integração Mercado Pago no MVP de Pix.
-- QR Code, código copia e cola e acompanhamento de status.
-- Webhook com deduplicação de recebimentos.
-- Fluxo manual (`manual`) e integrado (`mercado_pago`) já previstos no modelo.
+- Middleware de escopo de contratante em rotas críticas.
+- Redução de exposição de dados no payload compartilhado do Inertia.
+- Base de auditoria de segurança consolidada no guia mestre.
 
-## 4.6 Segurança implementada
+## 4. Backlog priorizado (status real)
 
-- Tabela de auditoria de segurança e serviço de logging sanitizado.
-- Middleware de escopo por contratante em rotas críticas.
-- Redução do payload de autenticação compartilhado no frontend.
+| ID | Item | Status | Prioridade |
+| --- | --- | --- | --- |
+| 1 | UX/UI da loja virtual (feedback visual, carrinho mobile, consistência dos modais) | Parcial | Crítica |
+| 2 | Edição de pedido/venda no admin com auditoria | Pendente | Alta |
+| 3 | Módulo financeiro (contas a pagar/receber + anexos + status + observações) | Pendente | Crítica |
+| 4 | Finalizar páginas de estoque e pedidos + botão "Novo pedido" | Parcial | Alta |
+| 5 | Produto com até 5 fotos + variações + promoção (%) | Pendente | Alta |
+| 6 | Categorias com subcategorias | Pendente | Alta |
+| 7 | Mover "Manuais" para item independente no menu | Pendente | Média |
+| 8 | Checkout dual (Mercado Pago integrado + fluxo manual) com padrão único | Parcial | Crítica |
+| 9 | Notificações in-app + e-mail + estudo e viabilidade WhatsApp | Parcial | Alta |
+| 10 | Taxa por forma de pagamento (PDV e loja virtual) | Pendente | Alta |
+| 11 | Evitar renderização inicial quebrada nas páginas de login/cadastro da loja | Parcial | Alta |
+| 12 | Páginas legais (Termos de Uso e Política de Privacidade LGPD) | Pendente | Alta |
 
-## 5. Backlog priorizado (itens pendentes)
+## 5. Diretrizes de arquitetura para os pendentes críticos
 
-| ID | Frente | Status | Prioridade | Resultado esperado |
-|---|---|---|---|---|
-| 1 | UX/UI da loja virtual (feedback de ação + carrinho mobile) | Parcial | Crítica | Jornada de compra clara, sem sobreposição e com confirmação visual |
-| 2 | Edição de pedido/venda no admin | Pendente | Alta | Permitir correção operacional com rastreabilidade |
-| 3 | Financeiro (contas a pagar/receber + anexos + OCR) | Pendente | Crítica | Gestão financeira completa com lançamentos, status e documentos |
-| 4 | Finalizar páginas de estoque e pedidos (+ botão novo pedido) | Parcial | Alta | Fluxo operacional completo de pedidos/estoque |
-| 5 | Produto com até 5 fotos + variações + promoção (%) | Pendente | Alta | Cadastro robusto e refletido na loja virtual |
-| 6 | Categorias com subcategorias | Pendente | Alta | Navegação e catálogo mais precisos na loja pública |
-| 7 | Mover “Manuais” para item independente no menu | Pendente | Média | Acesso direto e organizado para treinamento |
-| 8 | Checkout dual: integrado (Pix) e padrão manual | Parcial | Crítica | Um único padrão operacional cobrindo os 2 cenários |
-| 9 | Notificações in-app, e-mail e WhatsApp | Parcial | Alta | Comunicação transacional completa para admin |
-| 10 | Taxas por forma de pagamento (PDV + loja) | Pendente | Alta | Cálculo automático de taxa no pedido/venda |
-| 11 | Ajuste de carregamento inicial do login da loja | Pendente | Alta | Evitar erro visual no HTML inicial |
-| 12 | Páginas legais (Termos e Privacidade LGPD) | Pendente | Alta | Base legal completa com consentimento e transparência |
+### 5.1 ID 1 - UX/UI da loja virtual
 
-## 5.1 Detalhamento técnico dos itens pendentes
-
-### ID 1 - UX/UI da loja virtual
-
-- Adicionar feedback visual imediato em ações:
+- Aplicar loading visual padrão Veshop em ações críticas:
   - adicionar ao carrinho;
   - finalizar compra;
-  - atualizar quantidade;
-  - aplicar método de entrega/pagamento.
-- Refatorar modal de carrinho em mobile:
-  - separar conteúdo por etapas (wizard) ou sessões colapsáveis;
-  - evitar sobreposição de bloco de entrega sobre lista de itens;
-  - manter resumo de totais sempre legível.
-- Critério de aceite:
-  - sem sobreposição em viewport mobile;
-  - CTA principal sempre visível;
-  - usuário entende em qual etapa está.
+  - confirmar etapas do checkout.
+- Ajustar carrinho mobile para impedir sobreposição de blocos (entrega/pagamento/itens).
+- Manter padrão único entre modais de Minha Conta, Favoritos e Carrinho.
+- Garantir feedback imediato de sucesso/erro em todas as ações de compra.
 
-### ID 2 - Editar pedido/venda
+### 5.2 ID 3 - Financeiro
 
-- Permitir edição controlada para admin em cenários de erro operacional.
-- Campos editáveis por status (ex.: antes de concluir/faturar).
-- Registrar trilha:
-  - quem alterou;
-  - quando alterou;
-  - valores antes/depois.
-- Critério de aceite:
-  - alteração auditável;
-  - integridade de estoque e financeiro preservada.
+Implementar núcleo com:
 
-### ID 3 - Financeiro (AP/AR + anexos + OCR)
+- contas a pagar;
+- contas a receber;
+- campos mínimos: valor, vencimento, status, observações;
+- upload de documento por lançamento;
+- histórico de alterações.
 
-- Entidades mínimas:
-  - contas a pagar;
-  - contas a receber;
-  - anexos por lançamento;
-  - histórico de status.
-- Campos obrigatórios:
-  - valor;
-  - vencimento;
-  - status padronizado;
-  - observações;
-  - documento opcional.
-- OCR (estudo e faseamento):
-  - Fase 1: upload + extração assistida (pré-preencher, usuário confirma);
-  - Fase 2: regras por tipo de documento e melhoria de acurácia;
-  - Fase 3: automação com confiança mínima e fila assíncrona.
-- Observação:
-  - OCR deve ser “assistivo”, não automático cego.
+OCR (estudo):
 
-### ID 4 - Estoque e pedidos
+- fase inicial assistida (pré-preenchimento com confirmação do usuário);
+- sem automação cega na primeira versão.
 
-- Concluir páginas com consistência de estado e filtros.
-- Incluir ação “Novo pedido” na página de pedidos.
-- Garantir integração com estoque e fluxo de status.
+### 5.3 ID 8 - Checkout dual
 
-### ID 5 - Produtos (fotos, variações e promoção)
+Padronizar dois modos por contratante:
 
-- Suportar até 5 imagens por produto.
-- Modelo de variações (ex.: cor, tamanho).
-- Promoção em percentual com cálculo de:
-  - valor original;
-  - valor de venda com desconto.
-- Refletir corretamente no catálogo e no checkout.
+- `integrado`: pagamento via gateway (Mercado Pago);
+- `manual`: pedido sem pagamento imediato, contratante conclui cobrança fora da plataforma.
 
-### ID 6 - Categorias e subcategorias
+Regras obrigatórias:
 
-- Estrutura hierárquica (`parent_id`) para categorias.
-- Ajustar admin + loja pública para navegação por nível.
-- Garantir filtros e SEO interno coerentes.
+- status de pedido e pagamento claros e auditáveis;
+- mesma experiência operacional para suporte e para o contratante;
+- sem ambiguidade no painel sobre "pedido criado" x "pedido pago".
 
-### ID 7 - Página de manuais no menu
+## 6. Padrão de qualidade para toda entrega
 
-- Tirar do grupo de configurações.
-- Publicar item de menu independente.
-- Manter controle de permissão por módulo/plano.
+Toda implementação só é considerada concluída se tiver:
 
-### ID 8 - Checkout dual (integrado + padrão manual)
+1. validação de escopo multi-tenant e autorização;
+2. textos em pt-BR (UTF-8);
+3. tratamento de erro amigável para usuário;
+4. logs sem dados sensíveis;
+5. atualização deste arquivo (`docs/veshop.md`) com status real.
 
-- Definir configuração por contratante:
-  - `checkout_mode = integrated_gateway`;
-  - `checkout_mode = manual_after_order`.
-- Fluxo integrado:
-  - pedido + intenção de pagamento + webhook/status.
-- Fluxo manual:
-  - cliente envia pedido sem pagar;
-  - contratante recebe no sistema/WhatsApp;
-  - contratante cobra externamente e confirma manualmente no sistema.
-- Padronização recomendada de status:
-  - `pending_payment`;
-  - `payment_confirmed`;
-  - `in_preparation`;
-  - `shipped`;
-  - `completed`;
-  - `canceled`.
-- Resultado:
-  - um único modelo operacional, mudando apenas o modo de confirmação de pagamento.
+## 7. Próximo item recomendado de desenvolvimento
 
-### ID 9 - Notificações (in-app + e-mail + WhatsApp)
+Próximo passo: **ID 1 - UX/UI da loja virtual**.
 
-- In-app e e-mail: consolidar gatilhos por evento de negócio.
-- WhatsApp: avaliar viabilidade por provedor oficial e custos.
-- Recomendação:
-  - iniciar com arquitetura de canais plugáveis;
-  - implementar preferências por usuário/contratante;
-  - registrar entregas e falhas por canal.
+Motivo:
 
-### ID 10 - Taxa por forma de pagamento
+1. impacto direto na conversão de compra;
+2. remove fricção crítica no mobile;
+3. prepara base visual/funcional para próximos módulos (financeiro e checkout dual).
 
-- Permitir configuração de taxa (fixa ou percentual) por método.
-- Aplicar em:
-  - PDV;
-  - loja virtual.
-- Mostrar transparência de cálculo no resumo do pedido/venda.
+Escopo objetivo da próxima entrega:
 
-### ID 11 - Carregamento inicial do login da loja
-
-- Revisar hydration e payload inicial para evitar erro de render.
-- Garantir carregamento com estado pronto antes de exibir formulário.
-- Critério de aceite:
-  - sem quebra visual no primeiro paint.
-
-### ID 12 - Termos e políticas (LGPD)
-
-- Criar páginas:
-  - termos de uso;
-  - política de privacidade.
-- Incluir consentimento no login/cadastro quando aplicável.
-- Definir versionamento de termos e evidência de aceite.
-
-## 6. Roadmap sugerido de execução
-
-## Fase A (crítica)
-
-1. ID 1 (UX/UI loja e carrinho mobile).
-2. ID 8 (checkout dual padronizado).
-3. ID 3 (financeiro base AP/AR com anexos, sem OCR automático).
-
-## Fase B (operação)
-
-1. ID 4 (pedidos/estoque + novo pedido).
-2. ID 2 (edição de pedido/venda com auditoria).
-3. ID 10 (taxas por forma de pagamento).
-
-## Fase C (expansão e governança)
-
-1. ID 5 e ID 6 (catálogo avançado).
-2. ID 9 (multicanal de notificações, com estudo WhatsApp).
-3. ID 12 e ID 7 (compliance e organização de navegação).
-4. ID 11 (hardening visual de carregamento inicial).
-
-## 7. Critérios globais de aceite (DoD)
-
-Toda entrega deve cumprir:
-
-1. testes cobrindo regra crítica;
-2. autorização e escopo por contratante;
-3. logs e auditoria sem exposição de dados sensíveis;
-4. UX consistente em desktop e mobile;
-5. textos em português brasileiro e codificação UTF-8;
-6. documentação atualizada neste arquivo ao final da entrega.
-
-## 8. Decisões de produto já assumidas
-
-1. O sistema deve suportar checkout integrado e manual sem duplicar arquitetura.
-2. Segurança multi-tenant é requisito de plataforma, não item opcional.
-3. OCR no financeiro deve começar como apoio ao usuário, não automação sem revisão.
-4. Backlog deve priorizar impacto operacional real para contratante.
-
-## 9. Próximo passo recomendado
-
-Iniciar pelo combo **ID 1 + ID 8**, porque entrega valor direto ao contratante e reduz fricção de compra:
-
-1. fechar UX/UI do carrinho mobile com etapas claras;
-2. formalizar o modo de checkout por contratante (integrado x manual) com status unificado.
+1. loading visual padrão nos botões de compra/checkout;
+2. correção completa do modal de carrinho no mobile;
+3. revisão final dos modais de conta/favoritos/carrinho para padrão único desktop + mobile.
