@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\FinancialEntryController;
 use App\Http\Controllers\Admin\FinanceController;
 use App\Http\Controllers\Admin\ManualController;
 use App\Http\Controllers\Admin\OrderController;
@@ -81,6 +82,9 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
 
         Route::middleware('contractor.module:finance')->group(function (): void {
             Route::get('/finance', [FinanceController::class, 'index'])->name('finance.index');
+            Route::post('/finance/entries', [FinancialEntryController::class, 'store'])->name('finance.entries.store');
+            Route::post('/finance/entries/{financialEntry}', [FinancialEntryController::class, 'update'])->name('finance.entries.update');
+            Route::delete('/finance/entries/{financialEntry}', [FinancialEntryController::class, 'destroy'])->name('finance.entries.destroy');
 
             Route::redirect('/finance/payables', '/app/finance?tab=payables')->name('finance.payables');
             Route::redirect('/finance/receivables', '/app/finance?tab=receivables')->name('finance.receivables');

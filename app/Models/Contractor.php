@@ -167,6 +167,11 @@ class Contractor extends Model
         return $this->hasMany(SalePayment::class);
     }
 
+    public function financialEntries(): HasMany
+    {
+        return $this->hasMany(FinancialEntry::class);
+    }
+
     public function inventoryMovements(): HasMany
     {
         return $this->hasMany(InventoryMovement::class);

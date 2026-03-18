@@ -1,12 +1,13 @@
-<script setup>
+﻿<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Modal from '@/Components/Modal.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
+import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import { useBranding } from '@/branding';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
-import { computed, onMounted, ref, watch } from 'vue';
+import { Head, router, useForm, usePage } from '@inertiajs/vue3';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
     CalendarClock,
     AlertTriangle,
@@ -14,7 +15,6 @@ import {
     WalletCards,
     Banknote,
     Search,
-    Filter,
     Plus,
     CreditCard,
     List,
@@ -24,6 +24,7 @@ import {
     ShieldCheck,
     Pencil,
     Trash2,
+    FileText,
 } from 'lucide-vue-next';
 
 const props = defineProps({
@@ -39,6 +40,31 @@ const props = defineProps({
             provider_options: [],
             stats: {},
         }),
+    },
+    financeEntries: {
+        type: Object,
+        default: () => ({
+            data: [],
+            links: [],
+        }),
+    },
+    financeStats: {
+        type: Object,
+        default: () => ({
+            payables: {},
+            receivables: {},
+        }),
+    },
+    filters: {
+        type: Object,
+        default: () => ({
+            search: '',
+            status: '',
+        }),
+    },
+    statusOptions: {
+        type: Array,
+        default: () => [],
     },
 });
 
@@ -134,50 +160,49 @@ const tabs = [
     },
 ];
 
-const payablesStats = [
-    { key: 'next_7', label: 'A vencer (7 dias)', value: 'R$ 0,00', icon: CalendarClock, tone: 'text-slate-700' },
-    { key: 'late', label: 'Vencido', value: 'R$ 0,00', icon: AlertTriangle, tone: 'text-slate-700' },
-    { key: 'paid', label: 'Pago no mês', value: 'R$ 0,00', icon: CheckCircle2, tone: 'text-slate-700' },
-    { key: 'projection', label: 'Saída projetada', value: 'R$ 0,00', icon: WalletCards, tone: 'text-slate-700' },
-];
+const searchQuery = ref(String(props.filters?.search ?? ''));
+const selectedStatus = ref(String(props.filters?.status ?? ''));
+const activeRows = computed(() => (
+    Array.isArray(props.financeEntries?.data)
+        ? props.financeEntries.data
+        : []
+));
+const paginationLinks = computed(() => (
+    Array.isArray(props.financeEntries?.links)
+        ? props.financeEntries.links
+        : []
+));
+const payablesStats = computed(() => props.financeStats?.payables ?? {});
+const receivablesStats = computed(() => props.financeStats?.receivables ?? {});
 
-const receivablesStats = [
-    { key: 'next_7', label: 'A receber (7 dias)', value: 'R$ 0,00', icon: CalendarClock, tone: 'text-slate-700' },
-    { key: 'late', label: 'Atrasado', value: 'R$ 0,00', icon: AlertTriangle, tone: 'text-slate-700' },
-    { key: 'received', label: 'Recebido no mês', value: 'R$ 0,00', icon: CheckCircle2, tone: 'text-slate-700' },
-    { key: 'default', label: 'Inadimplência', value: '0%', icon: Banknote, tone: 'text-slate-700' },
-];
+const activeStats = computed(() => {
+    if (activeTab.value === 'receivables') {
+        return [
+            { key: 'next_7', label: 'A receber (7 dias)', value: String(receivablesStats.value.next_7 ?? 'R$ 0,00'), icon: CalendarClock, tone: 'text-slate-700' },
+            { key: 'late', label: 'Atrasado', value: String(receivablesStats.value.late ?? 'R$ 0,00'), icon: AlertTriangle, tone: 'text-slate-700' },
+            { key: 'received', label: 'Recebido no mês', value: String(receivablesStats.value.received ?? 'R$ 0,00'), icon: CheckCircle2, tone: 'text-slate-700' },
+            { key: 'default_rate', label: 'Inadimplência', value: String(receivablesStats.value.default_rate ?? '0,0%'), icon: Banknote, tone: 'text-slate-700' },
+        ];
+    }
 
-const payables = [];
-const receivables = [];
-const searchQuery = ref('');
-
-const activeStats = computed(() => (activeTab.value === 'receivables' ? receivablesStats : payablesStats));
-const activeRows = computed(() => {
-    const rows = activeTab.value === 'receivables' ? receivables : payables;
-    const query = String(searchQuery.value ?? '').trim().toLowerCase();
-
-    if (!query) return rows;
-
-    return rows.filter((item) => {
-        const primary = String(item?.primary ?? '').toLowerCase();
-        const reference = String(item?.reference ?? '').toLowerCase();
-        const status = String(item?.status ?? '').toLowerCase();
-        return primary.includes(query) || reference.includes(query) || status.includes(query);
-    });
+    return [
+        { key: 'next_7', label: 'A vencer (7 dias)', value: String(payablesStats.value.next_7 ?? 'R$ 0,00'), icon: CalendarClock, tone: 'text-slate-700' },
+        { key: 'late', label: 'Vencido', value: String(payablesStats.value.late ?? 'R$ 0,00'), icon: AlertTriangle, tone: 'text-slate-700' },
+        { key: 'paid', label: 'Pago no mês', value: String(payablesStats.value.paid ?? 'R$ 0,00'), icon: CheckCircle2, tone: 'text-slate-700' },
+        { key: 'projection', label: 'Saída projetada', value: String(payablesStats.value.projection ?? 'R$ 0,00'), icon: WalletCards, tone: 'text-slate-700' },
+    ];
 });
 
 const searchPlaceholder = computed(() =>
     activeTab.value === 'receivables'
-        ? 'Buscar por cliente ou pedido'
+        ? 'Buscar por cliente ou referência'
         : 'Buscar por fornecedor ou documento'
 );
 
-const filterLabel = computed(() =>
-    activeTab.value === 'receivables'
-        ? 'Cobrança'
-        : 'Vencimento'
-);
+const statusFilterOptions = computed(() => [
+    { value: '', label: 'Todos os status' },
+    ...(props.statusOptions ?? []),
+]);
 
 const actionLabel = computed(() =>
     activeTab.value === 'receivables'
@@ -188,12 +213,12 @@ const actionLabel = computed(() =>
 const firstColumnLabel = computed(() =>
     activeTab.value === 'receivables'
         ? 'Cliente'
-        : 'Fornecedor'
+        : 'Fornecedor / Descrição'
 );
 
 const secondColumnLabel = computed(() =>
     activeTab.value === 'receivables'
-        ? 'Pedido'
+        ? 'Referência'
         : 'Documento'
 );
 
@@ -203,9 +228,78 @@ const emptyStateLabel = computed(() =>
         : 'Nenhum título a pagar cadastrado.'
 );
 
+const statusBadgeClass = (statusKey) => {
+    const safe = String(statusKey ?? '').trim().toLowerCase();
+    if (safe === 'paid') return 'bg-emerald-100 text-emerald-700';
+    if (safe === 'overdue') return 'bg-rose-100 text-rose-700';
+    if (safe === 'cancelled') return 'bg-slate-200 text-slate-700';
+    return 'bg-amber-100 text-amber-700';
+};
+
 const clearSearch = () => {
     searchQuery.value = '';
 };
+
+let financeFilterDebounceTimer = null;
+
+const syncFinanceWithServer = () => {
+    const tab = activeTab.value;
+    const isPaymentTab = tab === 'payments';
+
+    router.get(
+        route('admin.finance.index'),
+        {
+            tab,
+            search: !isPaymentTab ? (String(searchQuery.value ?? '').trim() || undefined) : undefined,
+            status: !isPaymentTab ? (String(selectedStatus.value ?? '').trim() || undefined) : undefined,
+        },
+        {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+            only: ['initialTab', 'filters', 'statusOptions', 'financeEntries', 'financeStats', 'paymentConfig'],
+        },
+    );
+};
+
+const scheduleSyncFinanceWithServer = () => {
+    if (activeTab.value === 'payments') return;
+
+    if (financeFilterDebounceTimer) {
+        clearTimeout(financeFilterDebounceTimer);
+    }
+
+    financeFilterDebounceTimer = setTimeout(() => {
+        syncFinanceWithServer();
+    }, 280);
+};
+
+watch([searchQuery, selectedStatus], () => {
+    scheduleSyncFinanceWithServer();
+});
+
+watch(
+    () => props.filters,
+    (filters) => {
+        const nextSearch = String(filters?.search ?? '');
+        const nextStatus = String(filters?.status ?? '');
+
+        if (searchQuery.value !== nextSearch) {
+            searchQuery.value = nextSearch;
+        }
+
+        if (selectedStatus.value !== nextStatus) {
+            selectedStatus.value = nextStatus;
+        }
+    },
+);
+
+onBeforeUnmount(() => {
+    if (financeFilterDebounceTimer) {
+        clearTimeout(financeFilterDebounceTimer);
+        financeFilterDebounceTimer = null;
+    }
+});
 
 const paymentStats = computed(() => {
     const stats = props.paymentConfig?.stats ?? {};
@@ -365,15 +459,15 @@ const runGatewayConnectionTest = async () => {
 
         if (!data || data.ok !== true) {
             gatewayConnectionStatus.value = 'error';
-            gatewayConnectionMessage.value = String(data?.message ?? 'Nao foi possivel validar a conexao.');
+            gatewayConnectionMessage.value = String(data?.message ?? 'Não foi possível validar a conexão.');
             return;
         }
 
         gatewayConnectionStatus.value = 'success';
-        gatewayConnectionMessage.value = String(data.message ?? 'Conexao validada com sucesso.');
+        gatewayConnectionMessage.value = String(data.message ?? 'Conexão validada com sucesso.');
         gatewayConnectionDetails.value = data.details ?? null;
     } catch (error) {
-        const fallbackMessage = 'Nao foi possivel validar a conexao com o gateway.';
+        const fallbackMessage = 'Não foi possível validar a conexão com o gateway.';
         const responseMessage = String(error?.response?.data?.message ?? '').trim();
         const message = responseMessage !== '' ? responseMessage : fallbackMessage;
 
@@ -579,6 +673,139 @@ watch(
         resetGatewayConnectionFeedback();
     },
 );
+
+const entryModalOpen = ref(false);
+const editingEntry = ref(null);
+const entryDeleteOpen = ref(false);
+const entryToDelete = ref(null);
+
+const entryStatusFormOptions = [
+    { value: 'pending', label: 'Em aberto' },
+    { value: 'paid', label: 'Liquidado' },
+    { value: 'cancelled', label: 'Cancelado' },
+];
+
+const entryForm = useForm({
+    type: 'payable',
+    counterparty_name: '',
+    reference: '',
+    amount: '',
+    issue_date: '',
+    due_date: '',
+    status: 'pending',
+    payment_method_id: '',
+    paid_at: '',
+    notes: '',
+    document: null,
+    remove_document: false,
+});
+
+const entryDeleteForm = useForm({});
+const isEditingEntry = computed(() => Boolean(editingEntry.value?.id));
+
+const openCreateEntry = () => {
+    editingEntry.value = null;
+    entryForm.reset();
+    entryForm.clearErrors();
+    entryForm.type = activeTab.value === 'receivables' ? 'receivable' : 'payable';
+    entryForm.status = 'pending';
+    entryForm.payment_method_id = '';
+    entryForm.remove_document = false;
+    entryForm.document = null;
+    entryModalOpen.value = true;
+};
+
+const openEditEntry = (entry) => {
+    editingEntry.value = entry;
+    entryForm.type = String(entry.type ?? (activeTab.value === 'receivables' ? 'receivable' : 'payable'));
+    entryForm.counterparty_name = String(entry.counterparty_name ?? entry.primary ?? '');
+    entryForm.reference = String(entry.reference ?? '');
+    entryForm.amount = Number(entry.amount_raw ?? 0).toFixed(2);
+    entryForm.issue_date = String(entry.issue_date_raw ?? '');
+    entryForm.due_date = String(entry.due_date_raw ?? '');
+    entryForm.status = String(entry.status_key ?? 'pending') === 'overdue' ? 'pending' : String(entry.status_key ?? 'pending');
+    entryForm.payment_method_id = entry.payment_method_id ?? '';
+    entryForm.paid_at = String(entry.paid_at_raw ?? '').slice(0, 10);
+    entryForm.notes = String(entry.notes ?? '');
+    entryForm.remove_document = false;
+    entryForm.document = null;
+    entryForm.clearErrors();
+    entryModalOpen.value = true;
+};
+
+const closeEntryModal = () => {
+    entryModalOpen.value = false;
+    editingEntry.value = null;
+    entryForm.clearErrors();
+};
+
+const onEntryDocumentChange = (event) => {
+    const [file] = Array.from(event?.target?.files ?? []);
+    entryForm.document = file ?? null;
+    if (file) {
+        entryForm.remove_document = false;
+    }
+};
+
+const removeEntryDocument = () => {
+    entryForm.document = null;
+    entryForm.remove_document = true;
+};
+
+const submitEntry = () => {
+    const payload = {
+        type: entryForm.type,
+        counterparty_name: entryForm.counterparty_name,
+        reference: String(entryForm.reference ?? '').trim() || null,
+        amount: entryForm.amount === '' ? null : Number(entryForm.amount),
+        issue_date: String(entryForm.issue_date ?? '').trim() || null,
+        due_date: String(entryForm.due_date ?? '').trim() || null,
+        status: entryForm.status,
+        payment_method_id: entryForm.status === 'paid' && entryForm.payment_method_id !== ''
+            ? Number(entryForm.payment_method_id)
+            : null,
+        paid_at: entryForm.status === 'paid'
+            ? (String(entryForm.paid_at ?? '').trim() || null)
+            : null,
+        notes: String(entryForm.notes ?? '').trim() || null,
+        remove_document: Boolean(entryForm.remove_document),
+        document: entryForm.document ?? null,
+    };
+
+    if (isEditingEntry.value) {
+        entryForm.transform(() => payload).post(route('admin.finance.entries.update', editingEntry.value.id), {
+            preserveScroll: true,
+            forceFormData: true,
+            onSuccess: closeEntryModal,
+        });
+        return;
+    }
+
+    entryForm.transform(() => payload).post(route('admin.finance.entries.store'), {
+        preserveScroll: true,
+        forceFormData: true,
+        onSuccess: closeEntryModal,
+    });
+};
+
+const openDeleteEntry = (entry) => {
+    entryToDelete.value = entry;
+    entryDeleteOpen.value = true;
+};
+
+const closeDeleteEntry = () => {
+    entryToDelete.value = null;
+    entryDeleteOpen.value = false;
+};
+
+const removeEntry = () => {
+    if (!entryToDelete.value?.id) return;
+
+    entryDeleteForm.delete(route('admin.finance.entries.destroy', entryToDelete.value.id), {
+        preserveScroll: true,
+        onSuccess: closeDeleteEntry,
+    });
+};
 </script>
 
 <template>
@@ -849,11 +1076,12 @@ watch(
                         </div>
 
                         <div class="veshop-toolbar-actions lg:justify-end">
-                            <button type="button" class="inline-flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto">
-                                <Filter class="h-3.5 w-3.5" />
-                                {{ filterLabel }}
-                            </button>
-                            <button type="button" class="inline-flex w-full items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 sm:w-auto">
+                            <UiSelect
+                                v-model="selectedStatus"
+                                :options="statusFilterOptions"
+                                button-class="min-w-[190px]"
+                            />
+                            <button type="button" class="inline-flex w-full items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 sm:w-auto" @click="openCreateEntry">
                                 <Plus class="h-3.5 w-3.5" />
                                 {{ actionLabel }}
                             </button>
@@ -883,7 +1111,7 @@ watch(
                         </div>
                     </div>
 
-                    <div class="mt-4 rounded-xl border border-slate-200 bg-white">
+                    <div v-if="tableViewMode === 'list'" class="mt-4 rounded-xl border border-slate-200 bg-white">
                         <table class="min-w-full divide-y divide-slate-200 text-sm">
                             <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                                 <tr>
@@ -892,15 +1120,41 @@ watch(
                                     <th class="px-4 py-3">Vencimento</th>
                                     <th class="px-4 py-3">Valor</th>
                                     <th class="px-4 py-3">Status</th>
+                                    <th class="px-4 py-3 text-right">Acoes</th>
                                 </tr>
                             </thead>
                             <tbody v-if="activeRows.length" class="divide-y divide-slate-100 bg-white">
                                 <tr v-for="item in activeRows" :key="item.id">
                                     <td class="px-4 py-3 font-semibold text-slate-900">{{ item.primary }}</td>
-                                    <td class="px-4 py-3 text-slate-600">{{ item.reference }}</td>
+                                    <td class="px-4 py-3 text-slate-600">{{ item.reference || '-' }}</td>
                                     <td class="px-4 py-3 text-slate-600">{{ item.due }}</td>
                                     <td class="px-4 py-3 font-semibold text-slate-800">{{ item.value }}</td>
-                                    <td class="px-4 py-3">{{ item.status }}</td>
+                                    <td class="px-4 py-3">
+                                        <span class="rounded-full px-2 py-1 text-xs font-semibold" :class="statusBadgeClass(item.status_key)">
+                                            {{ item.status }}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <div class="flex items-center justify-end gap-2">
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
+                                                title="Editar"
+                                                @click="openEditEntry(item)"
+                                            >
+                                                <Pencil class="h-3.5 w-3.5" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center justify-center rounded-lg border border-rose-200 p-2 text-rose-700 hover:bg-rose-50"
+                                                title="Excluir"
+                                                :disabled="!item.can_delete"
+                                                @click="openDeleteEntry(item)"
+                                            >
+                                                <Trash2 class="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
@@ -908,9 +1162,244 @@ watch(
                             {{ emptyStateLabel }}
                         </div>
                     </div>
+
+                    <div v-else class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        <article
+                            v-for="item in activeRows"
+                            :key="`finance-card-${item.id}`"
+                            class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                        >
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <p class="truncate text-sm font-semibold text-slate-900">{{ item.primary }}</p>
+                                    <p class="truncate text-xs text-slate-500">{{ item.reference || 'Sem referência' }}</p>
+                                </div>
+                                <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="statusBadgeClass(item.status_key)">
+                                    {{ item.status }}
+                                </span>
+                            </div>
+
+                            <div class="mt-3 grid gap-2 text-sm">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                                    Vencimento: {{ item.due }}
+                                </div>
+                                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 font-semibold">
+                                    {{ item.value }}
+                                </div>
+                                <a
+                                    v-if="item.document_url"
+                                    :href="item.document_url"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                >
+                                    <FileText class="h-3.5 w-3.5" />
+                                    {{ item.document_name || 'Documento' }}
+                                </a>
+                            </div>
+
+                            <div class="mt-3 flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                    @click="openEditEntry(item)"
+                                >
+                                    <Pencil class="h-3.5 w-3.5" />
+                                    Editar
+                                </button>
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                                    :disabled="!item.can_delete"
+                                    @click="openDeleteEntry(item)"
+                                >
+                                    <Trash2 class="h-3.5 w-3.5" />
+                                    Excluir
+                                </button>
+                            </div>
+                        </article>
+
+                        <div v-if="!activeRows.length" class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500 md:col-span-2 xl:col-span-3">
+                            {{ emptyStateLabel }}
+                        </div>
+                    </div>
+
+                    <PaginationLinks :links="paginationLinks" :min-links="4" />
                 </section>
             </template>
         </section>
+
+        <Modal :show="entryModalOpen" max-width="5xl" @close="closeEntryModal">
+            <WizardModalFrame
+                :title="isEditingEntry ? 'Editar lançamento financeiro' : 'Novo lançamento financeiro'"
+                description="Cadastre contas a pagar e receber com vencimento, status e documento."
+                :steps="['Dados do lançamento']"
+                :current-step="1"
+                @close="closeEntryModal"
+            >
+                <div class="grid gap-3 md:grid-cols-2">
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo</label>
+                        <UiSelect
+                            v-model="entryForm.type"
+                            :options="[
+                                { value: 'payable', label: 'Conta a pagar' },
+                                { value: 'receivable', label: 'Conta a receber' },
+                            ]"
+                            button-class="mt-1"
+                        />
+                        <p v-if="entryForm.errors.type" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.type }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
+                        <UiSelect
+                            v-model="entryForm.status"
+                            :options="entryStatusFormOptions"
+                            button-class="mt-1"
+                        />
+                        <p v-if="entryForm.errors.status" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.status }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Fornecedor, cliente ou descrição</label>
+                        <input
+                            v-model="entryForm.counterparty_name"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Ex.: Aluguel da sede"
+                        >
+                        <p v-if="entryForm.errors.counterparty_name" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.counterparty_name }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Referência / Documento</label>
+                        <input
+                            v-model="entryForm.reference"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Ex.: NF 1234"
+                        >
+                        <p v-if="entryForm.errors.reference" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.reference }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor (R$)</label>
+                        <input
+                            v-model="entryForm.amount"
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="0,00"
+                        >
+                        <p v-if="entryForm.errors.amount" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.amount }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Data de emissão</label>
+                        <input
+                            v-model="entryForm.issue_date"
+                            type="date"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        >
+                        <p v-if="entryForm.errors.issue_date" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.issue_date }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Data de vencimento</label>
+                        <input
+                            v-model="entryForm.due_date"
+                            type="date"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        >
+                        <p v-if="entryForm.errors.due_date" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.due_date }}</p>
+                    </div>
+
+                    <div v-if="entryForm.status === 'paid'">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Data de baixa</label>
+                        <input
+                            v-model="entryForm.paid_at"
+                            type="date"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        >
+                        <p v-if="entryForm.errors.paid_at" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.paid_at }}</p>
+                    </div>
+
+                    <div v-if="entryForm.status === 'paid'">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Forma de pagamento</label>
+                        <UiSelect
+                            v-model="entryForm.payment_method_id"
+                            :options="paymentMethodOptions"
+                            button-class="mt-1"
+                        />
+                        <p v-if="entryForm.errors.payment_method_id" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.payment_method_id }}</p>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Observações</label>
+                        <textarea
+                            v-model="entryForm.notes"
+                            rows="3"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Informações adicionais"
+                        />
+                        <p v-if="entryForm.errors.notes" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.notes }}</p>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Documento (PDF/JPG/PNG/WEBP)</label>
+                        <input
+                            type="file"
+                            accept=".pdf,.png,.jpg,.jpeg,.webp"
+                            class="mt-1 block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-200 file:bg-slate-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-700"
+                            @change="onEntryDocumentChange"
+                        >
+                        <p v-if="entryForm.errors.document" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.document }}</p>
+
+                        <div v-if="isEditingEntry && editingEntry?.document_url" class="mt-2 flex flex-wrap items-center gap-2">
+                            <a
+                                :href="editingEntry.document_url"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                            >
+                                <FileText class="h-3.5 w-3.5" />
+                                {{ editingEntry.document_name || 'Documento atual' }}
+                            </a>
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                                @click="removeEntryDocument"
+                            >
+                                <Trash2 class="h-3.5 w-3.5" />
+                                Remover documento atual
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <template #footer>
+                    <div class="flex items-center justify-end gap-2">
+                        <button
+                            type="button"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="closeEntryModal"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="entryForm.processing"
+                            @click="submitEntry"
+                        >
+                            {{ entryForm.processing ? 'Salvando...' : 'Salvar' }}
+                        </button>
+                    </div>
+                </template>
+            </WizardModalFrame>
+        </Modal>
 
         <Modal :show="gatewayModalOpen" max-width="5xl" @close="closeGatewayModal">
             <WizardModalFrame
@@ -1156,6 +1645,16 @@ watch(
         </Modal>
 
         <DeleteConfirmModal
+            :show="entryDeleteOpen"
+            title="Excluir lançamento"
+            message="Tem certeza que deseja excluir este lançamento financeiro?"
+            :item-label="entryToDelete?.primary ? `Lançamento: ${entryToDelete.primary}` : ''"
+            :processing="entryDeleteForm.processing"
+            @close="closeDeleteEntry"
+            @confirm="removeEntry"
+        />
+
+        <DeleteConfirmModal
             :show="gatewayDeleteOpen"
             title="Excluir gateway"
             message="Tem certeza que deseja excluir este gateway?"
@@ -1240,3 +1739,7 @@ watch(
     background: #f1f5f9;
 }
 </style>
+
+
+
+

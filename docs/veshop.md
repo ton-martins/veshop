@@ -99,13 +99,21 @@ Paginação backend/frontend confirmada em:
 - Redução de exposição de dados no payload compartilhado do Inertia.
 - Base de auditoria de segurança consolidada no guia mestre.
 
+### 3.8 Financeiro (Fase 1)
+
+- Estrutura de dados de lançamentos financeiros criada (`financial_entries`) com soft delete e índices.
+- CRUD de contas a pagar/receber implementado no admin com upload de documento.
+- Listagem com abas, filtros por busca/status e paginação (`20` por página).
+- Regras de segurança aplicadas: escopo por `contractor_id`, validação de forma de pagamento do contratante e bloqueio cross-tenant.
+- Testes de feature do fluxo financeiro adicionados e validados.
+
 ## 4. Backlog priorizado (status real)
 
 | ID | Item | Status | Prioridade |
 | --- | --- | --- | --- |
 | 1 | UX/UI da loja virtual (feedback visual, carrinho mobile, consistência dos modais) | Concluído (MVP) | Crítica |
 | 2 | Edição de pedido/venda no admin com auditoria | Parcial (pedido MVP) | Alta |
-| 3 | Módulo financeiro (contas a pagar/receber + anexos + status + observações) | Pendente | Crítica |
+| 3 | Módulo financeiro (contas a pagar/receber + anexos + status + observações) | Parcial (Fase 1 concluída) | Crítica |
 | 4 | Finalizar páginas de estoque e pedidos + botão "Novo pedido" | Parcial (página Vendas concluída) | Alta |
 | 5 | Produto com até 5 fotos + variações + promoção (%) | Pendente | Alta |
 | 6 | Categorias com subcategorias | Pendente | Alta |
@@ -166,16 +174,16 @@ Toda implementação só é considerada concluída se tiver:
 
 ## 7. Próximo item recomendado de desenvolvimento
 
-Próximo passo: **ID 3 - Módulo financeiro (AP/AR)**.
+Próximo passo: **ID 3 - Módulo financeiro (Fase 2: OCR assistido + alertas)**.
 
 Motivo:
 
-1. impacto direto na gestão diária do contratante;
-2. fecha lacuna funcional crítica da plataforma;
-3. prepara base para alertas/notificações financeiras e relatórios.
+1. Fase 1 já entregou o núcleo operacional (CRUD + anexos + filtros + paginação);
+2. OCR assistido aumenta produtividade sem comprometer segurança de dados;
+3. alertas financeiros conectam o módulo a notificações e rotina de cobrança.
 
 Escopo objetivo da próxima entrega:
 
-1. estrutura de dados de lançamentos financeiros (pagar/receber);
-2. formulários com campos obrigatórios e status padronizado;
-3. upload de documento por lançamento com trilha de alteração.
+1. upload de documento com pré-extração OCR assistida (sugestão de campos, confirmação manual obrigatória);
+2. trilha de auditoria por campo ajustado após OCR;
+3. lembretes financeiros in-app (vencimento próximo e vencido), sem WhatsApp nesta fase.
