@@ -289,6 +289,100 @@ const gatewayForm = useForm({
 
 const gatewayDeleteForm = useForm({});
 const isEditingGateway = computed(() => Boolean(editingGateway.value?.id));
+const gatewayConnectionLoading = ref(false);
+const gatewayConnectionStatus = ref('idle');
+const gatewayConnectionMessage = ref('');
+const gatewayConnectionDetails = ref(null);
+
+const gatewayConnectionToneClass = computed(() => {
+    if (gatewayConnectionStatus.value === 'success') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    if (gatewayConnectionStatus.value === 'error') return 'border-rose-200 bg-rose-50 text-rose-700';
+
+    return 'border-slate-200 bg-slate-50 text-slate-600';
+});
+
+const gatewayConnectionDetailsText = computed(() => {
+    const details = gatewayConnectionDetails.value;
+    if (!details || typeof details !== 'object') return '';
+
+    if (String(details.provider ?? '') === 'mercado_pago') {
+        const nickname = String(details.nickname ?? '').trim();
+        const email = String(details.email ?? '').trim();
+        const accountId = String(details.account_id ?? '').trim();
+        const chunks = [nickname, email, accountId !== '' ? `ID ${accountId}` : ''].filter(Boolean);
+        return chunks.join(' · ');
+    }
+
+    return '';
+});
+
+const resetGatewayConnectionFeedback = () => {
+    gatewayConnectionStatus.value = 'idle';
+    gatewayConnectionMessage.value = '';
+    gatewayConnectionDetails.value = null;
+};
+
+const runGatewayConnectionTest = async () => {
+    gatewayConnectionLoading.value = true;
+    gatewayConnectionStatus.value = 'idle';
+    gatewayConnectionMessage.value = '';
+    gatewayConnectionDetails.value = null;
+
+    try {
+        const payload = {
+            provider: gatewayForm.provider,
+            is_sandbox: Boolean(gatewayForm.is_sandbox),
+            gateway_id: editingGateway.value?.id ?? null,
+            mercado_pago_access_token: gatewayForm.mercado_pago_access_token,
+            mercado_pago_webhook_secret: gatewayForm.mercado_pago_webhook_secret,
+        };
+
+        let data = null;
+
+        if (typeof window !== 'undefined' && window.axios) {
+            const response = await window.axios.post(route('admin.finance.gateways.test'), payload, {
+                headers: {
+                    Accept: 'application/json',
+                },
+            });
+            data = response?.data ?? null;
+        } else {
+            const csrf = typeof document !== 'undefined'
+                ? document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? ''
+                : '';
+            const response = await fetch(route('admin.finance.gateways.test'), {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                },
+                body: JSON.stringify(payload),
+            });
+            data = response.ok ? await response.json() : null;
+        }
+
+        if (!data || data.ok !== true) {
+            gatewayConnectionStatus.value = 'error';
+            gatewayConnectionMessage.value = String(data?.message ?? 'Nao foi possivel validar a conexao.');
+            return;
+        }
+
+        gatewayConnectionStatus.value = 'success';
+        gatewayConnectionMessage.value = String(data.message ?? 'Conexao validada com sucesso.');
+        gatewayConnectionDetails.value = data.details ?? null;
+    } catch (error) {
+        const fallbackMessage = 'Nao foi possivel validar a conexao com o gateway.';
+        const responseMessage = String(error?.response?.data?.message ?? '').trim();
+        const message = responseMessage !== '' ? responseMessage : fallbackMessage;
+
+        gatewayConnectionStatus.value = 'error';
+        gatewayConnectionMessage.value = message;
+    } finally {
+        gatewayConnectionLoading.value = false;
+    }
+};
 
 const openCreateGateway = () => {
     editingGateway.value = null;
@@ -301,6 +395,7 @@ const openCreateGateway = () => {
     gatewayForm.is_sandbox = true;
     gatewayForm.mercado_pago_access_token = '';
     gatewayForm.mercado_pago_webhook_secret = '';
+    resetGatewayConnectionFeedback();
     gatewayModalOpen.value = true;
 };
 
@@ -314,12 +409,14 @@ const openEditGateway = (gateway) => {
     gatewayForm.mercado_pago_access_token = '';
     gatewayForm.mercado_pago_webhook_secret = '';
     gatewayForm.clearErrors();
+    resetGatewayConnectionFeedback();
     gatewayModalOpen.value = true;
 };
 
 const closeGatewayModal = () => {
     gatewayModalOpen.value = false;
     editingGateway.value = null;
+    resetGatewayConnectionFeedback();
 };
 
 const submitGateway = () => {
@@ -475,6 +572,13 @@ const methodCodeLabel = (code) => {
 };
 
 const isMercadoPagoGateway = computed(() => gatewayForm.provider === 'mercado_pago');
+
+watch(
+    () => [gatewayForm.provider, gatewayForm.is_sandbox],
+    () => {
+        resetGatewayConnectionFeedback();
+    },
+);
 </script>
 
 <template>
@@ -598,6 +702,12 @@ const isMercadoPagoGateway = computed(() => gatewayForm.provider === 'mercado_pa
                                             >
                                                 Token: {{ gateway.credentials_status?.access_token_configured ? 'configurado' : 'pendente' }}
                                                 · Webhook: {{ gateway.credentials_status?.webhook_secret_configured ? 'configurado' : 'pendente' }}
+                                            </div>
+                                            <div
+                                                v-if="gateway.last_health_check_at"
+                                                class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                                            >
+                                                Último teste: {{ gateway.last_health_check_at }}
                                             </div>
                                         </div>
 
@@ -856,6 +966,27 @@ const isMercadoPagoGateway = computed(() => gatewayForm.provider === 'mercado_pa
                             autocomplete="off"
                         >
                         <p v-if="gatewayForm.errors.mercado_pago_webhook_secret" class="mt-1 text-xs text-rose-600">{{ gatewayForm.errors.mercado_pago_webhook_secret }}</p>
+                    </div>
+
+                    <div class="md:col-span-2 flex flex-col gap-2">
+                        <button
+                            type="button"
+                            class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 md:w-fit"
+                            :disabled="gatewayConnectionLoading"
+                            @click="runGatewayConnectionTest"
+                        >
+                            {{ gatewayConnectionLoading ? 'Testando conexão...' : 'Testar conexão Mercado Pago' }}
+                        </button>
+                        <div
+                            v-if="gatewayConnectionMessage"
+                            class="rounded-xl border px-3 py-2 text-xs font-semibold"
+                            :class="gatewayConnectionToneClass"
+                        >
+                            <p>{{ gatewayConnectionMessage }}</p>
+                            <p v-if="gatewayConnectionDetailsText" class="mt-1 text-[11px] font-medium opacity-90">
+                                {{ gatewayConnectionDetailsText }}
+                            </p>
+                        </div>
                     </div>
                 </div>
 

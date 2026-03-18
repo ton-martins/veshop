@@ -7,6 +7,7 @@ use App\Models\PaymentGateway;
 use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\Sale;
+use App\Models\SalePayment;
 use App\Models\ShopCustomer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -217,6 +218,13 @@ class ShopCheckoutTest extends TestCase
             ]);
 
         $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+        $response->assertSessionHas('checkout_payment');
+
+        $checkoutPayment = $response->getSession()->get('checkout_payment');
+        $this->assertSame('pix', data_get($checkoutPayment, 'payment_method_code'));
+        $this->assertSame('TX-MP-001', data_get($checkoutPayment, 'transaction_reference'));
+        $this->assertSame('0002010102...', data_get($checkoutPayment, 'qr_code'));
+        $this->assertSame('Aguardando pagamento', data_get($checkoutPayment, 'payment_status_label'));
 
         Http::assertSent(static function (\Illuminate\Http\Client\Request $request): bool {
             return str_contains($request->url(), '/v1/payments')
@@ -241,6 +249,232 @@ class ShopCheckoutTest extends TestCase
         $this->assertSame(\App\Models\SalePayment::STATUS_PENDING, (string) $payment->status);
         $this->assertIsArray($payment->gateway_payload);
         $this->assertSame('TX-MP-001', data_get($payment->gateway_payload, 'payment_intent.transaction_reference'));
+    }
+
+    public function test_authenticated_shop_customer_can_consult_pix_payment_status_for_own_order(): void
+    {
+        $contractor = $this->createContractor('loja-consulta-pix');
+
+        $gateway = PaymentGateway::query()->create([
+            'contractor_id' => $contractor->id,
+            'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            'name' => 'Mercado Pago',
+            'is_active' => true,
+            'is_default' => true,
+            'is_sandbox' => true,
+            'credentials' => [
+                'access_token' => 'APP_USR_TEST_TOKEN',
+                'webhook_secret' => 'mp-webhook-token',
+            ],
+            'settings' => null,
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => $gateway->id,
+            'code' => PaymentMethod::CODE_PIX,
+            'name' => 'Pix Mercado Pago',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Consulta Pix',
+            'email' => 'cliente-consulta-pix@example.com',
+            'phone' => '71999990111',
+            'cep' => '41810-000',
+            'street' => 'Rua Pix',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $sale = Sale::query()->create([
+            'contractor_id' => $contractor->id,
+            'shop_customer_id' => $shopCustomer->id,
+            'code' => 'PED-CONSULTA-001',
+            'source' => Sale::SOURCE_CATALOG,
+            'status' => Sale::STATUS_AWAITING_PAYMENT,
+            'subtotal_amount' => 99.90,
+            'discount_amount' => 0,
+            'surcharge_amount' => 0,
+            'total_amount' => 99.90,
+            'paid_amount' => 0,
+            'change_amount' => 0,
+            'metadata' => [
+                'payment_intent' => [
+                    'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+                    'status' => 'pending',
+                    'transaction_reference' => 'TX-CONSULTA-001',
+                    'ticket_url' => 'https://www.mercadopago.com.br/payments/qr/TX-CONSULTA-001',
+                    'qr_code' => '0002010102CONSULTA',
+                    'qr_code_base64' => 'RkFLRV9DT05TVUxUQQ==',
+                    'date_of_expiration' => now()->addMinutes(30)->toIso8601String(),
+                ],
+            ],
+        ]);
+
+        SalePayment::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'payment_method_id' => $paymentMethod->id,
+            'payment_gateway_id' => $gateway->id,
+            'status' => SalePayment::STATUS_PENDING,
+            'amount' => 99.90,
+            'transaction_reference' => 'TX-CONSULTA-001',
+            'gateway_payload' => [
+                'payment_intent' => [
+                    'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+                    'status' => 'pending',
+                    'transaction_reference' => 'TX-CONSULTA-001',
+                    'ticket_url' => 'https://www.mercadopago.com.br/payments/qr/TX-CONSULTA-001',
+                    'qr_code' => '0002010102CONSULTA',
+                    'qr_code_base64' => 'RkFLRV9DT05TVUxUQQ==',
+                    'date_of_expiration' => now()->addMinutes(30)->toIso8601String(),
+                ],
+            ],
+            'metadata' => [
+                'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            ],
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->getJson(route('shop.checkout.payment.status', [
+                'slug' => $contractor->slug,
+                'sale' => $sale->id,
+            ]));
+
+        $response
+            ->assertOk()
+            ->assertJson([
+                'ok' => true,
+                'payment' => [
+                    'sale_id' => $sale->id,
+                    'sale_code' => 'PED-CONSULTA-001',
+                    'payment_method_code' => 'pix',
+                    'transaction_reference' => 'TX-CONSULTA-001',
+                    'qr_code' => '0002010102CONSULTA',
+                ],
+            ]);
+    }
+
+    public function test_shop_customer_cannot_consult_pix_payment_status_from_other_customer_order(): void
+    {
+        $contractor = $this->createContractor('loja-consulta-restrita');
+
+        $gateway = PaymentGateway::query()->create([
+            'contractor_id' => $contractor->id,
+            'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            'name' => 'Mercado Pago',
+            'is_active' => true,
+            'is_default' => true,
+            'is_sandbox' => true,
+            'credentials' => [
+                'access_token' => 'APP_USR_TEST_TOKEN',
+                'webhook_secret' => 'mp-webhook-token',
+            ],
+            'settings' => null,
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => $gateway->id,
+            'code' => PaymentMethod::CODE_PIX,
+            'name' => 'Pix Mercado Pago',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $ownerCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Dono',
+            'email' => 'cliente-dono@example.com',
+            'phone' => '71999990121',
+            'cep' => '41810-000',
+            'street' => 'Rua Pix',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $otherCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Sem Acesso',
+            'email' => 'cliente-sem-acesso@example.com',
+            'phone' => '71999990122',
+            'cep' => '41810-000',
+            'street' => 'Rua Pix',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $sale = Sale::query()->create([
+            'contractor_id' => $contractor->id,
+            'shop_customer_id' => $ownerCustomer->id,
+            'code' => 'PED-RESTRITO-001',
+            'source' => Sale::SOURCE_CATALOG,
+            'status' => Sale::STATUS_AWAITING_PAYMENT,
+            'subtotal_amount' => 110,
+            'discount_amount' => 0,
+            'surcharge_amount' => 0,
+            'total_amount' => 110,
+            'paid_amount' => 0,
+            'change_amount' => 0,
+        ]);
+
+        SalePayment::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'payment_method_id' => $paymentMethod->id,
+            'payment_gateway_id' => $gateway->id,
+            'status' => SalePayment::STATUS_PENDING,
+            'amount' => 110,
+            'transaction_reference' => 'TX-RESTRITO-001',
+            'gateway_payload' => [
+                'payment_intent' => [
+                    'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+                    'status' => 'pending',
+                    'transaction_reference' => 'TX-RESTRITO-001',
+                    'qr_code' => '0002010102RESTRITO',
+                ],
+            ],
+            'metadata' => [
+                'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            ],
+        ]);
+
+        $response = $this
+            ->actingAs($otherCustomer, 'shop')
+            ->getJson(route('shop.checkout.payment.status', [
+                'slug' => $contractor->slug,
+                'sale' => $sale->id,
+            ]));
+
+        $response->assertNotFound();
     }
 
     public function test_checkout_is_idempotent_when_same_key_is_sent_twice(): void

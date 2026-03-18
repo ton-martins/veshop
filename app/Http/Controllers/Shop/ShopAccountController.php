@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Shop;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Contractor;
+use App\Models\PaymentMethod;
 use App\Models\Sale;
 use App\Models\SalePayment;
 use App\Models\ShopCustomer;
@@ -38,8 +39,8 @@ class ShopAccountController extends Controller
             })
             ->with([
                 'items:id,sale_id,description,quantity,total_amount',
-                'payments:id,sale_id,status,amount,payment_method_id',
-                'payments.paymentMethod:id,name',
+                'payments:id,sale_id,status,amount,payment_method_id,transaction_reference,gateway_payload,metadata',
+                'payments.paymentMethod:id,code,name',
             ])
             ->orderByDesc('id')
             ->limit(60)
@@ -276,6 +277,10 @@ class ShopAccountController extends Controller
      */
     private function toOrderPayload(Sale $sale): array
     {
+        $latestPayment = $sale->payments
+            ->sortByDesc('id')
+            ->first();
+
         $status = $this->resolveStatusMeta((string) $sale->status);
         $payments = $sale->payments
             ->map(static fn (SalePayment $payment): ?string => $payment->paymentMethod?->name)
@@ -294,7 +299,69 @@ class ShopAccountController extends Controller
                 'total_amount' => (float) $item->total_amount,
             ])->values()->all(),
             'payment_label' => $payments->isNotEmpty() ? $payments->implode(' + ') : 'Não informado',
+            'payment' => $this->toOrderPaymentPayload($sale, $latestPayment),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function toOrderPaymentPayload(Sale $sale, ?SalePayment $salePayment): ?array
+    {
+        if (! $salePayment) {
+            return null;
+        }
+
+        $gatewayPayload = is_array($salePayment->gateway_payload) ? $salePayment->gateway_payload : [];
+        $paymentIntent = data_get($gatewayPayload, 'payment_intent');
+        if (! is_array($paymentIntent)) {
+            $paymentIntent = [];
+        }
+
+        $saleMetadata = is_array($sale->metadata) ? $sale->metadata : [];
+        $saleIntent = data_get($saleMetadata, 'payment_intent');
+        if (! is_array($saleIntent)) {
+            $saleIntent = [];
+        }
+
+        $transactionReference = trim((string) ($salePayment->transaction_reference
+            ?? ($paymentIntent['transaction_reference'] ?? ($saleIntent['transaction_reference'] ?? ''))));
+        $paymentMethodCode = strtolower(trim((string) ($salePayment->paymentMethod?->code ?? '')));
+        $paymentMethodName = trim((string) ($salePayment->paymentMethod?->name ?? ''));
+        $provider = trim((string) (data_get($salePayment->metadata ?? [], 'provider')
+            ?? ($paymentIntent['provider'] ?? ($saleIntent['provider'] ?? ''))));
+        $ticketUrl = trim((string) ($paymentIntent['ticket_url'] ?? ($saleIntent['ticket_url'] ?? '')));
+        $qrCode = trim((string) ($paymentIntent['qr_code'] ?? ($saleIntent['qr_code'] ?? '')));
+        $qrCodeBase64 = trim((string) ($paymentIntent['qr_code_base64'] ?? ($saleIntent['qr_code_base64'] ?? '')));
+        $expiresAt = $paymentIntent['date_of_expiration'] ?? ($saleIntent['date_of_expiration'] ?? null);
+
+        return [
+            'status' => (string) $salePayment->status,
+            'status_label' => $this->resolvePaymentStatusLabel((string) $salePayment->status),
+            'method_code' => $paymentMethodCode,
+            'method_name' => $paymentMethodName,
+            'provider' => $provider,
+            'transaction_reference' => $transactionReference,
+            'amount' => round((float) $salePayment->amount, 2),
+            'ticket_url' => $ticketUrl,
+            'qr_code' => $qrCode,
+            'qr_code_base64' => $qrCodeBase64,
+            'expires_at' => $expiresAt,
+            'is_pix' => $paymentMethodCode === PaymentMethod::CODE_PIX && $qrCode !== '',
+        ];
+    }
+
+    private function resolvePaymentStatusLabel(string $status): string
+    {
+        return match (strtolower(trim($status))) {
+            SalePayment::STATUS_PAID => 'Pago',
+            SalePayment::STATUS_AUTHORIZED => 'Autorizado',
+            SalePayment::STATUS_PENDING => 'Aguardando pagamento',
+            SalePayment::STATUS_CANCELLED => 'Cancelado',
+            SalePayment::STATUS_REFUNDED => 'Reembolsado',
+            SalePayment::STATUS_FAILED => 'Falhou',
+            default => ucfirst(strtolower(trim($status))),
+        };
     }
 
     /**

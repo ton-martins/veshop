@@ -16,6 +16,7 @@ use App\Models\ShopCustomer;
 use App\Models\ShopCustomerFavorite;
 use App\Support\StorefrontSettings;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -381,14 +382,67 @@ class PublicShopController extends Controller
             return back()->with('status', 'Pedido ja recebido. Estamos processando sua solicitacao.');
         }
 
+        $checkoutPayment = null;
         if ($createdSaleId) {
             $createdSale = Sale::query()->find($createdSaleId);
             if ($createdSale) {
                 app(\App\Services\OrderNotificationService::class)->notifyOrderCreated($createdSale);
+                $checkoutPayment = $this->resolveCheckoutPaymentPayload($createdSale);
             }
         }
 
-        return back()->with('status', 'Pedido enviado com sucesso. Aguarde a confirmação da loja.');
+        $redirect = back()->with('status', 'Pedido enviado com sucesso. Aguarde a confirmação da loja.');
+        if ($checkoutPayment !== null && $this->isPixPaymentPayload($checkoutPayment)) {
+            $redirect = $redirect->with('checkout_payment', $checkoutPayment);
+        }
+
+        return $redirect;
+    }
+
+    public function checkoutPaymentStatus(Request $request, string $slug, int $sale): JsonResponse
+    {
+        $contractor = $this->resolveActiveContractorBySlug($slug);
+        $shopCustomer = $this->resolveCurrentShopCustomerForContractor($contractor);
+
+        if (! $shopCustomer) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Acesso não autorizado.',
+            ], 403);
+        }
+
+        $saleModel = Sale::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('id', $sale)
+            ->whereIn('source', [Sale::SOURCE_CATALOG, Sale::SOURCE_ORDER])
+            ->where(function ($query) use ($shopCustomer): void {
+                $query->where('shop_customer_id', $shopCustomer->id);
+
+                if ($shopCustomer->client_id) {
+                    $query->orWhere('client_id', $shopCustomer->client_id);
+                }
+            })
+            ->first();
+
+        if (! $saleModel) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Pedido não encontrado.',
+            ], 404);
+        }
+
+        $checkoutPayment = $this->resolveCheckoutPaymentPayload($saleModel);
+        if ($checkoutPayment === null || ! $this->isPixPaymentPayload($checkoutPayment)) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Cobrança Pix não localizada para este pedido.',
+            ], 404);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'payment' => $checkoutPayment,
+        ]);
     }
 
     private function resolveActiveContractorBySlug(string $slug): Contractor
@@ -838,6 +892,102 @@ class PublicShopController extends Controller
         }
 
         $sale->save();
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolveCheckoutPaymentPayload(Sale $sale): ?array
+    {
+        $salePayment = SalePayment::query()
+            ->where('contractor_id', $sale->contractor_id)
+            ->where('sale_id', $sale->id)
+            ->with('paymentMethod:id,code,name')
+            ->latest('id')
+            ->first();
+
+        if (! $salePayment) {
+            return null;
+        }
+
+        $gatewayPayload = is_array($salePayment->gateway_payload) ? $salePayment->gateway_payload : [];
+        $paymentIntent = data_get($gatewayPayload, 'payment_intent');
+        if (! is_array($paymentIntent)) {
+            $paymentIntent = [];
+        }
+
+        $saleMetadata = is_array($sale->metadata) ? $sale->metadata : [];
+        $saleIntent = data_get($saleMetadata, 'payment_intent');
+        if (! is_array($saleIntent)) {
+            $saleIntent = [];
+        }
+
+        $transactionReference = trim((string) ($salePayment->transaction_reference
+            ?? ($paymentIntent['transaction_reference'] ?? ($saleIntent['transaction_reference'] ?? ''))));
+        $paymentMethodCode = strtolower(trim((string) ($salePayment->paymentMethod?->code ?? '')));
+        $paymentMethodName = trim((string) ($salePayment->paymentMethod?->name ?? ''));
+        $provider = trim((string) (data_get($salePayment->metadata ?? [], 'provider')
+            ?? ($paymentIntent['provider'] ?? ($saleIntent['provider'] ?? ''))));
+        $ticketUrl = trim((string) ($paymentIntent['ticket_url'] ?? ($saleIntent['ticket_url'] ?? '')));
+        $qrCode = trim((string) ($paymentIntent['qr_code'] ?? ($saleIntent['qr_code'] ?? '')));
+        $qrCodeBase64 = trim((string) ($paymentIntent['qr_code_base64'] ?? ($saleIntent['qr_code_base64'] ?? '')));
+        $expiresAt = $paymentIntent['date_of_expiration'] ?? ($saleIntent['date_of_expiration'] ?? null);
+
+        return [
+            'sale_id' => (int) $sale->id,
+            'sale_code' => (string) $sale->code,
+            'sale_status' => (string) $sale->status,
+            'sale_status_label' => $this->resolveSaleStatusLabel((string) $sale->status),
+            'payment_id' => (int) $salePayment->id,
+            'payment_status' => (string) $salePayment->status,
+            'payment_status_label' => $this->resolveSalePaymentStatusLabel((string) $salePayment->status),
+            'payment_method_code' => $paymentMethodCode,
+            'payment_method_name' => $paymentMethodName,
+            'provider' => $provider,
+            'transaction_reference' => $transactionReference,
+            'amount' => round((float) $salePayment->amount, 2),
+            'ticket_url' => $ticketUrl,
+            'qr_code' => $qrCode,
+            'qr_code_base64' => $qrCodeBase64,
+            'expires_at' => $expiresAt,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $checkoutPayment
+     */
+    private function isPixPaymentPayload(array $checkoutPayment): bool
+    {
+        return (string) ($checkoutPayment['payment_method_code'] ?? '') === PaymentMethod::CODE_PIX
+            && trim((string) ($checkoutPayment['qr_code'] ?? '')) !== '';
+    }
+
+    private function resolveSalePaymentStatusLabel(string $status): string
+    {
+        return match (strtolower(trim($status))) {
+            SalePayment::STATUS_PAID => 'Pago',
+            SalePayment::STATUS_AUTHORIZED => 'Autorizado',
+            SalePayment::STATUS_PENDING => 'Aguardando pagamento',
+            SalePayment::STATUS_CANCELLED => 'Cancelado',
+            SalePayment::STATUS_REFUNDED => 'Reembolsado',
+            SalePayment::STATUS_FAILED => 'Falhou',
+            default => ucfirst(strtolower(trim($status))),
+        };
+    }
+
+    private function resolveSaleStatusLabel(string $status): string
+    {
+        return match (strtolower(trim($status))) {
+            Sale::STATUS_PENDING_CONFIRMATION => 'Aguardando confirmação',
+            Sale::STATUS_CONFIRMED => 'Confirmado',
+            Sale::STATUS_AWAITING_PAYMENT => 'Aguardando pagamento',
+            Sale::STATUS_PAID => 'Pago',
+            Sale::STATUS_COMPLETED => 'Concluído',
+            Sale::STATUS_CANCELLED => 'Cancelado',
+            Sale::STATUS_REJECTED => 'Rejeitado',
+            Sale::STATUS_REFUNDED => 'Reembolsado',
+            default => ucfirst(strtolower(trim($status))),
+        };
     }
 
     private function mapProviderStatusToSalePaymentStatus(string $status): string

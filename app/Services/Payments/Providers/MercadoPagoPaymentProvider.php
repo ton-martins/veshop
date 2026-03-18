@@ -18,6 +18,44 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
     }
 
     /**
+     * @return array{
+     *   ok: bool,
+     *   message: string,
+     *   details: array<string, mixed>
+     * }
+     */
+    public function testConnection(PaymentGateway $gateway): array
+    {
+        $response = $this->baseRequest($gateway)->get('/users/me');
+        $body = (array) $response->json();
+
+        if (! $response->successful()) {
+            $status = $response->status();
+
+            if (in_array($status, [401, 403], true)) {
+                throw new PaymentProviderException(
+                    'Access token do Mercado Pago invalido ou sem permissao.'
+                );
+            }
+
+            throw new PaymentProviderException(
+                'Falha ao validar conexao com Mercado Pago: HTTP '.$status
+            );
+        }
+
+        return [
+            'ok' => true,
+            'message' => 'Conexao com Mercado Pago validada com sucesso.',
+            'details' => [
+                'provider' => $this->providerCode(),
+                'account_id' => (string) ($body['id'] ?? ''),
+                'nickname' => (string) ($body['nickname'] ?? ''),
+                'email' => (string) ($body['email'] ?? ''),
+            ],
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $context
      * @return array<string, mixed>
      */

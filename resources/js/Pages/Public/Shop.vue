@@ -1,6 +1,6 @@
 ﻿<script setup>
-import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed, onMounted, ref, watch } from 'vue';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
     ChevronLeft,
     ChevronRight,
@@ -29,6 +29,7 @@ const props = defineProps({
     shop_auth: { type: Object, default: () => ({ authenticated: false, customer: null }) },
 });
 
+const page = usePage();
 const { normalizeHex, primaryColor, publicFaviconHref, publicFaviconType, themeStyles, withAlpha } = useBranding();
 
 const storeName = computed(() => String(props.contractor?.brand_name || props.contractor?.name || 'Loja'));
@@ -442,6 +443,174 @@ const checkoutForm = useForm({
     items: [],
 });
 
+const checkoutPaymentFromFlash = computed(() => page.props.flash?.checkout_payment ?? null);
+const checkoutPayment = ref(null);
+const checkoutPaymentPanelOpen = ref(false);
+const checkoutPaymentPolling = ref(false);
+const checkoutPaymentCopied = ref(false);
+let checkoutPaymentPollTimer = null;
+
+const normalizeCheckoutPaymentPayload = (payload) => {
+    if (!payload || typeof payload !== 'object') return null;
+
+    const saleId = Number(payload.sale_id ?? 0);
+    if (!Number.isFinite(saleId) || saleId <= 0) return null;
+
+    return {
+        sale_id: saleId,
+        sale_code: String(payload.sale_code ?? ''),
+        sale_status: String(payload.sale_status ?? '').toLowerCase(),
+        sale_status_label: String(payload.sale_status_label ?? 'Pedido recebido'),
+        payment_id: Number(payload.payment_id ?? 0),
+        payment_status: String(payload.payment_status ?? '').toLowerCase(),
+        payment_status_label: String(payload.payment_status_label ?? 'Aguardando pagamento'),
+        payment_method_code: String(payload.payment_method_code ?? '').toLowerCase(),
+        payment_method_name: String(payload.payment_method_name ?? ''),
+        provider: String(payload.provider ?? ''),
+        transaction_reference: String(payload.transaction_reference ?? ''),
+        amount: Number(payload.amount ?? 0),
+        ticket_url: String(payload.ticket_url ?? ''),
+        qr_code: String(payload.qr_code ?? ''),
+        qr_code_base64: String(payload.qr_code_base64 ?? ''),
+        expires_at: payload.expires_at ?? null,
+    };
+};
+
+const isPixCheckoutPayment = computed(() =>
+    String(checkoutPayment.value?.payment_method_code ?? '') === 'pix'
+    && String(checkoutPayment.value?.qr_code ?? '').trim() !== '',
+);
+const checkoutPaymentQrImageSrc = computed(() => {
+    const base64 = String(checkoutPayment.value?.qr_code_base64 ?? '').trim();
+    if (!base64) return '';
+
+    return `data:image/png;base64,${base64}`;
+});
+
+const checkoutPaymentStatusClass = computed(() => {
+    const status = String(checkoutPayment.value?.payment_status ?? '');
+
+    if (status === 'paid') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    if (status === 'failed' || status === 'cancelled') return 'border-rose-200 bg-rose-50 text-rose-700';
+    if (status === 'refunded') return 'border-slate-300 bg-slate-100 text-slate-700';
+
+    return 'border-amber-200 bg-amber-50 text-amber-700';
+});
+
+const checkoutPaymentStatusUrl = computed(() => {
+    const saleId = Number(checkoutPayment.value?.sale_id ?? 0);
+    if (!Number.isFinite(saleId) || saleId <= 0) return '';
+
+    return `/shop/${storeSlug.value}/checkout/pagamento/${saleId}`;
+});
+
+const shouldPollCheckoutPayment = computed(() => {
+    const status = String(checkoutPayment.value?.payment_status ?? '');
+
+    return status === 'pending' || status === 'authorized';
+});
+
+const clearCheckoutPaymentPolling = () => {
+    if (checkoutPaymentPollTimer) {
+        clearInterval(checkoutPaymentPollTimer);
+        checkoutPaymentPollTimer = null;
+    }
+
+    checkoutPaymentPolling.value = false;
+};
+
+const pollCheckoutPaymentStatus = async () => {
+    if (!checkoutPaymentStatusUrl.value || typeof window === 'undefined' || !window.axios) return;
+
+    try {
+        const response = await window.axios.get(checkoutPaymentStatusUrl.value, {
+            headers: {
+                Accept: 'application/json',
+            },
+        });
+
+        if (response?.data?.ok !== true) return;
+
+        const normalized = normalizeCheckoutPaymentPayload(response.data.payment);
+        if (!normalized) return;
+
+        checkoutPayment.value = normalized;
+
+        if (!shouldPollCheckoutPayment.value) {
+            clearCheckoutPaymentPolling();
+        }
+    } catch {
+        // mantém polling ativo; falhas temporárias de rede serão reavaliadas no próximo ciclo
+    }
+};
+
+const startCheckoutPaymentPolling = () => {
+    clearCheckoutPaymentPolling();
+
+    if (!shouldPollCheckoutPayment.value) return;
+
+    checkoutPaymentPolling.value = true;
+    pollCheckoutPaymentStatus();
+    checkoutPaymentPollTimer = setInterval(() => {
+        pollCheckoutPaymentStatus();
+    }, 7000);
+};
+
+const openCheckoutPaymentPanel = () => {
+    if (!checkoutPayment.value) return;
+    checkoutPaymentPanelOpen.value = true;
+};
+
+const closeCheckoutPaymentPanel = () => {
+    checkoutPaymentPanelOpen.value = false;
+};
+
+const copyCheckoutPixCode = async () => {
+    const pixCode = String(checkoutPayment.value?.qr_code ?? '').trim();
+    if (!pixCode || typeof navigator === 'undefined' || !navigator.clipboard) return;
+
+    try {
+        await navigator.clipboard.writeText(pixCode);
+        checkoutPaymentCopied.value = true;
+        setTimeout(() => {
+            checkoutPaymentCopied.value = false;
+        }, 2200);
+    } catch {
+        checkoutPaymentCopied.value = false;
+    }
+};
+
+watch(
+    checkoutPaymentFromFlash,
+    (payload) => {
+        const normalized = normalizeCheckoutPaymentPayload(payload);
+        if (!normalized) return;
+        if (String(normalized.payment_method_code ?? '') !== 'pix') return;
+
+        checkoutPayment.value = normalized;
+        checkoutPaymentPanelOpen.value = true;
+        checkoutPaymentCopied.value = false;
+        startCheckoutPaymentPolling();
+    },
+    { immediate: true },
+);
+
+watch(
+    shouldPollCheckoutPayment,
+    (shouldPoll) => {
+        if (shouldPoll) {
+            startCheckoutPaymentPolling();
+            return;
+        }
+
+        clearCheckoutPaymentPolling();
+    },
+);
+
+onBeforeUnmount(() => {
+    clearCheckoutPaymentPolling();
+});
+
 const shippingFee = computed(() => {
     if (checkoutForm.delivery_mode !== 'delivery') return 0;
 
@@ -647,6 +816,37 @@ const openCartFromMenu = () => {
         </header>
 
         <main class="mx-auto w-full max-w-7xl px-4 pb-24 pt-5 sm:px-6 lg:px-8 lg:pb-10">
+            <section
+                v-if="isPixCheckoutPayment"
+                class="mb-5 rounded-2xl border px-4 py-3 shadow-sm"
+                :class="checkoutPaymentStatusClass"
+            >
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="space-y-1">
+                        <p class="text-sm font-semibold">Pagamento Pix do pedido {{ checkoutPayment.sale_code || `#${checkoutPayment.sale_id}` }}</p>
+                        <p class="text-xs">
+                            Status: <span class="font-semibold">{{ checkoutPayment.payment_status_label }}</span>
+                            <span v-if="checkoutPaymentPolling" class="ml-1">• atualizando...</span>
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            class="inline-flex items-center justify-center rounded-lg border border-current/30 bg-white/80 px-3 py-2 text-xs font-semibold transition hover:bg-white"
+                            @click="openCheckoutPaymentPanel"
+                        >
+                            Ver cobrança Pix
+                        </button>
+                        <Link
+                            :href="accountUrl"
+                            class="inline-flex items-center justify-center rounded-lg border border-current/30 bg-white/80 px-3 py-2 text-xs font-semibold transition hover:bg-white"
+                        >
+                            Meus pedidos
+                        </Link>
+                    </div>
+                </div>
+            </section>
+
             <section v-if="storefrontBlocks.hero" class="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
                 <div class="pointer-events-none absolute inset-0 opacity-90" style="background: var(--catalog-gradient)"></div>
                 <div class="relative grid gap-3 md:grid-cols-[1fr,220px] md:items-center">
@@ -1101,6 +1301,64 @@ const openCartFromMenu = () => {
                             {{ checkoutForm.processing ? 'Enviando pedido...' : 'Finalizar pedido' }}
                         </button>
                     </footer>
+                </aside>
+            </div>
+        </transition>
+        <transition name="cart-overlay">
+            <div v-if="checkoutPaymentPanelOpen && isPixCheckoutPayment" class="fixed inset-0 z-[70]">
+                <div class="absolute inset-0 bg-slate-900/45 backdrop-blur-[1px]" @click="closeCheckoutPaymentPanel"></div>
+                <aside class="absolute inset-x-3 top-6 mx-auto w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl sm:inset-x-auto sm:right-6 sm:left-auto">
+                    <header class="flex items-center justify-between border-b border-slate-200 px-4 py-4">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-900">Pagamento Pix</p>
+                            <p class="text-xs text-slate-500">Pedido {{ checkoutPayment.sale_code || `#${checkoutPayment.sale_id}` }}</p>
+                        </div>
+                        <button
+                            type="button"
+                            class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                            @click="closeCheckoutPaymentPanel"
+                        >
+                            <X class="h-4 w-4" />
+                        </button>
+                    </header>
+
+                    <div class="space-y-3 p-4">
+                        <div class="rounded-xl border px-3 py-2 text-xs font-semibold" :class="checkoutPaymentStatusClass">
+                            Status: {{ checkoutPayment.payment_status_label }}
+                            <span v-if="checkoutPaymentPolling"> • atualizando automaticamente</span>
+                        </div>
+
+                        <div v-if="checkoutPaymentQrImageSrc" class="flex justify-center rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <img :src="checkoutPaymentQrImageSrc" alt="QR Code Pix" class="h-52 w-52 rounded-lg bg-white p-2" />
+                        </div>
+
+                        <div class="space-y-2">
+                            <label class="text-xs font-semibold text-slate-600">Código copia e cola</label>
+                            <textarea
+                                :value="checkoutPayment.qr_code"
+                                rows="4"
+                                readonly
+                                class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+                            />
+                            <button
+                                type="button"
+                                class="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                @click="copyCheckoutPixCode"
+                            >
+                                {{ checkoutPaymentCopied ? 'Código Pix copiado' : 'Copiar código Pix' }}
+                            </button>
+                        </div>
+
+                        <a
+                            v-if="checkoutPayment.ticket_url"
+                            :href="checkoutPayment.ticket_url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                            Abrir link de pagamento
+                        </a>
+                    </div>
                 </aside>
             </div>
         </transition>

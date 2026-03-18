@@ -81,6 +81,7 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
             Route::redirect('/finance/payables', '/app/finance?tab=payables')->name('finance.payables');
             Route::redirect('/finance/receivables', '/app/finance?tab=receivables')->name('finance.receivables');
             Route::redirect('/finance/payments', '/app/finance?tab=payments')->name('finance.payments');
+            Route::post('/finance/gateways/test-connection', [PaymentGatewayController::class, 'testConnection'])->name('finance.gateways.test');
             Route::post('/finance/gateways', [PaymentGatewayController::class, 'store'])->name('finance.gateways.store');
             Route::put('/finance/gateways/{paymentGateway}', [PaymentGatewayController::class, 'update'])->name('finance.gateways.update');
             Route::delete('/finance/gateways/{paymentGateway}', [PaymentGatewayController::class, 'destroy'])->name('finance.gateways.destroy');

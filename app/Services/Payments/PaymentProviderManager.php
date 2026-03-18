@@ -43,6 +43,28 @@ class PaymentProviderManager
     }
 
     /**
+     * @return array{
+     *   ok: bool,
+     *   message: string,
+     *   details: array<string, mixed>
+     * }
+     */
+    public function testGatewayConnection(PaymentGateway $gateway): array
+    {
+        if ((string) $gateway->provider === PaymentGateway::PROVIDER_MANUAL) {
+            return [
+                'ok' => true,
+                'message' => 'Gateway manual validado sem chamada externa.',
+                'details' => [
+                    'provider' => PaymentGateway::PROVIDER_MANUAL,
+                ],
+            ];
+        }
+
+        return $this->resolveProvider($gateway)->testConnection($gateway);
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @return array{
      *   status: string|null,

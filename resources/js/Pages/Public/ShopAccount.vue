@@ -1,7 +1,7 @@
 <script setup>
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
-import { Bell, Check, Heart, Home, LogOut, ShoppingBag } from 'lucide-vue-next';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { Bell, Check, Copy, Heart, Home, LogOut, QrCode, ShoppingBag, X } from 'lucide-vue-next';
 import { useBranding } from '@/branding';
 import { BRAZIL_STATES, formatCepBR, formatPhoneBR, normalizeStateCode, viaCepToAddress } from '@/utils/br';
 
@@ -189,6 +189,232 @@ const markOneNotificationAsRead = (id) => {
         preserveScroll: true,
     });
 };
+
+const normalizeOrderPayment = (payment) => {
+    if (!payment || typeof payment !== 'object') return null;
+
+    const methodCode = String(payment.method_code ?? '').trim().toLowerCase();
+    const qrCode = String(payment.qr_code ?? '').trim();
+
+    return {
+        status: String(payment.status ?? '').trim().toLowerCase(),
+        status_label: String(payment.status_label ?? 'Aguardando pagamento'),
+        method_code: methodCode,
+        method_name: String(payment.method_name ?? ''),
+        provider: String(payment.provider ?? ''),
+        transaction_reference: String(payment.transaction_reference ?? ''),
+        amount: Number(payment.amount ?? 0),
+        ticket_url: String(payment.ticket_url ?? ''),
+        qr_code: qrCode,
+        qr_code_base64: String(payment.qr_code_base64 ?? '').trim(),
+        expires_at: payment.expires_at ?? null,
+        is_pix: Boolean(payment.is_pix ?? (methodCode === 'pix' && qrCode !== '')),
+    };
+};
+
+const normalizeCheckoutPayment = (payload) => {
+    if (!payload || typeof payload !== 'object') return null;
+
+    const methodCode = String(payload.payment_method_code ?? '').trim().toLowerCase();
+    const qrCode = String(payload.qr_code ?? '').trim();
+
+    return {
+        status: String(payload.payment_status ?? '').trim().toLowerCase(),
+        status_label: String(payload.payment_status_label ?? 'Aguardando pagamento'),
+        method_code: methodCode,
+        method_name: String(payload.payment_method_name ?? ''),
+        provider: String(payload.provider ?? ''),
+        transaction_reference: String(payload.transaction_reference ?? ''),
+        amount: Number(payload.amount ?? 0),
+        ticket_url: String(payload.ticket_url ?? ''),
+        qr_code: qrCode,
+        qr_code_base64: String(payload.qr_code_base64 ?? '').trim(),
+        expires_at: payload.expires_at ?? null,
+        is_pix: methodCode === 'pix' && qrCode !== '',
+    };
+};
+
+const normalizeOrder = (order) => ({
+    ...order,
+    payment: normalizeOrderPayment(order?.payment ?? null),
+});
+
+const ordersState = ref((props.orders ?? []).map(normalizeOrder));
+const accountOrders = computed(() => ordersState.value);
+
+watch(
+    () => props.orders,
+    (next) => {
+        ordersState.value = (next ?? []).map(normalizeOrder);
+    },
+    { deep: true },
+);
+
+const paymentModalOpen = ref(false);
+const paymentModalOrderId = ref(null);
+const paymentLookupLoading = ref(false);
+const paymentLookupError = ref('');
+const paymentCopied = ref(false);
+const paymentPolling = ref(false);
+let paymentPollTimer = null;
+
+const activePixOrder = computed(() => {
+    const orderId = Number(paymentModalOrderId.value ?? 0);
+    if (!Number.isFinite(orderId) || orderId <= 0) return null;
+
+    return accountOrders.value.find((order) => Number(order.id) === orderId) ?? null;
+});
+
+const activePixPayment = computed(() => activePixOrder.value?.payment ?? null);
+const activePixStatusUrl = computed(() => {
+    const orderId = Number(paymentModalOrderId.value ?? 0);
+    if (!Number.isFinite(orderId) || orderId <= 0) return '';
+
+    return `/shop/${storeSlug.value}/checkout/pagamento/${orderId}`;
+});
+
+const activePixQrImageSrc = computed(() => {
+    const base64 = String(activePixPayment.value?.qr_code_base64 ?? '').trim();
+    if (!base64) return '';
+
+    return `data:image/png;base64,${base64}`;
+});
+
+const shouldPollActivePixPayment = computed(() => {
+    const status = String(activePixPayment.value?.status ?? '').trim().toLowerCase();
+
+    return status === 'pending' || status === 'authorized';
+});
+
+const resolvePaymentToneClass = (status) => {
+    const normalized = String(status ?? '').trim().toLowerCase();
+
+    if (normalized === 'paid') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    if (normalized === 'failed' || normalized === 'cancelled') return 'border-rose-200 bg-rose-50 text-rose-700';
+    if (normalized === 'refunded') return 'border-slate-300 bg-slate-100 text-slate-700';
+
+    return 'border-amber-200 bg-amber-50 text-amber-700';
+};
+
+const activePixPaymentToneClass = computed(() => resolvePaymentToneClass(activePixPayment.value?.status ?? ''));
+
+const applyCheckoutPaymentIntoOrder = (orderId, checkoutPaymentPayload) => {
+    const normalizedPayment = normalizeCheckoutPayment(checkoutPaymentPayload);
+    if (!normalizedPayment) return;
+
+    ordersState.value = ordersState.value.map((order) => {
+        if (Number(order.id) !== Number(orderId)) return order;
+
+        return {
+            ...order,
+            payment: normalizedPayment,
+        };
+    });
+};
+
+const clearPaymentPolling = () => {
+    if (paymentPollTimer) {
+        clearInterval(paymentPollTimer);
+        paymentPollTimer = null;
+    }
+
+    paymentPolling.value = false;
+};
+
+const fetchActiveOrderPaymentStatus = async () => {
+    if (!activePixStatusUrl.value) return;
+
+    paymentLookupLoading.value = true;
+    try {
+        let responseData = null;
+
+        if (typeof window !== 'undefined' && window.axios) {
+            const response = await window.axios.get(activePixStatusUrl.value, {
+                headers: { Accept: 'application/json' },
+            });
+            responseData = response?.data ?? null;
+        } else {
+            const response = await fetch(activePixStatusUrl.value, {
+                method: 'GET',
+                headers: { Accept: 'application/json' },
+                credentials: 'same-origin',
+            });
+
+            responseData = response.ok ? await response.json() : null;
+        }
+
+        if (!responseData || responseData.ok !== true || !responseData.payment) {
+            paymentLookupError.value = 'Não foi possível consultar a cobrança Pix deste pedido.';
+            clearPaymentPolling();
+            return;
+        }
+
+        applyCheckoutPaymentIntoOrder(paymentModalOrderId.value, responseData.payment);
+        paymentLookupError.value = '';
+    } catch {
+        paymentLookupError.value = 'Não foi possível atualizar o status do pagamento agora.';
+    } finally {
+        paymentLookupLoading.value = false;
+    }
+};
+
+const startPaymentPolling = () => {
+    clearPaymentPolling();
+    if (!paymentModalOpen.value || !shouldPollActivePixPayment.value) return;
+
+    paymentPolling.value = true;
+    paymentPollTimer = setInterval(() => {
+        fetchActiveOrderPaymentStatus();
+    }, 7000);
+};
+
+const openPixPaymentModal = async (order) => {
+    const orderId = Number(order?.id ?? 0);
+    if (!Number.isFinite(orderId) || orderId <= 0) return;
+
+    paymentModalOrderId.value = orderId;
+    paymentModalOpen.value = true;
+    paymentCopied.value = false;
+    paymentLookupError.value = '';
+
+    await fetchActiveOrderPaymentStatus();
+};
+
+const closePixPaymentModal = () => {
+    paymentModalOpen.value = false;
+};
+
+const copyActivePixCode = async () => {
+    const pixCode = String(activePixPayment.value?.qr_code ?? '').trim();
+    if (!pixCode || typeof navigator === 'undefined' || !navigator.clipboard) return;
+
+    try {
+        await navigator.clipboard.writeText(pixCode);
+        paymentCopied.value = true;
+        setTimeout(() => {
+            paymentCopied.value = false;
+        }, 2200);
+    } catch {
+        paymentCopied.value = false;
+    }
+};
+
+watch(
+    () => [paymentModalOpen.value, shouldPollActivePixPayment.value],
+    ([isOpen, shouldPoll]) => {
+        if (isOpen && shouldPoll) {
+            startPaymentPolling();
+            return;
+        }
+
+        clearPaymentPolling();
+    },
+    { immediate: true },
+);
+
+onBeforeUnmount(() => {
+    clearPaymentPolling();
+});
 </script>
 
 <template>
@@ -443,12 +669,12 @@ const markOneNotificationAsRead = (id) => {
             <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <div class="mb-4 flex items-center justify-between gap-3">
                     <h2 class="text-base font-semibold text-slate-900">Meus pedidos</h2>
-                    <span class="text-xs font-semibold text-slate-500">{{ orders.length }} pedido(s)</span>
+                    <span class="text-xs font-semibold text-slate-500">{{ accountOrders.length }} pedido(s)</span>
                 </div>
 
-                <div v-if="orders.length" class="space-y-3">
+                <div v-if="accountOrders.length" class="space-y-3">
                     <article
-                        v-for="order in orders"
+                        v-for="order in accountOrders"
                         :key="order.id"
                         class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3"
                     >
@@ -468,6 +694,32 @@ const markOneNotificationAsRead = (id) => {
                             <p>Itens: <span class="font-semibold">{{ order.items.length }}</span></p>
                         </div>
 
+                        <div v-if="order.payment?.is_pix" class="mt-3 flex flex-wrap items-center gap-2">
+                            <span
+                                class="inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+                                :class="resolvePaymentToneClass(order.payment.status)"
+                            >
+                                Pix: {{ order.payment.status_label }}
+                            </span>
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                                @click="openPixPaymentModal(order)"
+                            >
+                                <QrCode class="h-3.5 w-3.5" />
+                                Ver cobrança Pix
+                            </button>
+                            <a
+                                v-if="order.payment.ticket_url"
+                                :href="order.payment.ticket_url"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                                Abrir link
+                            </a>
+                        </div>
+
                         <ul class="mt-3 space-y-1 text-xs text-slate-700">
                             <li v-for="item in order.items" :key="`${order.id}-${item.description}`" class="flex items-center justify-between gap-2">
                                 <span class="truncate">{{ item.description }} x{{ item.quantity }}</span>
@@ -483,6 +735,93 @@ const markOneNotificationAsRead = (id) => {
                 </div>
             </section>
         </div>
+
+        <transition name="shop-overlay">
+            <div v-if="paymentModalOpen && activePixOrder && activePixPayment" class="fixed inset-0 z-[70]">
+                <div class="absolute inset-0 bg-slate-900/45 backdrop-blur-[1px]" @click="closePixPaymentModal"></div>
+                <aside class="absolute inset-x-3 top-6 mx-auto w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl sm:inset-x-auto sm:right-6 sm:left-auto">
+                    <header class="flex items-center justify-between border-b border-slate-200 px-4 py-4">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-900">Pagamento Pix</p>
+                            <p class="text-xs text-slate-500">Pedido {{ activePixOrder.code }}</p>
+                        </div>
+                        <button
+                            type="button"
+                            class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                            @click="closePixPaymentModal"
+                        >
+                            <X class="h-4 w-4" />
+                        </button>
+                    </header>
+
+                    <div class="space-y-3 p-4">
+                        <div class="rounded-xl border px-3 py-2 text-xs font-semibold" :class="activePixPaymentToneClass">
+                            Status: {{ activePixPayment.status_label }}
+                            <span v-if="paymentPolling" class="ml-1">• atualizando automaticamente</span>
+                        </div>
+
+                        <div v-if="paymentLookupError" class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                            {{ paymentLookupError }}
+                        </div>
+
+                        <div v-if="activePixQrImageSrc" class="flex justify-center rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <img :src="activePixQrImageSrc" alt="QR Code Pix" class="h-52 w-52 rounded-lg bg-white p-2" />
+                        </div>
+
+                        <div class="space-y-2">
+                            <label class="text-xs font-semibold text-slate-600">Código copia e cola</label>
+                            <textarea
+                                :value="activePixPayment.qr_code"
+                                rows="4"
+                                readonly
+                                class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+                            />
+                            <button
+                                type="button"
+                                class="inline-flex w-full items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                :disabled="paymentLookupLoading"
+                                @click="copyActivePixCode"
+                            >
+                                <Copy class="h-3.5 w-3.5" />
+                                {{ paymentCopied ? 'Código Pix copiado' : 'Copiar código Pix' }}
+                            </button>
+                        </div>
+
+                        <div class="grid gap-2 sm:grid-cols-2">
+                            <button
+                                type="button"
+                                class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="paymentLookupLoading"
+                                @click="fetchActiveOrderPaymentStatus"
+                            >
+                                {{ paymentLookupLoading ? 'Atualizando...' : 'Atualizar status' }}
+                            </button>
+                            <a
+                                v-if="activePixPayment.ticket_url"
+                                :href="activePixPayment.ticket_url"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                                Abrir link de pagamento
+                            </a>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </transition>
     </div>
 </template>
+
+<style scoped>
+.shop-overlay-enter-active,
+.shop-overlay-leave-active {
+    transition: opacity 160ms ease;
+}
+
+.shop-overlay-enter-from,
+.shop-overlay-leave-to {
+    opacity: 0;
+}
+</style>
 
