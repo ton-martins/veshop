@@ -163,6 +163,13 @@
         icon: 'Cog',
         links: [
             {
+                key: 'admin-manuals',
+                label: 'Manuais',
+                route: 'admin.manuals.index',
+                match: ['admin.manuals.*'],
+                icon: 'BookOpenCheck',
+            },
+            {
                 key: 'admin-storefront',
                 label: 'Loja virtual',
                 route: 'admin.storefront.index',

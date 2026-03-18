@@ -11,6 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('payment_webhook_receipts')) {
+            // Reparacao para cenarios onde a migration falhou no meio da execucao.
+            Schema::drop('payment_webhook_receipts');
+        }
+
         Schema::create('payment_webhook_receipts', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('contractor_id')->constrained()->cascadeOnDelete();
@@ -28,9 +33,18 @@ return new class extends Migration
                 ['contractor_id', 'payment_gateway_id', 'event_key'],
                 'payment_webhook_receipts_unique_event'
             );
-            $table->index(['contractor_id', 'provider', 'created_at']);
-            $table->index(['contractor_id', 'transaction_reference']);
-            $table->index(['contractor_id', 'sale_code']);
+            $table->index(
+                ['contractor_id', 'provider', 'created_at'],
+                'pwr_contractor_provider_created_idx'
+            );
+            $table->index(
+                ['contractor_id', 'transaction_reference'],
+                'pwr_contractor_tx_ref_idx'
+            );
+            $table->index(
+                ['contractor_id', 'sale_code'],
+                'pwr_contractor_sale_code_idx'
+            );
         });
     }
 

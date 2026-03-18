@@ -283,6 +283,8 @@ const gatewayForm = useForm({
     is_active: true,
     is_default: false,
     is_sandbox: true,
+    mercado_pago_access_token: '',
+    mercado_pago_webhook_secret: '',
 });
 
 const gatewayDeleteForm = useForm({});
@@ -297,6 +299,8 @@ const openCreateGateway = () => {
     gatewayForm.is_active = true;
     gatewayForm.is_default = false;
     gatewayForm.is_sandbox = true;
+    gatewayForm.mercado_pago_access_token = '';
+    gatewayForm.mercado_pago_webhook_secret = '';
     gatewayModalOpen.value = true;
 };
 
@@ -307,6 +311,8 @@ const openEditGateway = (gateway) => {
     gatewayForm.is_active = Boolean(gateway.is_active);
     gatewayForm.is_default = Boolean(gateway.is_default);
     gatewayForm.is_sandbox = Boolean(gateway.is_sandbox);
+    gatewayForm.mercado_pago_access_token = '';
+    gatewayForm.mercado_pago_webhook_secret = '';
     gatewayForm.clearErrors();
     gatewayModalOpen.value = true;
 };
@@ -467,6 +473,8 @@ const methodCodeLabel = (code) => {
     const found = methodCodeOptions.find((item) => item.value === String(code ?? ''));
     return found?.label ?? String(code ?? '-');
 };
+
+const isMercadoPagoGateway = computed(() => gatewayForm.provider === 'mercado_pago');
 </script>
 
 <template>
@@ -583,6 +591,13 @@ const methodCodeLabel = (code) => {
                                             </div>
                                             <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700">
                                                 {{ gateway.methods_count || 0 }} forma(s)
+                                            </div>
+                                            <div
+                                                v-if="gateway.provider === 'mercado_pago'"
+                                                class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                                            >
+                                                Token: {{ gateway.credentials_status?.access_token_configured ? 'configurado' : 'pendente' }}
+                                                · Webhook: {{ gateway.credentials_status?.webhook_secret_configured ? 'configurado' : 'pendente' }}
                                             </div>
                                         </div>
 
@@ -815,6 +830,32 @@ const methodCodeLabel = (code) => {
                             placeholder="Ex.: Mercado Pago principal"
                         >
                         <p v-if="gatewayForm.errors.name" class="mt-1 text-xs text-rose-600">{{ gatewayForm.errors.name }}</p>
+                    </div>
+                </div>
+
+                <div v-if="isMercadoPagoGateway" class="mt-3 grid gap-3 md:grid-cols-2">
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Access token Mercado Pago</label>
+                        <input
+                            v-model="gatewayForm.mercado_pago_access_token"
+                            type="password"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            :placeholder="isEditingGateway ? 'Deixe em branco para manter o token atual' : 'APP_USR-...'"
+                            autocomplete="off"
+                        >
+                        <p v-if="gatewayForm.errors.mercado_pago_access_token" class="mt-1 text-xs text-rose-600">{{ gatewayForm.errors.mercado_pago_access_token }}</p>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Token do webhook</label>
+                        <input
+                            v-model="gatewayForm.mercado_pago_webhook_secret"
+                            type="password"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            :placeholder="isEditingGateway ? 'Deixe em branco para manter o token atual' : 'Crie um token forte para validar notificações'"
+                            autocomplete="off"
+                        >
+                        <p v-if="gatewayForm.errors.mercado_pago_webhook_secret" class="mt-1 text-xs text-rose-600">{{ gatewayForm.errors.mercado_pago_webhook_secret }}</p>
                     </div>
                 </div>
 

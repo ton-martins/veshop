@@ -30,6 +30,8 @@ class FinanceController extends Controller
             ->orderBy('name')
             ->get()
             ->map(static function (PaymentGateway $gateway): array {
+                $credentials = is_array($gateway->credentials) ? $gateway->credentials : [];
+
                 return [
                     'id' => $gateway->id,
                     'provider' => $gateway->provider,
@@ -37,6 +39,10 @@ class FinanceController extends Controller
                     'is_active' => (bool) $gateway->is_active,
                     'is_default' => (bool) $gateway->is_default,
                     'is_sandbox' => (bool) $gateway->is_sandbox,
+                    'credentials_status' => [
+                        'access_token_configured' => trim((string) ($credentials['access_token'] ?? '')) !== '',
+                        'webhook_secret_configured' => trim((string) ($credentials['webhook_secret'] ?? '')) !== '',
+                    ],
                     'methods_count' => (int) $gateway->payment_methods_count,
                     'last_health_check_at' => optional($gateway->last_health_check_at)?->format('d/m/Y H:i'),
                 ];
@@ -100,8 +106,6 @@ class FinanceController extends Controller
                 'provider_options' => [
                     ['value' => PaymentGateway::PROVIDER_MANUAL, 'label' => 'Operação manual'],
                     ['value' => PaymentGateway::PROVIDER_MERCADO_PAGO, 'label' => 'Mercado Pago'],
-                    ['value' => PaymentGateway::PROVIDER_STRIPE, 'label' => 'Stripe'],
-                    ['value' => PaymentGateway::PROVIDER_PAGSEGURO, 'label' => 'PagSeguro'],
                 ],
                 'stats' => [
                     'gateways_total' => count($gateways),

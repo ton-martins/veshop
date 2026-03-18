@@ -8,6 +8,8 @@ use App\Models\PaymentGateway;
 use App\Models\PaymentWebhookReceipt;
 use App\Models\Sale;
 use App\Models\SalePayment;
+use App\Services\Payments\Exceptions\PaymentProviderException;
+use App\Services\Payments\PaymentProviderManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -43,7 +45,30 @@ class PaymentWebhookController extends Controller
         }
 
         $payload = $request->all();
-        $status = $this->normalizeIncomingStatus($payload);
+        $normalizedProviderPayload = [
+            'status' => null,
+            'transaction_reference' => null,
+            'sale_code' => null,
+            'event_id' => null,
+            'raw_payment' => null,
+        ];
+
+        if ((string) $gateway->provider === PaymentGateway::PROVIDER_MERCADO_PAGO) {
+            try {
+                $normalizedProviderPayload = app(PaymentProviderManager::class)
+                    ->normalizeWebhookPayload($gateway, $payload);
+            } catch (PaymentProviderException $exception) {
+                report($exception);
+
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'Falha ao normalizar webhook do Mercado Pago.',
+                ], 500);
+            }
+        }
+
+        $status = $normalizedProviderPayload['status']
+            ?? $this->normalizeIncomingStatus($payload);
 
         if ($status === null) {
             return response()->json([
@@ -52,9 +77,17 @@ class PaymentWebhookController extends Controller
             ], 422);
         }
 
-        $reference = $this->resolveTransactionReference($payload);
-        $saleCode = $this->resolveSaleCode($payload);
-        $eventKey = $this->resolveWebhookEventKey($provider, $payload, $status, $reference, $saleCode);
+        $reference = $normalizedProviderPayload['transaction_reference']
+            ?? $this->resolveTransactionReference($payload);
+        $saleCode = $normalizedProviderPayload['sale_code']
+            ?? $this->resolveSaleCode($payload);
+        $eventId = $normalizedProviderPayload['event_id'] ?? null;
+
+        if (is_array($normalizedProviderPayload['raw_payment'] ?? null)) {
+            $payload['provider_payment'] = $normalizedProviderPayload['raw_payment'];
+        }
+
+        $eventKey = $this->resolveWebhookEventKey($provider, $payload, $status, $reference, $saleCode, $eventId);
 
         $result = DB::transaction(function () use ($contractor, $gateway, $provider, $payload, $status, $reference, $saleCode, $eventKey): array {
             $receipt = PaymentWebhookReceipt::query()
@@ -196,9 +229,20 @@ class PaymentWebhookController extends Controller
             return true;
         }
 
-        $provided = trim((string) ($request->header('X-Webhook-Secret') ?? $request->input('webhook_secret', '')));
+        $provided = '';
+        foreach ([
+            (string) $request->header('X-Webhook-Secret', ''),
+            (string) $request->input('webhook_secret', ''),
+            (string) $request->query('token', ''),
+        ] as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate !== '') {
+                $provided = $candidate;
+                break;
+            }
+        }
 
-        return hash_equals($expected, $provided);
+        return $provided !== '' && hash_equals($expected, $provided);
     }
 
     private function normalizeIncomingStatus(array $payload): ?string
@@ -241,10 +285,18 @@ class PaymentWebhookController extends Controller
         return trim((string) $value);
     }
 
-    private function resolveWebhookEventKey(string $provider, array $payload, string $status, string $reference, string $saleCode): string
+    private function resolveWebhookEventKey(
+        string $provider,
+        array $payload,
+        string $status,
+        string $reference,
+        string $saleCode,
+        ?string $eventId = null
+    ): string
     {
-        $eventId = trim((string) (
-            $payload['event_id']
+        $eventIdValue = trim((string) (
+            $eventId
+            ?? $payload['event_id']
             ?? $payload['id']
             ?? $payload['event']['id']
             ?? $payload['data']['id']
@@ -252,8 +304,8 @@ class PaymentWebhookController extends Controller
             ?? ''
         ));
 
-        if ($eventId !== '') {
-            return hash('sha256', strtolower($provider).'|'.$eventId);
+        if ($eventIdValue !== '') {
+            return hash('sha256', strtolower($provider).'|'.$eventIdValue);
         }
 
         $rawPayload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

@@ -16,9 +16,10 @@ class PaymentGateway extends Model
 
     public const PROVIDER_MERCADO_PAGO = 'mercado_pago';
 
-    public const PROVIDER_STRIPE = 'stripe';
-
-    public const PROVIDER_PAGSEGURO = 'pagseguro';
+    public const SUPPORTED_PROVIDERS = [
+        self::PROVIDER_MANUAL,
+        self::PROVIDER_MERCADO_PAGO,
+    ];
 
     /**
      * @var list<string>
@@ -65,4 +66,3 @@ class PaymentGateway extends Model
         return $this->hasMany(SalePayment::class);
     }
 }
-

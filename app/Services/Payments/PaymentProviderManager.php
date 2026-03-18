@@ -1,0 +1,73 @@
+<?php
+
+namespace App\Services\Payments;
+
+use App\Models\PaymentGateway;
+use App\Models\Sale;
+use App\Models\SalePayment;
+use App\Services\Payments\Contracts\PaymentProviderContract;
+use App\Services\Payments\Exceptions\PaymentProviderException;
+use App\Services\Payments\Providers\MercadoPagoPaymentProvider;
+
+class PaymentProviderManager
+{
+    /**
+     * @var array<string, PaymentProviderContract>
+     */
+    private array $providersByCode;
+
+    public function __construct(
+        MercadoPagoPaymentProvider $mercadoPagoProvider,
+    ) {
+        $this->providersByCode = [
+            $mercadoPagoProvider->providerCode() => $mercadoPagoProvider,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     * @return array<string, mixed>
+     */
+    public function createPixPayment(
+        PaymentGateway $gateway,
+        Sale $sale,
+        SalePayment $salePayment,
+        array $context = []
+    ): array {
+        return $this->resolveProvider($gateway)->createPixPayment(
+            $gateway,
+            $sale,
+            $salePayment,
+            $context
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array{
+     *   status: string|null,
+     *   transaction_reference: string|null,
+     *   sale_code: string|null,
+     *   event_id: string|null,
+     *   raw_payment: array<string, mixed>|null
+     * }
+     */
+    public function normalizeWebhookPayload(PaymentGateway $gateway, array $payload): array
+    {
+        return $this->resolveProvider($gateway)->normalizeWebhookPayload($gateway, $payload);
+    }
+
+    private function resolveProvider(PaymentGateway $gateway): PaymentProviderContract
+    {
+        $code = trim((string) $gateway->provider);
+        $provider = $this->providersByCode[$code] ?? null;
+
+        if (! $provider) {
+            throw new PaymentProviderException(
+                'Provider de pagamento nao suportado para integracao: '.$code
+            );
+        }
+
+        return $provider;
+    }
+}

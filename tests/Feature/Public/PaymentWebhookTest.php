@@ -9,6 +9,7 @@ use App\Models\Sale;
 use App\Models\SalePayment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class PaymentWebhookTest extends TestCase
@@ -207,6 +208,111 @@ class PaymentWebhookTest extends TestCase
             ->where('contractor_id', $contractor->id)
             ->where('payment_gateway_id', $gateway->id)
             ->count());
+    }
+
+    public function test_mercado_pago_webhook_enriches_payload_by_api_and_confirms_payment(): void
+    {
+        $contractor = $this->createContractor('loja-webhook-mp');
+
+        $gateway = PaymentGateway::query()->create([
+            'contractor_id' => $contractor->id,
+            'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            'name' => 'Mercado Pago',
+            'is_active' => true,
+            'is_default' => true,
+            'is_sandbox' => true,
+            'credentials' => [
+                'access_token' => 'APP_USR_TEST_TOKEN',
+                'webhook_secret' => 'token-webhook-mp',
+            ],
+            'settings' => null,
+        ]);
+
+        $method = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => $gateway->id,
+            'code' => PaymentMethod::CODE_PIX,
+            'name' => 'Pix MP',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $sale = Sale::query()->create([
+            'contractor_id' => $contractor->id,
+            'code' => 'PED-MP-WEBHOOK-001',
+            'source' => Sale::SOURCE_CATALOG,
+            'status' => Sale::STATUS_AWAITING_PAYMENT,
+            'subtotal_amount' => 100,
+            'discount_amount' => 0,
+            'surcharge_amount' => 0,
+            'total_amount' => 100,
+            'paid_amount' => 0,
+            'change_amount' => 0,
+        ]);
+
+        $payment = SalePayment::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'payment_method_id' => $method->id,
+            'payment_gateway_id' => $gateway->id,
+            'status' => SalePayment::STATUS_PENDING,
+            'amount' => 100,
+            'transaction_reference' => null,
+        ]);
+
+        Http::fake([
+            'https://api.mercadopago.com/v1/payments/123456' => Http::response([
+                'id' => '123456',
+                'status' => 'approved',
+                'external_reference' => 'PED-MP-WEBHOOK-001',
+                'point_of_interaction' => [
+                    'transaction_data' => [
+                        'ticket_url' => 'https://www.mercadopago.com.br/payments/qr/123456',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->postJson(route('shop.payments.webhook', [
+            'slug' => $contractor->slug,
+            'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            'token' => 'token-webhook-mp',
+        ]), [
+            'type' => 'payment',
+            'action' => 'payment.updated',
+            'data' => [
+                'id' => '123456',
+            ],
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJson([
+                'ok' => true,
+                'data' => [
+                    'payment_id' => $payment->id,
+                    'payment_status' => SalePayment::STATUS_PAID,
+                    'sale_status' => Sale::STATUS_PAID,
+                ],
+            ]);
+
+        $this->assertDatabaseHas('sale_payments', [
+            'id' => $payment->id,
+            'status' => SalePayment::STATUS_PAID,
+            'transaction_reference' => '123456',
+        ]);
+
+        $this->assertDatabaseHas('sales', [
+            'id' => $sale->id,
+            'status' => Sale::STATUS_PAID,
+            'paid_amount' => '100.00',
+        ]);
     }
 
     private function createContractor(string $slug): Contractor

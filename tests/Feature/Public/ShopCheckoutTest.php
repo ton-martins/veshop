@@ -3,12 +3,14 @@
 namespace Tests\Feature\Public;
 
 use App\Models\Contractor;
+use App\Models\PaymentGateway;
 use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\ShopCustomer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class ShopCheckoutTest extends TestCase
@@ -124,6 +126,121 @@ class ShopCheckoutTest extends TestCase
             'id' => $product->id,
             'stock_quantity' => 12,
         ]);
+    }
+
+    public function test_checkout_pix_with_mercado_pago_creates_payment_intent_and_updates_sale_status(): void
+    {
+        $contractor = $this->createContractor('loja-mp');
+
+        $gateway = PaymentGateway::query()->create([
+            'contractor_id' => $contractor->id,
+            'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            'name' => 'Mercado Pago',
+            'is_active' => true,
+            'is_default' => true,
+            'is_sandbox' => true,
+            'credentials' => [
+                'access_token' => 'APP_USR_TEST_TOKEN',
+                'webhook_secret' => 'mp-webhook-token',
+            ],
+            'settings' => null,
+        ]);
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Combo MP',
+            'sku' => 'MP-001',
+            'sale_price' => 99.90,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => $gateway->id,
+            'code' => PaymentMethod::CODE_PIX,
+            'name' => 'Pix Mercado Pago',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente MP',
+            'email' => 'cliente-mp@example.com',
+            'phone' => '71999990123',
+            'cep' => '41810-000',
+            'street' => 'Rua Pix',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        Http::fake([
+            'https://api.mercadopago.com/v1/payments' => Http::response([
+                'id' => 'TX-MP-001',
+                'status' => 'pending',
+                'external_reference' => 'PED-MP',
+                'date_of_expiration' => now()->addMinutes(30)->toIso8601String(),
+                'point_of_interaction' => [
+                    'transaction_data' => [
+                        'qr_code' => '0002010102...',
+                        'qr_code_base64' => 'RkFLRV9RUl9CQVNFMjY0',
+                        'ticket_url' => 'https://www.mercadopago.com.br/payments/qr/TX-MP-001',
+                    ],
+                ],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), [
+                'customer_name' => 'Cliente MP',
+                'customer_phone' => '(71) 99999-0123',
+                'customer_email' => 'cliente-mp@example.com',
+                'payment_method_id' => $paymentMethod->id,
+                'idempotency_key' => 'checkout-mp-001',
+                'items' => [
+                    ['product_id' => $product->id, 'quantity' => 1],
+                ],
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+
+        Http::assertSent(static function (\Illuminate\Http\Client\Request $request): bool {
+            return str_contains($request->url(), '/v1/payments')
+                && $request->method() === 'POST'
+                && $request->hasHeader('Authorization')
+                && $request['payment_method_id'] === 'pix';
+        });
+
+        $sale = Sale::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('source', Sale::SOURCE_CATALOG)
+            ->firstOrFail();
+
+        $payment = \App\Models\SalePayment::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('sale_id', $sale->id)
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertSame(Sale::STATUS_AWAITING_PAYMENT, (string) $sale->status);
+        $this->assertSame('TX-MP-001', (string) $payment->transaction_reference);
+        $this->assertSame(\App\Models\SalePayment::STATUS_PENDING, (string) $payment->status);
+        $this->assertIsArray($payment->gateway_payload);
+        $this->assertSame('TX-MP-001', data_get($payment->gateway_payload, 'payment_intent.transaction_reference'));
     }
 
     public function test_checkout_is_idempotent_when_same_key_is_sent_twice(): void

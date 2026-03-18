@@ -6,6 +6,7 @@ use App\Http\Requests\Shop\StoreShopCheckoutRequest;
 use App\Models\Category;
 use App\Models\Client;
 use App\Models\Contractor;
+use App\Models\PaymentGateway;
 use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\Sale;
@@ -20,9 +21,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Services\Payments\Exceptions\PaymentProviderException;
+use App\Services\Payments\PaymentProviderManager;
 
 class PublicShopController extends Controller
 {
@@ -191,6 +195,21 @@ class PublicShopController extends Controller
             }
         }
 
+        $paymentGateway = null;
+        if ($paymentMethod?->payment_gateway_id) {
+            $paymentGateway = PaymentGateway::query()
+                ->where('contractor_id', $contractor->id)
+                ->where('id', $paymentMethod->payment_gateway_id)
+                ->where('is_active', true)
+                ->first();
+
+            if (! $paymentGateway) {
+                throw ValidationException::withMessages([
+                    'payment_method_id' => 'O gateway selecionado para esta forma de pagamento esta indisponivel.',
+                ]);
+            }
+        }
+
         $rawItems = collect($data['items'] ?? []);
         if ($rawItems->isEmpty()) {
             throw ValidationException::withMessages([
@@ -206,7 +225,7 @@ class PublicShopController extends Controller
         $createdSaleId = null;
 
         try {
-            DB::transaction(function () use ($contractor, $data, $paymentMethod, $quantitiesByProduct, $shopCustomer, $idempotencyKey, &$createdSaleId): void {
+            DB::transaction(function () use ($contractor, $data, $paymentMethod, $paymentGateway, $quantitiesByProduct, $shopCustomer, $idempotencyKey, &$createdSaleId): void {
             $productIds = $quantitiesByProduct->keys()->map(static fn (mixed $id): int => (int) $id)->values();
 
             $products = Product::query()
@@ -329,18 +348,28 @@ class PublicShopController extends Controller
                 ]);
             }
 
-            if ($paymentMethod) {
-                SalePayment::query()->create([
-                    'contractor_id' => $contractor->id,
-                    'sale_id' => $sale->id,
-                    'payment_method_id' => $paymentMethod->id,
-                    'payment_gateway_id' => $paymentMethod->payment_gateway_id,
-                    'status' => SalePayment::STATUS_PENDING,
+                if ($paymentMethod) {
+                    $salePayment = SalePayment::query()->create([
+                        'contractor_id' => $contractor->id,
+                        'sale_id' => $sale->id,
+                        'payment_method_id' => $paymentMethod->id,
+                        'payment_gateway_id' => $paymentMethod->payment_gateway_id,
+                        'status' => SalePayment::STATUS_PENDING,
                     'amount' => $total,
-                    'installments' => null,
-                    'paid_at' => null,
-                ]);
-            }
+                        'installments' => null,
+                        'paid_at' => null,
+                    ]);
+
+                    if ($paymentGateway && $this->shouldCreatePixIntent($paymentMethod, $paymentGateway)) {
+                        $this->createCheckoutPixIntent(
+                            $contractor,
+                            $sale,
+                            $salePayment,
+                            $paymentGateway,
+                            $idempotencyKey
+                        );
+                    }
+                }
 
             $createdSaleId = (int) $sale->id;
             });
@@ -711,6 +740,118 @@ class PublicShopController extends Controller
         } while ($exists);
 
         return $code;
+    }
+
+    private function shouldCreatePixIntent(PaymentMethod $paymentMethod, PaymentGateway $paymentGateway): bool
+    {
+        return (string) $paymentMethod->code === PaymentMethod::CODE_PIX
+            && (string) $paymentGateway->provider === PaymentGateway::PROVIDER_MERCADO_PAGO;
+    }
+
+    private function createCheckoutPixIntent(
+        Contractor $contractor,
+        Sale $sale,
+        SalePayment $salePayment,
+        PaymentGateway $paymentGateway,
+        ?string $checkoutIdempotencyKey
+    ): void {
+        $credentials = is_array($paymentGateway->credentials) ? $paymentGateway->credentials : [];
+        $webhookSecret = trim((string) ($credentials['webhook_secret'] ?? ''));
+
+        $notificationUrl = route('shop.payments.webhook', [
+            'slug' => $contractor->slug,
+            'provider' => $paymentGateway->provider,
+        ]);
+
+        if ($webhookSecret !== '') {
+            $notificationUrl .= (str_contains($notificationUrl, '?') ? '&' : '?')
+                .'token='.rawurlencode($webhookSecret);
+        }
+
+        $payerEmail = trim((string) data_get($sale->metadata, 'customer_email', ''));
+        $idempotency = $checkoutIdempotencyKey !== null && $checkoutIdempotencyKey !== ''
+            ? $checkoutIdempotencyKey.'-pix'
+            : 'sale-'.$sale->id.'-payment-'.$salePayment->id.'-'.Str::random(8);
+
+        try {
+            $intent = app(PaymentProviderManager::class)->createPixPayment(
+                $paymentGateway,
+                $sale,
+                $salePayment,
+                [
+                    'idempotency_key' => substr($idempotency, 0, 80),
+                    'notification_url' => $notificationUrl,
+                    'payer_email' => $payerEmail,
+                    'description' => 'Pedido '.$sale->code,
+                    'expires_at' => now()->addMinutes(30),
+                ]
+            );
+        } catch (PaymentProviderException $exception) {
+            report($exception);
+
+            throw ValidationException::withMessages([
+                'order' => 'Nao foi possivel iniciar o pagamento Pix agora. Tente novamente em instantes.',
+            ]);
+        }
+
+        $paymentStatus = $this->mapProviderStatusToSalePaymentStatus((string) ($intent['status'] ?? ''));
+        $gatewayPayload = is_array($salePayment->gateway_payload) ? $salePayment->gateway_payload : [];
+        $gatewayPayload['payment_intent'] = $intent;
+
+        $salePayment->fill([
+            'status' => $paymentStatus,
+            'transaction_reference' => (string) ($intent['transaction_reference'] ?? $salePayment->transaction_reference),
+            'gateway_payload' => $gatewayPayload,
+            'metadata' => array_filter([
+                ...(is_array($salePayment->metadata) ? $salePayment->metadata : []),
+                'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+                'intent_status' => (string) ($intent['status'] ?? ''),
+                'ticket_url' => (string) ($intent['ticket_url'] ?? ''),
+                'date_of_expiration' => $intent['date_of_expiration'] ?? null,
+            ], static fn (mixed $value): bool => $value !== null),
+            'paid_at' => $paymentStatus === SalePayment::STATUS_PAID ? now() : null,
+        ])->save();
+
+        $saleMetadata = is_array($sale->metadata) ? $sale->metadata : [];
+        $saleMetadata['payment_intent'] = [
+            'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            'status' => (string) ($intent['status'] ?? ''),
+            'transaction_reference' => (string) ($intent['transaction_reference'] ?? ''),
+            'ticket_url' => (string) ($intent['ticket_url'] ?? ''),
+            'qr_code' => (string) ($intent['qr_code'] ?? ''),
+            'qr_code_base64' => (string) ($intent['qr_code_base64'] ?? ''),
+            'date_of_expiration' => $intent['date_of_expiration'] ?? null,
+        ];
+
+        $sale->metadata = $saleMetadata;
+
+        if ($paymentStatus === SalePayment::STATUS_PAID) {
+            $sale->status = Sale::STATUS_PAID;
+            $sale->paid_amount = (float) $sale->total_amount;
+            $sale->completed_at = $sale->completed_at ?? now();
+        } elseif (in_array($paymentStatus, [SalePayment::STATUS_PENDING, SalePayment::STATUS_AUTHORIZED], true)) {
+            $sale->status = Sale::STATUS_AWAITING_PAYMENT;
+        } elseif ($paymentStatus === SalePayment::STATUS_CANCELLED) {
+            $sale->status = Sale::STATUS_CANCELLED;
+        } elseif ($paymentStatus === SalePayment::STATUS_REFUNDED) {
+            $sale->status = Sale::STATUS_REFUNDED;
+        }
+
+        $sale->save();
+    }
+
+    private function mapProviderStatusToSalePaymentStatus(string $status): string
+    {
+        $normalized = strtolower(trim($status));
+
+        return match ($normalized) {
+            'approved', 'accredited', 'paid', 'completed' => SalePayment::STATUS_PAID,
+            'authorized', 'authorised' => SalePayment::STATUS_AUTHORIZED,
+            'cancelled', 'canceled' => SalePayment::STATUS_CANCELLED,
+            'refunded', 'charged_back', 'chargeback' => SalePayment::STATUS_REFUNDED,
+            'rejected', 'failed', 'denied', 'error' => SalePayment::STATUS_FAILED,
+            default => SalePayment::STATUS_PENDING,
+        };
     }
 
     /**

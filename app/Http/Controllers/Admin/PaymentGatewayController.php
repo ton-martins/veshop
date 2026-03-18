@@ -10,6 +10,7 @@ use App\Models\PaymentGateway;
 use App\Models\PaymentMethod;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class PaymentGatewayController extends Controller
 {
@@ -23,6 +24,7 @@ class PaymentGatewayController extends Controller
             $data['is_active'] = true;
         }
         $data['contractor_id'] = $contractor->id;
+        $data['credentials'] = $this->normalizeGatewayCredentialsForStore($data);
 
         $gateway = PaymentGateway::query()->create($data);
 
@@ -47,6 +49,8 @@ class PaymentGatewayController extends Controller
         if ($data['is_default']) {
             $data['is_active'] = true;
         }
+
+        $data['credentials'] = $this->normalizeGatewayCredentialsForUpdate($gateway, $data);
 
         $gateway->fill($data)->save();
 
@@ -126,5 +130,69 @@ class PaymentGatewayController extends Controller
         }
 
         return $fallback;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>|null
+     */
+    private function normalizeGatewayCredentialsForStore(array $data): ?array
+    {
+        $provider = (string) ($data['provider'] ?? '');
+        if ($provider !== PaymentGateway::PROVIDER_MERCADO_PAGO) {
+            return null;
+        }
+
+        $credentials = is_array($data['credentials'] ?? null) ? $data['credentials'] : [];
+
+        $accessToken = trim((string) ($credentials['access_token'] ?? ''));
+        $webhookSecret = trim((string) ($credentials['webhook_secret'] ?? ''));
+
+        if ($accessToken === '') {
+            throw ValidationException::withMessages([
+                'mercado_pago_access_token' => 'Informe o access token do Mercado Pago.',
+            ]);
+        }
+
+        return [
+            'access_token' => $accessToken,
+            'webhook_secret' => $webhookSecret,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>|null
+     */
+    private function normalizeGatewayCredentialsForUpdate(PaymentGateway $gateway, array $data): ?array
+    {
+        $provider = (string) ($data['provider'] ?? '');
+        if ($provider !== PaymentGateway::PROVIDER_MERCADO_PAGO) {
+            return null;
+        }
+
+        $current = is_array($gateway->credentials) ? $gateway->credentials : [];
+        $incoming = is_array($data['credentials'] ?? null) ? $data['credentials'] : [];
+
+        $accessToken = trim((string) ($incoming['access_token'] ?? ''));
+        if ($accessToken === '') {
+            $accessToken = trim((string) ($current['access_token'] ?? ''));
+        }
+
+        $webhookSecret = trim((string) ($incoming['webhook_secret'] ?? ''));
+        if ($webhookSecret === '') {
+            $webhookSecret = trim((string) ($current['webhook_secret'] ?? ''));
+        }
+
+        if ($accessToken === '') {
+            throw ValidationException::withMessages([
+                'mercado_pago_access_token' => 'Informe o access token do Mercado Pago.',
+            ]);
+        }
+
+        return [
+            'access_token' => $accessToken,
+            'webhook_secret' => $webhookSecret,
+        ];
     }
 }

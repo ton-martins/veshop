@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FinanceController;
+use App\Http\Controllers\Admin\ManualController;
 use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\PaymentGatewayController;
 use App\Http\Controllers\Admin\PaymentMethodController;
@@ -24,6 +25,7 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
         Route::get('/home', DashboardController::class)->name('home');
         Route::redirect('/dashboard', '/app/home');
         Route::redirect('/inicio', '/app/home');
+        Route::get('/manuals', [ManualController::class, 'index'])->name('manuals.index');
 
         Route::middleware('contractor.module:files')->group(function (): void {
             Route::get('/branding', [ContractorBrandingController::class, 'edit'])->name('branding.index');

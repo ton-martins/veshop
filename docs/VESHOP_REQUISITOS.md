@@ -126,6 +126,7 @@ Status atual:
 - Parcial.
 - Checkout já cria `sale`, `sale_items` e `sale_payments` com status inicial.
 - Checkout agora aceita `idempotency_key` para evitar pedido duplicado em reenvio/clique duplo.
+- Checkout Pix com Mercado Pago agora cria `payment_intent` real (sandbox) e salva QR/ticket em `sale_payments.gateway_payload`.
 - Administração de pedidos já tem fluxo de decisão (aprovar/rejeitar/pago/cancelar).
 
 Lacunas:
@@ -168,6 +169,7 @@ Status atual:
 - Existe estrutura para gateways e métodos de pagamento por contratante.
 - Existe endpoint de webhook genérico por provider.
 - Webhook agora tem deduplicação por `event_key` com recibo persistido em `payment_webhook_receipts`.
+- Existe provider backend para Mercado Pago com criação Pix e enriquecimento de webhook por API.
 
 Lacunas:
 
