@@ -65,7 +65,7 @@ const tabs = [
 ];
 
 const mercadoPagoSteps = [
-    'Acesse o painel do Mercado Pago com a conta do contratante em mercadopago.com.br/developers.',
+    'Acesse o painel do Mercado Pago com a sua conta em mercadopago.com.br/developers.',
     'Crie uma aplicação (se ainda não existir) e copie o Access Token da credencial de teste (TEST-...) ou produção (APP_USR-...).',
     'No Veshop, vá em Contas > Pagamentos > Novo gateway.',
     'Selecione o provedor Mercado Pago, informe um nome, marque Ativo e defina Sandbox conforme o token usado.',
@@ -115,7 +115,7 @@ const mercadoPagoChecklist = [
                 <template v-if="activeTab === 'settings'">
                     <h2 class="text-sm font-semibold text-slate-900">Configurações essenciais</h2>
                     <p class="mt-1 text-sm text-slate-600">
-                        Use esta aba para validar os dados iniciais da operação do contratante antes de publicar a loja.
+                        Use esta aba para validar os dados iniciais da sua operação antes de publicar a loja.
                     </p>
 
                     <div class="mt-4 grid gap-3 md:grid-cols-2">
@@ -141,7 +141,7 @@ const mercadoPagoChecklist = [
                 <template v-else-if="activeTab === 'finance'">
                     <h2 class="text-sm font-semibold text-slate-900">Guia de integração Mercado Pago (PIX)</h2>
                     <p class="mt-1 text-sm text-slate-600">
-                        Siga este passo a passo para o contratante ativar cobrança PIX com QR Code e copia e cola sem suporte técnico.
+                        Siga este passo a passo para ativar a cobrança PIX com QR Code e copia e cola.
                     </p>
 
                     <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-emerald-800">
@@ -250,7 +250,7 @@ const mercadoPagoChecklist = [
                 <template v-else>
                     <h2 class="text-sm font-semibold text-slate-900">Boas práticas operacionais</h2>
                     <p class="mt-1 text-sm text-slate-600">
-                        Estas recomendações ajudam o contratante a manter segurança, consistência de dados e previsibilidade operacional.
+                        Estas recomendações ajudam a manter segurança, consistência de dados e previsibilidade operacional.
                     </p>
 
                     <ul class="mt-4 space-y-2 text-sm text-slate-700">
