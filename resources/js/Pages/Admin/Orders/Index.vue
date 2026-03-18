@@ -3,9 +3,10 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import Modal from '@/Components/Modal.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
+import OrderDetailsModal from '@/Components/App/Orders/OrderDetailsModal.vue';
 import { useBranding } from '@/branding';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
-import { ShoppingBag, Search, CheckCircle2, XCircle, Ban, Wallet, ListFilter, X } from 'lucide-vue-next';
+import { ShoppingBag, Search, CheckCircle2, XCircle, Ban, Wallet, ListFilter } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 
 const props = defineProps({
@@ -74,23 +75,6 @@ const pipelineTabs = computed(() => {
 });
 
 const asCurrency = (value) => Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const orderDetailsItems = computed(() => (
-    Array.isArray(orderDetails.value?.items)
-        ? orderDetails.value.items
-        : []
-));
-const orderDetailsItemsSubtotal = computed(() => (
-    orderDetailsItems.value.reduce(
-        (sum, item) => sum + (Number(item?.unit_price ?? 0) * Number(item?.quantity ?? 0)),
-        0,
-    )
-));
-const orderDetailsItemsDiscount = computed(() => (
-    orderDetailsItems.value.reduce(
-        (sum, item) => sum + Number(item?.discount_amount ?? 0),
-        0,
-    )
-));
 
 const filteredOrders = computed(() => {
     const query = String(orderSearch.value ?? '').trim().toLowerCase();
@@ -232,9 +216,10 @@ const submitActionConfirm = () => {
     });
 };
 
-const openOrderActionFromDetails = (type) => {
-    const order = orderDetails.value;
-    if (!order?.id) return;
+const handleOrderDetailsAction = (payload) => {
+    const type = String(payload?.type ?? '').trim();
+    const order = payload?.order;
+    if (!type || !order?.id) return;
 
     closeOrderDetails();
 
@@ -459,160 +444,12 @@ const openOrderActionFromDetails = (type) => {
             </section>
         </section>
 
-        <Modal :show="orderDetailsModalOpen" max-width="3xl" @close="closeOrderDetails">
-            <div class="flex max-h-[85vh] flex-col">
-                <header class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-5">
-                    <div class="min-w-0">
-                        <p class="truncate text-base font-semibold text-slate-900">{{ orderDetails?.code || 'Detalhes do pedido' }}</p>
-                        <p class="mt-1 text-xs text-slate-500">Pedido da loja virtual • {{ orderDetails?.created_at || '-' }}</p>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span
-                            v-if="orderDetails?.status"
-                            class="rounded-full px-2 py-0.5 text-xs font-semibold"
-                            :class="orderDetails.status.tone"
-                        >
-                            {{ orderDetails.status.label }}
-                        </span>
-                        <button
-                            type="button"
-                            class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
-                            aria-label="Fechar detalhes"
-                            @click="closeOrderDetails"
-                        >
-                            <X class="h-4 w-4" />
-                        </button>
-                    </div>
-                </header>
-
-                <div class="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
-                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cliente</p>
-                            <p class="mt-1 text-sm font-semibold text-slate-900">{{ orderDetails?.customer || '-' }}</p>
-                            <p class="mt-1 text-xs text-slate-500">{{ orderDetails?.customer_contact || 'Sem contato' }}</p>
-                        </div>
-                        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Canal</p>
-                            <p class="mt-1 text-sm font-semibold text-slate-900">{{ orderDetails?.channel || '-' }}</p>
-                        </div>
-                        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pagamento</p>
-                            <p class="mt-1 text-sm font-semibold text-slate-900">{{ orderDetails?.payment_label || 'Não informado' }}</p>
-                        </div>
-                    </div>
-
-                    <section class="rounded-2xl border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
-                        <div class="flex items-center justify-between gap-2">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Itens do pedido</p>
-                            <span class="text-[11px] font-semibold text-slate-500">{{ orderDetailsItems.length }} item(ns)</span>
-                        </div>
-
-                        <div v-if="orderDetailsItems.length" class="mt-3 space-y-2">
-                        <article
-                            v-for="(item, idx) in orderDetailsItems"
-                            :key="`order-item-${orderDetails?.id ?? 'x'}-${idx}`"
-                            class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
-                        >
-                            <div class="flex items-start gap-3">
-                                <div class="h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                                    <img
-                                        v-if="item.image_url"
-                                        :src="item.image_url"
-                                        :alt="item.description || `Produto ${idx + 1}`"
-                                        class="h-full w-full object-cover"
-                                    >
-                                    <span v-else class="inline-flex h-full w-full items-center justify-center text-slate-500">
-                                        <ShoppingBag class="h-4 w-4" />
-                                    </span>
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <p class="truncate text-sm font-semibold text-slate-900">
-                                        {{ item.description || `Produto ${idx + 1}` }}
-                                    </p>
-                                        <p class="mt-1 text-xs text-slate-500">
-                                            <span>Qtd: {{ item.quantity }}</span>
-                                            <span v-if="item.sku"> • SKU: {{ item.sku }}</span>
-                                        </p>
-                                        <div class="mt-2 flex items-center justify-between text-xs text-slate-500">
-                                            <span>Unitário: {{ asCurrency(item.unit_price ?? 0) }}</span>
-                                            <span v-if="Number(item.discount_amount ?? 0) > 0">Desconto: {{ asCurrency(item.discount_amount) }}</span>
-                                        </div>
-                                    </div>
-                                    <p class="shrink-0 text-sm font-bold text-slate-900">{{ asCurrency(item.total_amount ?? 0) }}</p>
-                                </div>
-                            </article>
-                        </div>
-                        <p v-else class="mt-3 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">
-                            Nenhum item detalhado neste pedido.
-                        </p>
-                    </section>
-                </div>
-
-                <footer class="space-y-3 border-t border-slate-200 p-4 sm:p-5">
-                    <div class="grid gap-2 sm:grid-cols-3">
-                        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Subtotal itens</p>
-                            <p class="mt-1 text-sm font-bold text-slate-900">{{ asCurrency(orderDetailsItemsSubtotal) }}</p>
-                        </div>
-                        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Desconto itens</p>
-                            <p class="mt-1 text-sm font-bold text-slate-900">{{ asCurrency(orderDetailsItemsDiscount) }}</p>
-                        </div>
-                        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total pedido</p>
-                            <p class="mt-1 text-sm font-bold text-slate-900">{{ asCurrency(orderDetails?.total_amount ?? 0) }}</p>
-                        </div>
-                    </div>
-
-                    <div class="flex flex-wrap items-center justify-end gap-2">
-                        <button
-                            v-if="orderDetails?.can_confirm"
-                            type="button"
-                            class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-                            @click="openOrderActionFromDetails('confirm')"
-                        >
-                            <CheckCircle2 class="h-4 w-4" />
-                            Confirmar
-                        </button>
-                        <button
-                            v-if="orderDetails?.can_mark_paid"
-                            type="button"
-                            class="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-                            @click="openOrderActionFromDetails('paid')"
-                        >
-                            <Wallet class="h-4 w-4" />
-                            Marcar pago
-                        </button>
-                        <button
-                            v-if="orderDetails?.can_reject"
-                            type="button"
-                            class="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100"
-                            @click="openOrderActionFromDetails('reject')"
-                        >
-                            <XCircle class="h-4 w-4" />
-                            Rejeitar
-                        </button>
-                        <button
-                            v-if="orderDetails?.can_cancel"
-                            type="button"
-                            class="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
-                            @click="openOrderActionFromDetails('cancel')"
-                        >
-                            <Ban class="h-4 w-4" />
-                            Cancelar
-                        </button>
-                        <button
-                            type="button"
-                            class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                            @click="closeOrderDetails"
-                        >
-                            Fechar
-                        </button>
-                    </div>
-                </footer>
-            </div>
-        </Modal>
+        <OrderDetailsModal
+            :show="orderDetailsModalOpen"
+            :order="orderDetails"
+            @close="closeOrderDetails"
+            @action="handleOrderDetailsAction"
+        />
 
         <Modal :show="actionConfirmModalOpen" max-width="lg" @close="closeActionConfirmModal">
             <div class="space-y-4 p-5">

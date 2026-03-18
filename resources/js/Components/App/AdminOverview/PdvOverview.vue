@@ -1,18 +1,18 @@
-﻿<script setup>
+<script setup>
+import OrderDetailsModal from '@/Components/App/Orders/OrderDetailsModal.vue';
+import { Link } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 import {
     ChevronRight,
     ClipboardList,
     Clock3,
     CreditCard,
     DollarSign,
-    Package,
     Plus,
     QrCode,
     ShoppingCart,
     Wallet,
 } from 'lucide-vue-next';
-import { computed } from 'vue';
-import { Link } from '@inertiajs/vue3';
 
 const props = defineProps({
     stats: {
@@ -92,6 +92,19 @@ const pdvShortcuts = [
 
 const pdvRecentSales = computed(() => props.stats?.recent_sales ?? []);
 const cashOpen = computed(() => Boolean(props.stats?.cash_open));
+const saleDetailsModalOpen = ref(false);
+const selectedSale = ref(null);
+
+const openSaleDetails = (sale) => {
+    if (!sale?.id) return;
+    selectedSale.value = sale;
+    saleDetailsModalOpen.value = true;
+};
+
+const closeSaleDetails = () => {
+    saleDetailsModalOpen.value = false;
+    selectedSale.value = null;
+};
 
 const pdvPaymentSummary = computed(() => {
     const summary = props.stats?.payment_summary ?? {};
@@ -160,17 +173,18 @@ const pdvPaymentSummary = computed(() => {
             <ul v-if="pdvRecentSales.length" class="space-y-3">
                 <li
                     v-for="sale in pdvRecentSales"
-                    :key="sale.id"
-                    class="flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    :key="sale.id ?? sale.code"
+                    class="flex cursor-pointer flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-3 transition hover:bg-slate-100 sm:flex-row sm:items-center sm:justify-between"
+                    @click="openSaleDetails(sale)"
                 >
                     <div class="min-w-0">
-                        <p class="text-xs font-semibold text-slate-500">{{ sale.id }}</p>
+                        <p class="text-xs font-semibold text-slate-500">{{ sale.code || sale.id }}</p>
                         <p class="truncate text-sm font-semibold text-slate-900">{{ sale.customer }}</p>
-                        <p class="truncate text-xs text-slate-500">{{ sale.payment }}</p>
+                        <p class="truncate text-xs text-slate-500">{{ sale.payment_label || sale.payment }}</p>
                     </div>
                     <div class="text-left sm:text-right">
                         <p class="text-sm font-semibold text-slate-900">{{ sale.amount }}</p>
-                        <p class="text-[11px] text-slate-500">{{ sale.time }}</p>
+                        <p class="text-[11px] text-slate-500">{{ sale.time || sale.created_at }}</p>
                     </div>
                 </li>
             </ul>
@@ -210,4 +224,11 @@ const pdvPaymentSummary = computed(() => {
             </article>
         </section>
     </div>
+
+    <OrderDetailsModal
+        :show="saleDetailsModalOpen"
+        :order="selectedSale"
+        :show-actions="false"
+        @close="closeSaleDetails"
+    />
 </template>

@@ -1,6 +1,7 @@
-﻿<script setup>
-import { computed } from 'vue';
+<script setup>
+import OrderDetailsModal from '@/Components/App/Orders/OrderDetailsModal.vue';
 import { Link } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 import {
     AlertCircle,
     CalendarDays,
@@ -67,6 +68,19 @@ const statCards = computed(() => [
 const pendingQuotes = computed(() => Number(props.stats?.pending_quotes ?? 0));
 const recentOrders = computed(() => props.stats?.recent_orders ?? []);
 const deliveriesToday = computed(() => Number(props.stats?.deliveries_today ?? 0));
+const orderDetailsModalOpen = ref(false);
+const selectedOrder = ref(null);
+
+const openOrderDetails = (order) => {
+    if (!order?.id) return;
+    selectedOrder.value = order;
+    orderDetailsModalOpen.value = true;
+};
+
+const closeOrderDetails = () => {
+    orderDetailsModalOpen.value = false;
+    selectedOrder.value = null;
+};
 </script>
 
 <template>
@@ -117,11 +131,12 @@ const deliveriesToday = computed(() => Number(props.stats?.deliveries_today ?? 0
             <ul v-if="recentOrders.length" class="space-y-3">
                 <li
                     v-for="order in recentOrders"
-                    :key="order.id"
-                    class="flex flex-col gap-3 rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    :key="order.id ?? order.code"
+                    class="flex cursor-pointer flex-col gap-3 rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-3 transition hover:bg-slate-100 sm:flex-row sm:items-center sm:justify-between"
+                    @click="openOrderDetails(order)"
                 >
                     <div class="min-w-0">
-                        <p class="text-xs font-semibold text-rose-500">{{ order.id }}</p>
+                        <p class="text-xs font-semibold text-rose-500">{{ order.code || order.id }}</p>
                         <p class="truncate text-sm font-semibold text-slate-900">{{ order.customer }}</p>
                         <p class="truncate text-xs text-slate-500">{{ order.description }}</p>
                     </div>
@@ -157,4 +172,11 @@ const deliveriesToday = computed(() => Number(props.stats?.deliveries_today ?? 0
             </div>
         </section>
     </div>
+
+    <OrderDetailsModal
+        :show="orderDetailsModalOpen"
+        :order="selectedOrder"
+        :show-actions="false"
+        @close="closeOrderDetails"
+    />
 </template>
