@@ -62,7 +62,7 @@ const { brandName, tagline, systemIconUrl, publicFaviconHref, publicFaviconType 
                         </div>
 
                         <p class="mb-0 mt-4 small text-light opacity-75">
-                            © {{ currentYear }} {{ brandName }}. Todos os direitos reservados.
+                            &copy; {{ currentYear }} {{ brandName }}. Todos os direitos reservados.
                         </p>
                     </aside>
                 </div>
@@ -72,26 +72,30 @@ const { brandName, tagline, systemIconUrl, publicFaviconHref, publicFaviconType 
                     :class="props.showAside ? 'col-lg-5 col-md-8' : 'col-xl-5 col-lg-6 col-md-8'"
                 >
                     <section class="veshop-auth-card veshop-auth-equal-height w-100 p-4 p-lg-5">
-                        <Link href="/" class="d-inline-flex align-items-center gap-3 text-decoration-none">
-                            <span class="veshop-auth-logo">
-                                <img
-                                    :src="systemIconUrl"
-                                    :alt="`${brandName} icone`"
-                                    class="veshop-auth-logo-img"
-                                />
-                            </span>
-                            <span>
-                                <span class="d-block fs-5 fw-bold text-primary ls-1">{{ brandName }}</span>
-                                <span class="veshop-auth-subbrand d-block text-uppercase ls-2">{{ tagline }}</span>
-                            </span>
-                        </Link>
+                        <slot name="brand">
+                            <Link href="/" class="d-inline-flex align-items-center gap-3 text-decoration-none">
+                                <span class="veshop-auth-logo">
+                                    <img
+                                        :src="systemIconUrl"
+                                        :alt="`${brandName} icone`"
+                                        class="veshop-auth-logo-img"
+                                    />
+                                </span>
+                                <span>
+                                    <span class="d-block fs-5 fw-bold text-primary ls-1">{{ brandName }}</span>
+                                    <span class="veshop-auth-subbrand d-block text-uppercase ls-2">{{ tagline }}</span>
+                                </span>
+                            </Link>
+                        </slot>
 
                         <div class="mt-4">
                             <slot />
                         </div>
 
                         <p class="mb-0 mt-4 text-center d-lg-none small text-muted">
-                            © {{ currentYear }} {{ brandName }}. Todos os direitos reservados.
+                            <slot name="footer">
+                                &copy; {{ currentYear }} {{ brandName }}. Todos os direitos reservados.
+                            </slot>
                         </p>
                     </section>
                 </div>

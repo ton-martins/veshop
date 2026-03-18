@@ -36,7 +36,7 @@ class ShopVerifyEmailController extends Controller
         $this->logVerificationEvent('shop_verification.marked_as_verified', $contractor, $customer);
 
         return redirect()
-            ->route('shop.account', ['slug' => $contractor->slug])
+            ->route('shop.show', ['slug' => $contractor->slug, 'conta' => 1])
             ->with('status', 'E-mail verificado com sucesso. Agora você pode finalizar pedidos.');
     }
 

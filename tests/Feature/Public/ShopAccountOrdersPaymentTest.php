@@ -111,17 +111,17 @@ class ShopAccountOrdersPaymentTest extends TestCase
 
         $response = $this
             ->actingAs($shopCustomer, 'shop')
-            ->get(route('shop.account', ['slug' => $contractor->slug]));
+            ->get(route('shop.show', ['slug' => $contractor->slug]));
 
         $response->assertOk();
         $response->assertInertia(fn (Assert $page) => $page
-            ->component('Public/ShopAccount')
-            ->where('orders.0.id', $sale->id)
-            ->where('orders.0.payment.method_code', 'pix')
-            ->where('orders.0.payment.status', 'pending')
-            ->where('orders.0.payment.status_label', 'Aguardando pagamento')
-            ->where('orders.0.payment.qr_code', '0002010102CONTA')
-            ->where('orders.0.payment.is_pix', true)
+            ->component('Public/Shop')
+            ->where('shop_account.orders.0.id', $sale->id)
+            ->where('shop_account.orders.0.payment.method_code', 'pix')
+            ->where('shop_account.orders.0.payment.status', 'pending')
+            ->where('shop_account.orders.0.payment.status_label', 'Aguardando pagamento')
+            ->where('shop_account.orders.0.payment.qr_code', '0002010102CONTA')
+            ->where('shop_account.orders.0.payment.is_pix', true)
         );
     }
 
@@ -144,4 +144,3 @@ class ShopAccountOrdersPaymentTest extends TestCase
         ]);
     }
 }
-

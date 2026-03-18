@@ -14,12 +14,10 @@ use App\Support\BrazilData;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 
 class ShopAccountController extends Controller
 {
-    public function show(Request $request, string $slug): Response
+    public function show(Request $request, string $slug): RedirectResponse
     {
         $contractor = $this->resolveActiveContractorBySlug($slug);
         /** @var ShopCustomer|null $customer */
@@ -27,78 +25,9 @@ class ShopAccountController extends Controller
         abort_unless($customer, 403);
         abort_unless((int) $customer->contractor_id === (int) $contractor->id, 403);
 
-        $orders = Sale::query()
-            ->where('contractor_id', $contractor->id)
-            ->whereIn('source', [Sale::SOURCE_CATALOG, Sale::SOURCE_ORDER])
-            ->where(function ($query) use ($customer): void {
-                $query->where('shop_customer_id', $customer->id);
-
-                if ($customer->client_id) {
-                    $query->orWhere('client_id', $customer->client_id);
-                }
-            })
-            ->with([
-                'items:id,sale_id,description,quantity,total_amount',
-                'payments:id,sale_id,status,amount,payment_method_id,transaction_reference,gateway_payload,metadata',
-                'payments.paymentMethod:id,code,name',
-            ])
-            ->orderByDesc('id')
-            ->limit(60)
-            ->get()
-            ->map(fn (Sale $sale): array => $this->toOrderPayload($sale))
-            ->values()
-            ->all();
-
-        $favorites = ShopCustomerFavorite::query()
-            ->where('contractor_id', $contractor->id)
-            ->where('shop_customer_id', $customer->id)
-            ->with([
-                'product:id,contractor_id,name,sale_price,stock_quantity,image_url,is_active',
-            ])
-            ->orderByDesc('id')
-            ->limit(60)
-            ->get()
-            ->map(fn (ShopCustomerFavorite $favorite): ?array => $this->toFavoritePayload($contractor, $favorite))
-            ->filter()
-            ->values()
-            ->all();
-
-        return Inertia::render('Public/ShopAccount', [
-            'contractor' => $this->toContractorPayload($contractor),
-            'customer' => [
-                'id' => (int) $customer->id,
-                'name' => (string) $customer->name,
-                'email' => (string) ($customer->email ?? ''),
-                'phone' => (string) ($customer->phone ?? ''),
-                'cep' => (string) ($customer->cep ?? ''),
-                'street' => (string) ($customer->street ?? ''),
-                'number' => (string) ($customer->number ?? ''),
-                'complement' => (string) ($customer->complement ?? ''),
-                'neighborhood' => (string) ($customer->neighborhood ?? ''),
-                'city' => (string) ($customer->city ?? ''),
-                'state' => (string) ($customer->state ?? ''),
-            ],
-            'orders' => $orders,
-            'favorites' => $favorites,
-            'notifications' => $customer->notifications()
-                ->latest('created_at')
-                ->limit(40)
-                ->get()
-                ->map(static function ($notification): array {
-                    $data = is_array($notification->data) ? $notification->data : [];
-
-                    return [
-                        'id' => (string) $notification->id,
-                        'title' => (string) ($data['title'] ?? 'Notificação'),
-                        'message' => (string) ($data['message'] ?? ''),
-                        'target_url' => (string) ($data['target_url'] ?? ''),
-                        'read_at' => optional($notification->read_at)?->toIso8601String(),
-                        'created_at' => optional($notification->created_at)?->format('d/m/Y H:i'),
-                    ];
-                })
-                ->values()
-                ->all(),
-            'notifications_unread_count' => (int) $customer->unreadNotifications()->count(),
+        return redirect()->route('shop.show', [
+            'slug' => $contractor->slug,
+            'conta' => 1,
         ]);
     }
 
@@ -221,8 +150,8 @@ class ShopAccountController extends Controller
             'name' => $contractor->name,
             'brand_name' => $contractor->brand_name,
             'primary_color' => $contractor->brand_primary_color,
-            'logo_url' => $contractor->brand_logo_url,
-            'avatar_url' => $contractor->brand_avatar_url,
+            'logo_url' => $this->normalizePublicAssetUrl($contractor->brand_logo_url),
+            'avatar_url' => $this->normalizePublicAssetUrl($contractor->brand_avatar_url),
         ];
     }
 

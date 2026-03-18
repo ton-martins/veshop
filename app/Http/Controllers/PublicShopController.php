@@ -90,55 +90,23 @@ class PublicShopController extends Controller
             'payment_methods' => $this->resolveCheckoutPaymentMethods($contractor),
             'shipping_config' => $this->resolveShippingConfigPayload($contractor),
             'shop_auth' => $this->resolveShopAuthPayload($contractor),
+            'shop_account' => $this->resolveShopAccountPayload($contractor),
         ]);
     }
 
-    public function product(string $slug, int $product): Response
+    public function product(string $slug, int $product): RedirectResponse
     {
         $contractor = $this->resolveActiveContractorBySlug($slug);
 
-        $selectedProduct = Product::query()
+        Product::query()
             ->where('contractor_id', $contractor->id)
             ->where('id', $product)
             ->where('is_active', true)
-            ->with('category:id,name,slug')
-            ->firstOrFail();
+            ->firstOrFail(['id']);
 
-        $relatedProducts = Product::query()
-            ->where('contractor_id', $contractor->id)
-            ->where('is_active', true)
-            ->where('id', '!=', $selectedProduct->id)
-            ->where(function ($query) use ($selectedProduct): void {
-                if ($selectedProduct->category_id) {
-                    $query->where('category_id', $selectedProduct->category_id);
-                } else {
-                    $query->whereNull('category_id');
-                }
-            })
-            ->orderByDesc('is_pdv_featured')
-            ->orderBy('pdv_featured_order')
-            ->orderBy('name')
-            ->limit(8)
-            ->get([
-                'id',
-                'category_id',
-                'name',
-                'sku',
-                'description',
-                'sale_price',
-                'stock_quantity',
-                'unit',
-                'image_url',
-            ])
-            ->map(fn (Product $item): array => $this->toProductPayload($item))
-            ->values()
-            ->all();
-
-        return Inertia::render('Public/ShopProduct', [
-            'contractor' => $this->toContractorPayload($contractor),
-            'product' => $this->toProductPayload($selectedProduct),
-            'related_products' => $relatedProducts,
-            'shop_auth' => $this->resolveShopAuthPayload($contractor),
+        return redirect()->route('shop.show', [
+            'slug' => $contractor->slug,
+            'produto' => $product,
         ]);
     }
 
@@ -761,10 +729,139 @@ class PublicShopController extends Controller
                 'phone' => (string) ($customer->phone ?? ''),
                 'cep' => (string) ($customer->cep ?? ''),
                 'street' => (string) ($customer->street ?? ''),
+                'number' => (string) ($customer->number ?? ''),
+                'complement' => (string) ($customer->complement ?? ''),
                 'neighborhood' => (string) ($customer->neighborhood ?? ''),
                 'city' => (string) ($customer->city ?? ''),
                 'state' => (string) ($customer->state ?? ''),
             ] : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolveShopAccountPayload(Contractor $contractor): ?array
+    {
+        $customer = $this->resolveCurrentShopCustomerForContractor($contractor);
+        if (! $customer) {
+            return null;
+        }
+
+        $requiresEmailVerification = $contractor->requiresEmailVerification();
+        if ($requiresEmailVerification && ! $customer->hasVerifiedEmail()) {
+            return [
+                'orders' => [],
+            ];
+        }
+
+        $orders = Sale::query()
+            ->where('contractor_id', $contractor->id)
+            ->whereIn('source', [Sale::SOURCE_CATALOG, Sale::SOURCE_ORDER])
+            ->where(function ($query) use ($customer): void {
+                $query->where('shop_customer_id', $customer->id);
+
+                if ($customer->client_id) {
+                    $query->orWhere('client_id', $customer->client_id);
+                }
+            })
+            ->with([
+                'items:id,sale_id,description,quantity,total_amount',
+                'payments:id,sale_id,status,amount,payment_method_id,transaction_reference,gateway_payload,metadata',
+                'payments.paymentMethod:id,code,name',
+            ])
+            ->orderByDesc('id')
+            ->limit(40)
+            ->get()
+            ->map(fn (Sale $sale): array => $this->toShopOrderPayload($sale))
+            ->values()
+            ->all();
+
+        return [
+            'orders' => $orders,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function toShopOrderPayload(Sale $sale): array
+    {
+        /** @var SalePayment|null $latestPayment */
+        $latestPayment = $sale->payments
+            ->sortByDesc('id')
+            ->first();
+        $statusValue = (string) $sale->status;
+        $paymentMethods = $sale->payments
+            ->map(static fn (SalePayment $payment): ?string => $payment->paymentMethod?->name)
+            ->filter()
+            ->values();
+
+        return [
+            'id' => (int) $sale->id,
+            'code' => (string) $sale->code,
+            'created_at' => optional($sale->created_at)->format('d/m/Y H:i'),
+            'status' => [
+                'value' => $statusValue,
+                'label' => $this->resolveSaleStatusLabel($statusValue),
+                'tone' => $this->resolveSaleStatusTone($statusValue),
+            ],
+            'total_amount' => (float) $sale->total_amount,
+            'items' => $sale->items->map(static fn (SaleItem $item): array => [
+                'description' => (string) $item->description,
+                'quantity' => (int) $item->quantity,
+                'total_amount' => (float) $item->total_amount,
+            ])->values()->all(),
+            'payment_label' => $paymentMethods->isNotEmpty() ? $paymentMethods->implode(' + ') : 'Não informado',
+            'payment' => $this->toShopOrderPaymentPayload($sale, $latestPayment),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function toShopOrderPaymentPayload(Sale $sale, ?SalePayment $salePayment): ?array
+    {
+        if (! $salePayment) {
+            return null;
+        }
+
+        $gatewayPayload = is_array($salePayment->gateway_payload) ? $salePayment->gateway_payload : [];
+        $paymentIntent = data_get($gatewayPayload, 'payment_intent');
+        if (! is_array($paymentIntent)) {
+            $paymentIntent = [];
+        }
+
+        $saleMetadata = is_array($sale->metadata) ? $sale->metadata : [];
+        $saleIntent = data_get($saleMetadata, 'payment_intent');
+        if (! is_array($saleIntent)) {
+            $saleIntent = [];
+        }
+
+        $transactionReference = trim((string) ($salePayment->transaction_reference
+            ?? ($paymentIntent['transaction_reference'] ?? ($saleIntent['transaction_reference'] ?? ''))));
+        $paymentMethodCode = strtolower(trim((string) ($salePayment->paymentMethod?->code ?? '')));
+        $paymentMethodName = trim((string) ($salePayment->paymentMethod?->name ?? ''));
+        $provider = trim((string) (data_get($salePayment->metadata ?? [], 'provider')
+            ?? ($paymentIntent['provider'] ?? ($saleIntent['provider'] ?? ''))));
+        $ticketUrl = trim((string) ($paymentIntent['ticket_url'] ?? ($saleIntent['ticket_url'] ?? '')));
+        $qrCode = trim((string) ($paymentIntent['qr_code'] ?? ($saleIntent['qr_code'] ?? '')));
+        $qrCodeBase64 = trim((string) ($paymentIntent['qr_code_base64'] ?? ($saleIntent['qr_code_base64'] ?? '')));
+        $expiresAt = $paymentIntent['date_of_expiration'] ?? ($saleIntent['date_of_expiration'] ?? null);
+
+        return [
+            'status' => (string) $salePayment->status,
+            'status_label' => $this->resolveSalePaymentStatusLabel((string) $salePayment->status),
+            'method_code' => $paymentMethodCode,
+            'method_name' => $paymentMethodName,
+            'provider' => $provider,
+            'transaction_reference' => $transactionReference,
+            'amount' => round((float) $salePayment->amount, 2),
+            'ticket_url' => $ticketUrl,
+            'qr_code' => $qrCode,
+            'qr_code_base64' => $qrCodeBase64,
+            'expires_at' => $expiresAt,
+            'is_pix' => $paymentMethodCode === PaymentMethod::CODE_PIX && $qrCode !== '',
         ];
     }
 
@@ -990,6 +1087,17 @@ class PublicShopController extends Controller
         };
     }
 
+    private function resolveSaleStatusTone(string $status): string
+    {
+        return match (strtolower(trim($status))) {
+            Sale::STATUS_PENDING_CONFIRMATION => 'bg-blue-100 text-blue-700',
+            Sale::STATUS_CONFIRMED, Sale::STATUS_AWAITING_PAYMENT => 'bg-amber-100 text-amber-700',
+            Sale::STATUS_PAID, Sale::STATUS_COMPLETED => 'bg-emerald-100 text-emerald-700',
+            Sale::STATUS_REJECTED, Sale::STATUS_CANCELLED => 'bg-rose-100 text-rose-700',
+            Sale::STATUS_REFUNDED => 'bg-slate-100 text-slate-700',
+            default => 'bg-slate-100 text-slate-700',
+        };
+    }
     private function mapProviderStatusToSalePaymentStatus(string $status): string
     {
         $normalized = strtolower(trim($status));

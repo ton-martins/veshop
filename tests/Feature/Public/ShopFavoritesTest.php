@@ -167,13 +167,12 @@ class ShopFavoritesTest extends TestCase
 
         $response = $this
             ->actingAs($customer, 'shop')
-            ->get(route('shop.account', ['slug' => $contractor->slug]));
+            ->get(route('shop.show', ['slug' => $contractor->slug]));
 
         $response->assertOk();
         $response->assertInertia(fn (Assert $page) => $page
-            ->component('Public/ShopAccount')
-            ->where('favorites.0.product_id', $product->id)
-            ->where('favorites.0.name', 'Tênis Premium')
+            ->component('Public/Shop')
+            ->where('shop_auth.favorite_product_ids.0', $product->id)
         );
     }
 

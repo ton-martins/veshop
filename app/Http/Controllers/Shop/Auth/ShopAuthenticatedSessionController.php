@@ -25,7 +25,10 @@ class ShopAuthenticatedSessionController extends Controller
                 return redirect()->route('shop.verification.notice', ['slug' => $contractor->slug]);
             }
 
-            return redirect()->route('shop.account', ['slug' => $contractor->slug]);
+            return redirect()->route('shop.show', [
+                'slug' => $contractor->slug,
+                'conta' => 1,
+            ]);
         }
 
         if ($shopCustomer) {
@@ -76,7 +79,10 @@ class ShopAuthenticatedSessionController extends Controller
                 ->with('status', 'Confirme seu e-mail para continuar.');
         }
 
-        return redirect()->intended(route('shop.account', ['slug' => $contractor->slug]));
+        return redirect()->intended(route('shop.show', [
+            'slug' => $contractor->slug,
+            'conta' => 1,
+        ]));
     }
 
     public function destroy(Request $request, string $slug): RedirectResponse
@@ -108,8 +114,28 @@ class ShopAuthenticatedSessionController extends Controller
             'name' => $contractor->name,
             'brand_name' => $contractor->brand_name,
             'primary_color' => $contractor->brand_primary_color,
-            'logo_url' => $contractor->brand_logo_url,
-            'avatar_url' => $contractor->brand_avatar_url,
+            'logo_url' => $this->normalizePublicAssetUrl($contractor->brand_logo_url),
+            'avatar_url' => $this->normalizePublicAssetUrl($contractor->brand_avatar_url),
         ];
+    }
+
+    private function normalizePublicAssetUrl(?string $value): ?string
+    {
+        if (! $value) {
+            return null;
+        }
+
+        $path = parse_url($value, PHP_URL_PATH);
+        $normalized = is_string($path) && $path !== '' ? $path : $value;
+
+        if (str_starts_with($normalized, '/storage/')) {
+            return $normalized;
+        }
+
+        if (str_starts_with($normalized, 'storage/')) {
+            return '/'.ltrim($normalized, '/');
+        }
+
+        return $value;
     }
 }

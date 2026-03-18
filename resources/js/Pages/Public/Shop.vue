@@ -7,9 +7,12 @@ import {
     Heart,
     Home,
     LogIn,
+    LogOut,
     Menu,
     Minus,
+    Package,
     Plus,
+    Save,
     Search,
     ShoppingCart,
     Tags,
@@ -18,6 +21,7 @@ import {
     X,
 } from 'lucide-vue-next';
 import { useBranding } from '@/branding';
+import { BRAZIL_STATES, formatCepBR, formatPhoneBR, normalizeStateCode, viaCepToAddress } from '@/utils/br';
 
 const props = defineProps({
     contractor: { type: Object, required: true },
@@ -27,10 +31,12 @@ const props = defineProps({
     payment_methods: { type: Array, default: () => [] },
     shipping_config: { type: Object, default: () => ({}) },
     shop_auth: { type: Object, default: () => ({ authenticated: false, customer: null }) },
+    shop_account: { type: Object, default: () => ({ orders: [] }) },
 });
 
 const page = usePage();
 const { normalizeHex, primaryColor, publicFaviconHref, publicFaviconType, themeStyles, withAlpha } = useBranding();
+const flashStatusMessage = computed(() => String(page.props?.flash?.status ?? '').trim());
 
 const storeName = computed(() => String(props.contractor?.brand_name || props.contractor?.name || 'Loja'));
 const storeSlug = computed(() => String(props.contractor?.slug || 'shop'));
@@ -59,13 +65,23 @@ const missingShopAddressFields = computed(() => {
         : [];
 });
 const shopCustomer = computed(() => props.shop_auth?.customer ?? null);
-const accountOrLoginUrl = computed(() => {
-    if (!isShopAuthenticated.value) return loginUrl.value;
-    if (requiresEmailVerification.value && !isShopEmailVerified.value) return verifyEmailUrl.value;
-
-    return accountUrl.value;
-});
-const storeLogo = computed(() => props.contractor?.avatar_url || props.contractor?.logo_url || null);
+const shopAccountOrders = computed(() => (Array.isArray(props.shop_account?.orders) ? props.shop_account.orders : []));
+const stateOptions = computed(() => ([
+    { value: '', label: 'Selecione a UF' },
+    ...BRAZIL_STATES.map((state) => ({
+        value: state.code,
+        label: `${state.code} - ${state.name}`,
+    })),
+]));
+const normalizeBrandAsset = (value) => {
+    const safe = String(value ?? '').trim();
+    return safe !== '' ? safe : null;
+};
+const storeLogoLoadFailed = ref(false);
+const rawStoreLogo = computed(() =>
+    normalizeBrandAsset(props.contractor?.avatar_url) || normalizeBrandAsset(props.contractor?.logo_url),
+);
+const storeLogo = computed(() => (storeLogoLoadFailed.value ? null : rawStoreLogo.value));
 const checkoutUrl = computed(() => `/shop/${storeSlug.value}/checkout`);
 const storePrimaryColor = computed(() => normalizeHex(props.contractor?.primary_color || '', primaryColor.value));
 const storeInitials = computed(() => {
@@ -191,6 +207,13 @@ const PAGE_SIZE = 20;
 const cartOpen = ref(false);
 const leftMenuOpen = ref(false);
 const favoritesOnly = ref(false);
+const accountModalOpen = ref(false);
+const favoritesModalOpen = ref(false);
+const productModalOpen = ref(false);
+const productModalQuantity = ref(1);
+const productModalId = ref(null);
+const profileCepLookupLoading = ref(false);
+const profileCepLookupError = ref('');
 const categorySectionRef = ref(null);
 
 const categoryList = computed(() => [
@@ -226,6 +249,17 @@ const rangeText = computed(() => {
     const end = Math.min(currentPage.value * PAGE_SIZE, filteredProducts.value.length);
     return `${start}-${end} de ${filteredProducts.value.length}`;
 });
+
+watch(
+    () => [props.contractor?.avatar_url, props.contractor?.logo_url],
+    () => {
+        storeLogoLoadFailed.value = false;
+    },
+);
+
+const handleStoreLogoError = () => {
+    storeLogoLoadFailed.value = true;
+};
 
 watch([search, selectedCategory, sortMode], () => {
     currentPage.value = 1;
@@ -319,6 +353,92 @@ const persistFavoriteOnServer = async (productId, shouldFavorite) => {
     }
 };
 
+const normalizeProductModalId = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+
+    return productMap.value.has(parsed) ? parsed : null;
+};
+
+const syncModalQueryString = () => {
+    if (typeof window === 'undefined') return;
+
+    const url = new URL(window.location.href);
+    const params = url.searchParams;
+    params.delete('produto');
+    params.delete('conta');
+    params.delete('favoritos');
+
+    if (productModalOpen.value && productModalId.value) {
+        params.set('produto', String(productModalId.value));
+    } else if (accountModalOpen.value) {
+        params.set('conta', '1');
+    } else if (favoritesModalOpen.value) {
+        params.set('favoritos', '1');
+    }
+
+    const next = `${url.pathname}${params.toString() ? `?${params.toString()}` : ''}${url.hash || ''}`;
+    window.history.replaceState({}, '', next);
+};
+
+const closeAllShopModals = () => {
+    accountModalOpen.value = false;
+    favoritesModalOpen.value = false;
+    productModalOpen.value = false;
+    productModalId.value = null;
+    productModalQuantity.value = 1;
+};
+
+const openAccountModal = () => {
+    if (!isShopAuthenticated.value) {
+        if (typeof window !== 'undefined') window.location.href = loginUrl.value;
+        return;
+    }
+
+    if (requiresEmailVerification.value && !isShopEmailVerified.value) {
+        if (typeof window !== 'undefined') window.location.href = verifyEmailUrl.value;
+        return;
+    }
+
+    closeAllShopModals();
+    accountModalOpen.value = true;
+    syncModalQueryString();
+};
+
+const openFavoritesModal = () => {
+    closeAllShopModals();
+    favoritesModalOpen.value = true;
+    syncModalQueryString();
+};
+
+const openProductModal = (productId) => {
+    const safeId = normalizeProductModalId(productId);
+    if (!safeId) return;
+
+    closeAllShopModals();
+    productModalId.value = safeId;
+    productModalQuantity.value = 1;
+    productModalOpen.value = true;
+    syncModalQueryString();
+};
+
+const closeAccountModal = () => {
+    accountModalOpen.value = false;
+    syncModalQueryString();
+};
+
+const closeFavoritesModal = () => {
+    favoritesModalOpen.value = false;
+    syncModalQueryString();
+};
+
+const closeProductModal = () => {
+    productModalOpen.value = false;
+    productModalId.value = null;
+    productModalQuantity.value = 1;
+    syncModalQueryString();
+};
+
 onMounted(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -339,9 +459,20 @@ onMounted(() => {
         loadFavoriteIdsFromStorage();
     }
 
-    const favoriteFilter = new URLSearchParams(window.location.search).get('favoritos');
-    if (favoriteFilter === '1' || favoriteFilter === 'true') {
-        favoritesOnly.value = true;
+    const params = new URLSearchParams(window.location.search);
+    const queryProductId = normalizeProductModalId(params.get('produto'));
+    const queryAccount = params.get('conta');
+    const queryFavorites = params.get('favoritos');
+
+    if (queryProductId) {
+        productModalId.value = queryProductId;
+        productModalOpen.value = true;
+    } else if (queryAccount === '1' || queryAccount === 'true') {
+        if (isShopAuthenticated.value && (!requiresEmailVerification.value || isShopEmailVerified.value)) {
+            accountModalOpen.value = true;
+        }
+    } else if (queryFavorites === '1' || queryFavorites === 'true') {
+        favoritesModalOpen.value = true;
     }
 });
 
@@ -361,7 +492,10 @@ watch(
 watch(
     shopCustomer,
     (customer) => {
-        if (!customer) return;
+        if (!customer) {
+            profileForm.reset();
+            return;
+        }
 
         if (!String(checkoutForm.customer_name ?? '').trim()) {
             checkoutForm.customer_name = String(customer.name ?? '');
@@ -374,6 +508,15 @@ watch(
         if (!String(checkoutForm.customer_email ?? '').trim()) {
             checkoutForm.customer_email = String(customer.email ?? '');
         }
+
+        profileForm.phone = String(customer.phone ?? '');
+        profileForm.cep = String(customer.cep ?? '');
+        profileForm.street = String(customer.street ?? '');
+        profileForm.number = String(customer.number ?? '');
+        profileForm.complement = String(customer.complement ?? '');
+        profileForm.neighborhood = String(customer.neighborhood ?? '');
+        profileForm.city = String(customer.city ?? '');
+        profileForm.state = String(customer.state ?? '');
     },
     { immediate: true },
 );
@@ -397,6 +540,13 @@ watch(
     { deep: true },
 );
 
+watch(
+    [accountModalOpen, favoritesModalOpen, productModalOpen, productModalId],
+    () => {
+        syncModalQueryString();
+    },
+);
+
 const cartDetailed = computed(() =>
     cartItems.value
         .map((i) => {
@@ -406,6 +556,39 @@ const cartDetailed = computed(() =>
         })
         .filter(Boolean),
 );
+
+const favoriteProducts = computed(() =>
+    props.products
+        .filter((product) => favoriteProductIdSet.value.has(Number(product.id)))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR')),
+);
+
+const accountOrders = computed(() =>
+    Array.isArray(shopAccountOrders.value)
+        ? [...shopAccountOrders.value].sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0))
+        : [],
+);
+
+const activeModalProduct = computed(() => {
+    if (!productModalOpen.value || !productModalId.value) return null;
+    return productMap.value.get(Number(productModalId.value)) ?? null;
+});
+
+const activeModalRelatedProducts = computed(() => {
+    const active = activeModalProduct.value;
+    if (!active) return [];
+
+    const categoryId = Number(active.category_id || 0);
+    const related = props.products.filter((product) => {
+        if (Number(product.id) === Number(active.id)) return false;
+        if (!Number.isFinite(categoryId) || categoryId <= 0) return true;
+        return Number(product.category_id || 0) === categoryId;
+    });
+
+    return related.slice(0, 8);
+});
+
+const modalProductHasStock = computed(() => Number(activeModalProduct.value?.stock_quantity || 0) > 0);
 
 const cartCount = computed(() => cartDetailed.value.reduce((acc, i) => acc + Number(i.quantity || 0), 0));
 const cartSubtotal = computed(() => cartDetailed.value.reduce((acc, i) => acc + Number(i.line_total || 0), 0));
@@ -442,6 +625,19 @@ const checkoutForm = useForm({
     notes: '',
     items: [],
 });
+
+const profileForm = useForm({
+    phone: String(shopCustomer.value?.phone ?? ''),
+    cep: String(shopCustomer.value?.cep ?? ''),
+    street: String(shopCustomer.value?.street ?? ''),
+    number: String(shopCustomer.value?.number ?? ''),
+    complement: String(shopCustomer.value?.complement ?? ''),
+    neighborhood: String(shopCustomer.value?.neighborhood ?? ''),
+    city: String(shopCustomer.value?.city ?? ''),
+    state: String(shopCustomer.value?.state ?? ''),
+});
+
+const logoutForm = useForm({});
 
 const checkoutPaymentFromFlash = computed(() => page.props.flash?.checkout_payment ?? null);
 const checkoutPayment = ref(null);
@@ -681,15 +877,25 @@ const createCheckoutIdempotencyKey = () => {
     return `shop-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
-const productDetailsUrl = (productId) => {
-    if (typeof route === 'function') {
-        try {
-            return route('shop.product.show', { slug: storeSlug.value, product: productId });
-        } catch {
-            // fallback below
-        }
+const addProductToCart = (id, quantity = 1) => {
+    const safeId = Number(id);
+    const safeQty = Math.max(1, Number(quantity || 1));
+    const product = productMap.value.get(safeId);
+    if (!product) return;
+
+    const stock = Math.max(0, Number(product.stock_quantity || 0));
+    if (stock <= 0) return;
+
+    const existing = cartItems.value.find((item) => Number(item.product_id) === safeId);
+    if (!existing) {
+        cartItems.value.push({
+            product_id: safeId,
+            quantity: Math.min(stock, safeQty),
+        });
+        return;
     }
-    return `/shop/${storeSlug.value}/produto/${productId}`;
+
+    existing.quantity = Math.min(stock, Math.max(1, Number(existing.quantity || 1)) + safeQty);
 };
 
 const increment = (id) => {
@@ -731,6 +937,91 @@ const toggleFavorite = async (productId) => {
         favoriteProductIds.value = previous;
         return;
     }
+};
+
+const incrementModalProductQty = () => {
+    const stock = Math.max(1, Number(activeModalProduct.value?.stock_quantity || 1));
+    productModalQuantity.value = Math.min(stock, Number(productModalQuantity.value || 1) + 1);
+};
+
+const decrementModalProductQty = () => {
+    productModalQuantity.value = Math.max(1, Number(productModalQuantity.value || 1) - 1);
+};
+
+const addActiveModalProductToCart = () => {
+    const product = activeModalProduct.value;
+    if (!product) return;
+    addProductToCart(product.id, productModalQuantity.value);
+    cartOpen.value = true;
+};
+
+const onProfilePhoneInput = (event) => {
+    profileForm.phone = formatPhoneBR(event?.target?.value ?? profileForm.phone);
+};
+
+const onProfileCepInput = (event) => {
+    profileForm.cep = formatCepBR(event?.target?.value ?? profileForm.cep);
+};
+
+const lookupProfileCep = async () => {
+    profileCepLookupError.value = '';
+    profileForm.cep = formatCepBR(profileForm.cep);
+
+    if (!profileForm.cep) return;
+    if (profileForm.cep.length !== 9) {
+        profileCepLookupError.value = 'CEP inválido. Digite os 8 números.';
+        return;
+    }
+
+    const cepDigits = profileForm.cep.replace(/\D/g, '');
+    profileCepLookupLoading.value = true;
+
+    try {
+        const response = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
+        if (!response.ok) throw new Error('lookup_failed');
+
+        const payload = await response.json();
+        if (payload?.erro) {
+            profileCepLookupError.value = 'CEP não encontrado.';
+            return;
+        }
+
+        const parsed = viaCepToAddress(payload);
+        profileForm.cep = parsed.cep || profileForm.cep;
+        profileForm.street = parsed.street || profileForm.street;
+        profileForm.neighborhood = parsed.neighborhood || profileForm.neighborhood;
+        profileForm.city = parsed.city || profileForm.city;
+        profileForm.state = parsed.state || profileForm.state;
+
+        if (!String(profileForm.complement ?? '').trim()) {
+            profileForm.complement = parsed.complement || '';
+        }
+    } catch {
+        profileCepLookupError.value = 'Não foi possível consultar o CEP agora. Preencha manualmente.';
+    } finally {
+        profileCepLookupLoading.value = false;
+    }
+};
+
+const submitProfileUpdate = () => {
+    profileCepLookupError.value = '';
+    profileForm.phone = formatPhoneBR(profileForm.phone);
+    profileForm.cep = formatCepBR(profileForm.cep);
+    profileForm.state = normalizeStateCode(profileForm.state);
+
+    profileForm.transform((data) => ({
+        ...data,
+        _method: 'patch',
+    })).post(accountUrl.value, {
+        preserveScroll: true,
+        onFinish: () => {
+            profileForm.transform((data) => data);
+        },
+    });
+};
+
+const doShopLogout = () => {
+    logoutForm.post(`/shop/${storeSlug.value}/sair`);
 };
 
 const checkout = () => {
@@ -788,7 +1079,13 @@ const openCartFromMenu = () => {
                         <Menu class="h-4 w-4" />
                     </button>
                     <div class="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-slate-100" :style="storeIconStyle">
-                        <img v-if="storeLogo" :src="storeLogo" :alt="storeName" class="h-full w-full object-cover" />
+                        <img
+                            v-if="storeLogo"
+                            :src="storeLogo"
+                            :alt="storeName"
+                            class="h-full w-full object-cover"
+                            @error="handleStoreLogoError"
+                        />
                         <span v-else class="text-xs font-semibold">{{ storeInitials }}</span>
                     </div>
                     <div class="min-w-0">
@@ -800,17 +1097,17 @@ const openCartFromMenu = () => {
                     <button
                         type="button"
                         class="hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition sm:inline-flex"
-                        :class="favoritesOnly ? 'border-transparent text-white shadow-inner shadow-black/10' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
-                        :style="favoritesOnly ? { background: 'var(--catalog-primary-strong)' } : null"
-                        @click="favoritesOnly = !favoritesOnly"
+                        :class="favoritesModalOpen ? 'border-transparent text-white shadow-inner shadow-black/10' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                        :style="favoritesModalOpen ? { background: 'var(--catalog-primary-strong)' } : null"
+                        @click="openFavoritesModal"
                     >
                         <Heart class="h-3.5 w-3.5" />
-                        {{ favoritesOnly ? 'Mostrar todos' : `Favoritos (${favoriteCount})` }}
+                        {{ `Favoritos (${favoriteCount})` }}
                     </button>
-                    <Link :href="accountOrLoginUrl" class="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:inline-flex">
+                    <button type="button" class="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:inline-flex" @click="openAccountModal">
                         <LogIn class="h-3.5 w-3.5" />
                         {{ isShopAuthenticated ? 'Minha conta' : 'Entrar' }}
-                    </Link>
+                    </button>
                 </div>
             </div>
         </header>
@@ -837,12 +1134,13 @@ const openCartFromMenu = () => {
                         >
                             Ver cobrança Pix
                         </button>
-                        <Link
-                            :href="accountUrl"
+                        <button
+                            type="button"
                             class="inline-flex items-center justify-center rounded-lg border border-current/30 bg-white/80 px-3 py-2 text-xs font-semibold transition hover:bg-white"
+                            @click="openAccountModal"
                         >
                             Meus pedidos
-                        </Link>
+                        </button>
                     </div>
                 </div>
             </section>
@@ -908,11 +1206,11 @@ const openCartFromMenu = () => {
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                    <Link
+                    <div
                         v-for="product in promotionProducts"
                         :key="`promo-${product.id}`"
-                        :href="productDetailsUrl(product.id)"
                         class="group block overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                        @click="openProductModal(product.id)"
                     >
                         <div class="relative aspect-square overflow-hidden bg-slate-100">
                             <img :src="productImage(product)" :alt="product.name" class="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
@@ -924,7 +1222,7 @@ const openCartFromMenu = () => {
                             <h3 class="min-h-[2.25rem] text-sm font-semibold leading-tight text-slate-900">{{ product.name }}</h3>
                             <p class="text-sm font-bold text-slate-900">{{ currency(product.sale_price) }}</p>
                         </div>
-                    </Link>
+                    </div>
                 </div>
             </section>
 
@@ -959,11 +1257,11 @@ const openCartFromMenu = () => {
                     <p class="text-xs text-slate-500">{{ filteredProducts.length }} {{ catalogItemLabel }}</p>
                 </div>
                 <div v-if="paginatedProducts.length" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                    <Link
+                    <div
                         v-for="product in paginatedProducts"
                         :key="`prod-${product.id}`"
-                        :href="productDetailsUrl(product.id)"
                         class="group block overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                        @click="openProductModal(product.id)"
                     >
                         <div class="relative aspect-square overflow-hidden bg-slate-100">
                             <img :src="productImage(product)" :alt="product.name" class="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
@@ -985,7 +1283,7 @@ const openCartFromMenu = () => {
                             </div>
                             <p class="text-[11px] text-slate-500">Toque para ver detalhes</p>
                         </div>
-                    </Link>
+                    </div>
                 </div>
                 <div v-else class="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-12 text-center text-sm text-slate-500">Nenhum item encontrado para os filtros informados.</div>
 
@@ -1017,9 +1315,9 @@ const openCartFromMenu = () => {
                 <button
                     type="button"
                     class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold transition"
-                    :class="favoritesOnly ? 'text-white shadow-inner shadow-black/10' : 'text-slate-600 hover:bg-slate-100'"
-                    :style="favoritesOnly ? { background: 'var(--catalog-primary-strong)' } : null"
-                    @click="favoritesOnly = !favoritesOnly"
+                    :class="favoritesModalOpen ? 'text-white shadow-inner shadow-black/10' : 'text-slate-600 hover:bg-slate-100'"
+                    :style="favoritesModalOpen ? { background: 'var(--catalog-primary-strong)' } : null"
+                    @click="openFavoritesModal"
                 >
                     <Heart class="h-4 w-4" />
                     Favoritos
@@ -1034,7 +1332,7 @@ const openCartFromMenu = () => {
                     <ShoppingCart class="h-4 w-4" />Carrinho
                     <span v-if="cartCount > 0" class="absolute right-2 top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-white px-1 py-0.5 text-[9px] font-bold text-slate-900">{{ cartCount }}</span>
                 </button>
-                <Link :href="accountOrLoginUrl" class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"><UserCircle2 class="h-4 w-4" />Conta</Link>
+                <button type="button" class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold text-slate-600 hover:bg-slate-100" @click="openAccountModal"><UserCircle2 class="h-4 w-4" />Conta</button>
             </div>
         </nav>
         <transition name="menu-overlay">
@@ -1079,17 +1377,17 @@ const openCartFromMenu = () => {
                             <button
                                 type="button"
                                 class="inline-flex items-center justify-center gap-1 rounded-xl border px-3 py-2 text-xs font-semibold transition"
-                                :class="favoritesOnly ? 'border-transparent text-white shadow-inner shadow-black/10' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
-                                :style="favoritesOnly ? { background: 'var(--catalog-primary-strong)' } : null"
-                                @click="favoritesOnly = !favoritesOnly; leftMenuOpen = false"
+                                :class="favoritesModalOpen ? 'border-transparent text-white shadow-inner shadow-black/10' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                                :style="favoritesModalOpen ? { background: 'var(--catalog-primary-strong)' } : null"
+                                @click="openFavoritesModal(); leftMenuOpen = false"
                             >
                                 <Heart class="h-3.5 w-3.5" />
-                                {{ favoritesOnly ? 'Mostrar todos' : 'Favoritos' }}
+                                Favoritos
                             </button>
-                            <Link :href="accountOrLoginUrl" class="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="leftMenuOpen = false">
+                            <button type="button" class="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="openAccountModal(); leftMenuOpen = false">
                                 <UserCircle2 class="h-3.5 w-3.5" />
                                 Conta
-                            </Link>
+                            </button>
                         </div>
 
                         <div v-if="storefrontBlocks.categories" class="space-y-2">
@@ -1162,7 +1460,7 @@ const openCartFromMenu = () => {
                             class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700"
                         >
                             Complete seu endereço em Minha conta para finalizar pedidos.
-                            <Link :href="accountUrl" class="ml-1 underline decoration-dotted underline-offset-2">Atualizar endereço</Link>
+                            <button type="button" class="ml-1 underline decoration-dotted underline-offset-2" @click="openAccountModal">Atualizar endereço</button>
                             <span v-if="missingShopAddressFields.length" class="ml-1">
                                 (faltando: {{ missingShopAddressFields.join(', ') }})
                             </span>
@@ -1302,6 +1600,345 @@ const openCartFromMenu = () => {
                         </button>
                     </footer>
                 </aside>
+            </div>
+        </transition>
+        <transition name="cart-overlay">
+            <div v-if="productModalOpen && activeModalProduct" class="fixed inset-0 z-[72]">
+                <div class="absolute inset-0 bg-slate-900/45 backdrop-blur-[1px]" @click="closeProductModal"></div>
+                <section class="absolute inset-0 flex items-center justify-center p-3 sm:p-5">
+                    <div class="relative flex w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+                        <header class="flex items-center justify-between border-b border-slate-200 px-4 py-4">
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">{{ activeModalProduct.name }}</p>
+                                <p class="text-xs text-slate-500">{{ activeModalProduct.category_name || 'Produto' }}</p>
+                            </div>
+                            <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" @click="closeProductModal">
+                                <X class="h-4 w-4" />
+                            </button>
+                        </header>
+
+                        <div class="max-h-[88vh] overflow-y-auto p-4 sm:p-6">
+                            <div class="mx-auto grid w-full max-w-5xl gap-5 lg:grid-cols-[minmax(0,1fr),minmax(0,1fr)]">
+                                <div class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+                                    <img :src="productImage(activeModalProduct)" :alt="activeModalProduct.name" class="aspect-[4/3] h-full w-full object-cover sm:aspect-square" />
+                                </div>
+
+                                <div class="space-y-4">
+                                    <div class="space-y-1">
+                                        <h2 class="text-2xl font-bold tracking-tight text-slate-900">{{ activeModalProduct.name }}</h2>
+                                        <p class="text-xs text-slate-500">{{ activeModalProduct.sku || 'Sem SKU' }}</p>
+                                    </div>
+
+                                    <p v-if="activeModalProduct.description" class="text-sm leading-relaxed text-slate-600">{{ activeModalProduct.description }}</p>
+
+                                    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                        <p class="text-[11px] uppercase tracking-wide text-slate-500">Preço</p>
+                                        <p class="mt-1 text-2xl font-bold text-slate-900">{{ currency(activeModalProduct.sale_price) }}</p>
+                                        <p class="mt-2 text-xs font-semibold" :class="modalProductHasStock ? 'text-emerald-700' : 'text-rose-600'">
+                                            {{ modalProductHasStock ? `${activeModalProduct.stock_quantity} ${activeModalProduct.unit || 'un'} em estoque` : 'Indisponível no momento' }}
+                                        </p>
+                                    </div>
+
+                                    <div class="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+                                        <div class="inline-flex items-center rounded-xl border border-slate-200 bg-white">
+                                            <button type="button" class="inline-flex h-10 w-10 items-center justify-center text-slate-600 hover:bg-slate-50" @click="decrementModalProductQty"><Minus class="h-4 w-4" /></button>
+                                            <span class="min-w-[42px] text-center text-sm font-semibold text-slate-800">{{ productModalQuantity }}</span>
+                                            <button type="button" class="inline-flex h-10 w-10 items-center justify-center text-slate-600 hover:bg-slate-50" @click="incrementModalProductQty"><Plus class="h-4 w-4" /></button>
+                                        </div>
+
+                                        <div class="grid gap-2 sm:grid-cols-2">
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                                                style="background: var(--catalog-primary-strong)"
+                                                :disabled="!modalProductHasStock"
+                                                @click="addActiveModalProductToCart"
+                                            >
+                                                Adicionar ao carrinho
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                                :disabled="isFavoriteSyncing(activeModalProduct.id)"
+                                                @click="toggleFavorite(activeModalProduct.id)"
+                                            >
+                                                {{ isFavorite(activeModalProduct.id) ? 'Remover dos favoritos' : 'Adicionar aos favoritos' }}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="activeModalRelatedProducts.length" class="mx-auto mt-6 w-full max-w-5xl">
+                                <p class="mb-3 text-sm font-semibold text-slate-900">Produtos relacionados</p>
+                                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                                    <div
+                                        v-for="related in activeModalRelatedProducts"
+                                        :key="`related-modal-${related.id}`"
+                                        class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                                    >
+                                        <button type="button" class="w-full text-left" @click="openProductModal(related.id)">
+                                            <div class="aspect-square overflow-hidden bg-slate-100">
+                                                <img :src="productImage(related)" :alt="related.name" class="h-full w-full object-cover" />
+                                            </div>
+                                            <div class="space-y-1 p-3">
+                                                <p class="line-clamp-2 text-sm font-semibold text-slate-900">{{ related.name }}</p>
+                                                <p class="text-sm font-bold text-slate-900">{{ currency(related.sale_price) }}</p>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </transition>
+        <transition name="cart-overlay">
+            <div v-if="favoritesModalOpen" class="fixed inset-0 z-[60]">
+                <div class="absolute inset-0 bg-slate-900/45 backdrop-blur-[1px]" @click="closeFavoritesModal"></div>
+                <aside class="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl">
+                    <header class="flex items-center justify-between border-b border-slate-200 px-4 py-4">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-900">Favoritos</p>
+                            <p class="text-xs text-slate-500">{{ favoriteProducts.length }} item(ns)</p>
+                        </div>
+                        <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" @click="closeFavoritesModal">
+                            <X class="h-4 w-4" />
+                        </button>
+                    </header>
+
+                    <div class="flex-1 space-y-3 overflow-y-auto p-4">
+                        <div v-if="!favoriteProducts.length" class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                            Nenhum favorito salvo nesta loja.
+                        </div>
+                        <article v-for="product in favoriteProducts" :key="`fav-modal-${product.id}`" class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                            <div class="flex items-start gap-3">
+                                <button type="button" class="overflow-hidden rounded-xl border border-slate-200 bg-slate-100" @click="openProductModal(product.id)">
+                                    <img :src="productImage(product)" :alt="product.name" class="h-16 w-16 object-cover" />
+                                </button>
+                                <div class="min-w-0 flex-1">
+                                    <button type="button" class="truncate text-left text-sm font-semibold text-slate-900 hover:text-slate-700" @click="openProductModal(product.id)">
+                                        {{ product.name }}
+                                    </button>
+                                    <p class="mt-1 text-xs text-slate-500">{{ product.category_name || 'Produto' }}</p>
+                                    <p class="mt-2 text-sm font-bold text-slate-900">{{ currency(product.sale_price) }}</p>
+                                    <button
+                                        type="button"
+                                        class="mt-2 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                        @click="openProductModal(product.id)"
+                                    >
+                                        Ver produto
+                                    </button>
+                                </div>
+                                <button
+                                    type="button"
+                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="isFavoriteSyncing(product.id)"
+                                    @click="toggleFavorite(product.id)"
+                                >
+                                    <Heart class="h-3.5 w-3.5" />
+                                </button>
+                            </div>
+                        </article>
+                    </div>
+                    <footer class="space-y-3 border-t border-slate-200 p-4">
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Total de favoritos</span>
+                            <span class="text-base font-bold text-slate-900">{{ favoriteProducts.length }}</span>
+                        </div>
+                        <button
+                            type="button"
+                            class="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="closeFavoritesModal"
+                        >
+                            Continuar comprando
+                        </button>
+                    </footer>
+                </aside>
+            </div>
+        </transition>
+        <transition name="cart-overlay">
+            <div v-if="accountModalOpen" class="fixed inset-0 z-[72]">
+                <div class="absolute inset-0 bg-slate-900/45 backdrop-blur-[1px]" @click="closeAccountModal"></div>
+                <section class="absolute inset-0 flex flex-col bg-white">
+                    <header class="flex items-center justify-between border-b border-slate-200 px-4 py-4">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-900">Minha conta</p>
+                            <p class="text-xs text-slate-500">{{ shopCustomer?.name || 'Cliente' }}</p>
+                        </div>
+                        <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" @click="closeAccountModal">
+                            <X class="h-4 w-4" />
+                        </button>
+                    </header>
+
+                    <div class="flex-1 overflow-y-auto p-4 sm:p-6">
+                        <div class="mx-auto w-full max-w-5xl space-y-5">
+                            <div v-if="flashStatusMessage" class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                                {{ flashStatusMessage }}
+                            </div>
+
+                            <section v-if="!isShopAuthenticated" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700">
+                                Faça login para acessar os dados da sua conta.
+                                <a :href="loginUrl" class="ml-1 underline decoration-dotted underline-offset-2">Entrar agora</a>
+                            </section>
+
+                            <section v-else-if="requiresEmailVerification && !isShopEmailVerified" class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+                                Confirme seu e-mail para liberar a conta e finalizar pedidos.
+                                <a :href="verifyEmailUrl" class="ml-1 underline decoration-dotted underline-offset-2">Verificar e-mail</a>
+                            </section>
+
+                            <template v-else>
+                                <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                    <div class="mb-4 flex items-center justify-between gap-3">
+                                        <p class="text-sm font-semibold text-slate-900">Dados cadastrais</p>
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                            :disabled="logoutForm.processing"
+                                            @click="doShopLogout"
+                                        >
+                                            <LogOut class="h-3.5 w-3.5" />
+                                            Sair
+                                        </button>
+                                    </div>
+
+                                    <form class="grid gap-3 md:grid-cols-2" @submit.prevent="submitProfileUpdate">
+                                        <div class="md:col-span-2">
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone</label>
+                                            <input
+                                                :value="profileForm.phone"
+                                                type="text"
+                                                inputmode="numeric"
+                                                maxlength="15"
+                                                class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                                placeholder="(11) 99999-9999"
+                                                @input="onProfilePhoneInput"
+                                            >
+                                            <p v-if="profileForm.errors.phone" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.phone }}</p>
+                                        </div>
+
+                                        <div class="md:col-span-2">
+                                            <div class="flex flex-wrap items-end gap-2">
+                                                <div class="min-w-[180px] flex-1">
+                                                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">CEP</label>
+                                                    <input
+                                                        :value="profileForm.cep"
+                                                        type="text"
+                                                        inputmode="numeric"
+                                                        maxlength="9"
+                                                        class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                                        placeholder="00000-000"
+                                                        @input="onProfileCepInput"
+                                                        @blur="lookupProfileCep"
+                                                    >
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                                    :disabled="profileCepLookupLoading"
+                                                    @click="lookupProfileCep"
+                                                >
+                                                    {{ profileCepLookupLoading ? 'Consultando...' : 'Consultar CEP' }}
+                                                </button>
+                                            </div>
+                                            <p v-if="profileForm.errors.cep" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.cep }}</p>
+                                            <p v-if="profileCepLookupError" class="mt-2 text-xs font-semibold text-amber-700">{{ profileCepLookupError }}</p>
+                                        </div>
+
+                                        <div class="md:col-span-2">
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Logradouro</label>
+                                            <input v-model="profileForm.street" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Rua, avenida, etc">
+                                            <p v-if="profileForm.errors.street" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.street }}</p>
+                                        </div>
+
+                                        <div>
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Número</label>
+                                            <input v-model="profileForm.number" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="123">
+                                            <p v-if="profileForm.errors.number" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.number }}</p>
+                                        </div>
+
+                                        <div>
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Complemento</label>
+                                            <input v-model="profileForm.complement" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Apto, bloco, etc.">
+                                            <p v-if="profileForm.errors.complement" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.complement }}</p>
+                                        </div>
+
+                                        <div>
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Bairro</label>
+                                            <input v-model="profileForm.neighborhood" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Bairro">
+                                            <p v-if="profileForm.errors.neighborhood" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.neighborhood }}</p>
+                                        </div>
+
+                                        <div>
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cidade</label>
+                                            <input v-model="profileForm.city" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="Cidade">
+                                            <p v-if="profileForm.errors.city" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.city }}</p>
+                                        </div>
+
+                                        <div class="md:col-span-2">
+                                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">UF</label>
+                                            <select v-model="profileForm.state" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                                                <option v-for="option in stateOptions" :key="`state-shop-account-${option.value || 'empty'}`" :value="option.value">
+                                                    {{ option.label }}
+                                                </option>
+                                            </select>
+                                            <p v-if="profileForm.errors.state" class="mt-1 text-xs font-semibold text-rose-600">{{ profileForm.errors.state }}</p>
+                                        </div>
+
+                                        <div class="md:col-span-2">
+                                            <button
+                                                type="submit"
+                                                class="inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                                                style="background: var(--catalog-primary-strong)"
+                                                :disabled="profileForm.processing"
+                                            >
+                                                <Save class="h-4 w-4" />
+                                                {{ profileForm.processing ? 'Salvando...' : 'Salvar dados' }}
+                                            </button>
+                                        </div>
+                                    </form>
+                                </section>
+
+                                <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                    <div class="mb-4 flex items-center justify-between gap-3">
+                                        <div class="inline-flex items-center gap-2">
+                                            <Package class="h-4 w-4 text-slate-500" />
+                                            <p class="text-sm font-semibold text-slate-900">Meus pedidos</p>
+                                        </div>
+                                        <span class="text-xs font-semibold text-slate-500">{{ accountOrders.length }} pedido(s)</span>
+                                    </div>
+
+                                    <div v-if="accountOrders.length" class="space-y-3">
+                                        <article
+                                            v-for="order in accountOrders"
+                                            :key="`account-order-${order.id}`"
+                                            class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3"
+                                        >
+                                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                                <div>
+                                                    <p class="text-sm font-semibold text-slate-900">{{ order.code }}</p>
+                                                    <p class="text-xs text-slate-500">{{ order.created_at }}</p>
+                                                </div>
+                                                <span class="inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-semibold" :class="order.status?.tone || 'bg-slate-100 text-slate-700'">
+                                                    {{ order.status?.label || 'Pedido' }}
+                                                </span>
+                                            </div>
+                                            <div class="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-3">
+                                                <p>Total: <span class="font-semibold">{{ currency(order.total_amount) }}</span></p>
+                                                <p>Pagamento: <span class="font-semibold">{{ order.payment_label || 'Não informado' }}</span></p>
+                                                <p>Itens: <span class="font-semibold">{{ Array.isArray(order.items) ? order.items.length : 0 }}</span></p>
+                                            </div>
+                                        </article>
+                                    </div>
+                                    <div v-else class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                                        Você ainda não possui pedidos.
+                                    </div>
+                                </section>
+                            </template>
+                        </div>
+                    </div>
+                </section>
             </div>
         </transition>
         <transition name="cart-overlay">

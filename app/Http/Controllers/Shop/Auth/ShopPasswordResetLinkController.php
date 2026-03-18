@@ -5,36 +5,56 @@ namespace App\Http\Controllers\Shop\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Contractor;
 use App\Models\ShopCustomer;
+use App\Notifications\Shop\ResetShopCustomerPasswordNotification;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class ShopEmailVerificationPromptController extends Controller
+class ShopPasswordResetLinkController extends Controller
 {
-    public function __invoke(Request $request, string $slug): Response|RedirectResponse
+    public function create(string $slug): Response
     {
         $contractor = $this->resolveActiveContractorBySlug($slug);
-        /** @var ShopCustomer|null $customer */
-        $customer = $request->user('shop');
 
-        abort_unless($customer, 403);
-        abort_unless((int) $customer->contractor_id === (int) $contractor->id, 403);
+        return Inertia::render('Public/ShopAuthForgotPassword', [
+            'contractor' => $this->toContractorPayload($contractor),
+            'status' => session('status'),
+        ]);
+    }
 
-        if (! $contractor->requiresEmailVerification() || $customer->hasVerifiedEmail()) {
-            return redirect()->route('shop.show', [
-                'slug' => $contractor->slug,
-                'conta' => 1,
+    /**
+     * @throws ValidationException
+     */
+    public function store(Request $request, string $slug): RedirectResponse
+    {
+        $contractor = $this->resolveActiveContractorBySlug($slug);
+
+        $validated = $request->validate([
+            'email' => ['required', 'string', 'email', 'max:255'],
+        ]);
+
+        $email = strtolower(trim((string) $validated['email']));
+
+        $status = Password::broker('shop_customers')->sendResetLink(
+            [
+                'email' => $email,
+                'contractor_id' => $contractor->id,
+            ],
+            function (ShopCustomer $customer, string $token) use ($contractor): void {
+                $customer->notify(new ResetShopCustomerPasswordNotification($token, $contractor->slug));
+            }
+        );
+
+        if ($status === Password::RESET_THROTTLED) {
+            throw ValidationException::withMessages([
+                'email' => 'Aguarde alguns instantes antes de solicitar um novo link.',
             ]);
         }
 
-        return Inertia::render('Public/ShopVerifyEmail', [
-            'contractor' => $this->toContractorPayload($contractor),
-            'customer' => [
-                'name' => (string) $customer->name,
-                'email' => (string) $customer->email,
-            ],
-        ]);
+        return back()->with('status', 'Se o e-mail existir nesta loja, enviaremos um link de recuperação.');
     }
 
     private function resolveActiveContractorBySlug(string $slug): Contractor

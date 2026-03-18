@@ -1,18 +1,25 @@
-﻿<script setup>
-import Checkbox from '@/Components/Checkbox.vue';
+<script setup>
 import InputError from '@/Components/InputError.vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import { useBranding } from '@/branding';
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
     contractor: { type: Object, required: true },
+    email: {
+        type: String,
+        default: '',
+    },
+    token: {
+        type: String,
+        required: true,
+    },
+    status: {
+        type: String,
+        default: null,
+    },
 });
-
-const page = usePage();
-const flashStatus = computed(() => String(page.props?.flash?.status ?? '').trim());
-const showPassword = ref(false);
 
 const { normalizeHex, primaryColor, themeStyles, withAlpha } = useBranding();
 
@@ -30,9 +37,8 @@ const storeLogo = computed(() => (storeLogoLoadFailed.value ? null : rawStoreLog
 const storePrimaryColor = computed(() => normalizeHex(props.contractor?.primary_color || '', primaryColor.value));
 const currentYear = new Date().getFullYear();
 
+const resetUrl = computed(() => `/shop/${storeSlug.value}/redefinir-senha`);
 const loginUrl = computed(() => `/shop/${storeSlug.value}/entrar`);
-const registerUrl = computed(() => `/shop/${storeSlug.value}/cadastro`);
-const forgotPasswordUrl = computed(() => `/shop/${storeSlug.value}/esqueci-senha`);
 const shopUrl = computed(() => `/shop/${storeSlug.value}`);
 
 const pageStyles = computed(() => {
@@ -57,9 +63,10 @@ const storeInitials = computed(() => {
 });
 
 const form = useForm({
-    email: '',
+    token: props.token,
+    email: props.email,
     password: '',
-    remember: true,
+    password_confirmation: '',
 });
 
 watch(
@@ -74,16 +81,16 @@ const handleStoreLogoError = () => {
 };
 
 const submit = () => {
-    form.post(loginUrl.value, {
+    form.post(resetUrl.value, {
         preserveScroll: true,
-        onFinish: () => form.reset('password'),
+        onFinish: () => form.reset('password', 'password_confirmation'),
     });
 };
 </script>
 
 <template>
     <GuestLayout :show-aside="false">
-        <Head :title="`Entrar | ${storeName}`" />
+        <Head :title="`Redefinir senha | ${storeName}`" />
 
         <template #brand>
             <Link :href="shopUrl" class="d-inline-flex align-items-center gap-3 text-decoration-none">
@@ -100,79 +107,67 @@ const submit = () => {
                 <span class="d-block fs-5 fw-bold text-primary ls-1">{{ storeName }}</span>
             </Link>
         </template>
+
         <template #footer>
             &copy; {{ currentYear }} {{ storeName }}. Todos os direitos reservados.
         </template>
 
         <div class="shop-auth-theme" :style="pageStyles">
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-                <span class="veshop-login-pill">Acesso da loja virtual</span>
-                <Link :href="shopUrl" class="veshop-login-link">Voltar para a loja</Link>
+                <span class="veshop-login-pill">Nova senha</span>
+                <Link :href="loginUrl" class="veshop-login-link">Voltar para login</Link>
             </div>
 
-            <h1 class="veshop-login-title">Entrar em {{ storeName }}</h1>
+            <h1 class="veshop-login-title">Redefinir senha</h1>
             <p class="veshop-login-subtitle">
-                Acesse sua conta para acompanhar pedidos, favoritos e finalizar compras com rapidez.
+                Digite seu e-mail e a nova senha para acessar sua conta novamente.
             </p>
 
-            <div v-if="flashStatus" class="alert alert-success mt-3 mb-0 py-2" role="alert">
-                {{ flashStatus }}
+            <div v-if="props.status" class="alert alert-success mt-3 mb-0 py-2" role="alert">
+                {{ props.status }}
             </div>
 
             <form class="mt-3" @submit.prevent="submit">
                 <div class="mb-2">
-                    <label for="shop-login-email" class="veshop-login-label">E-mail</label>
-                    <div class="position-relative">
-                        <input
-                            id="shop-login-email"
-                            v-model="form.email"
-                            type="email"
-                            autocomplete="username"
-                            required
-                            autofocus
-                            class="form-control veshop-login-input pe-5"
-                            placeholder="voce@exemplo.com"
-                        />
-                        <span class="veshop-login-input-icon" aria-hidden="true">
-                            <i class="ri-mail-line"></i>
-                        </span>
-                    </div>
+                    <label for="shop-reset-email" class="veshop-login-label">E-mail</label>
+                    <input
+                        id="shop-reset-email"
+                        v-model="form.email"
+                        type="email"
+                        autocomplete="email"
+                        required
+                        class="form-control veshop-login-input"
+                        placeholder="voce@exemplo.com"
+                    />
                     <InputError :message="form.errors.email" class="mt-1" />
                 </div>
 
                 <div class="mb-2">
-                    <label for="shop-login-password" class="veshop-login-label mb-0">Senha</label>
-
-                    <div class="position-relative mt-1">
-                        <input
-                            id="shop-login-password"
-                            v-model="form.password"
-                            :type="showPassword ? 'text' : 'password'"
-                            autocomplete="current-password"
-                            required
-                            class="form-control veshop-login-input pe-5"
-                            placeholder="Sua senha"
-                        />
-
-                        <button type="button" class="veshop-login-toggle" @click="showPassword = !showPassword">
-                            {{ showPassword ? 'Ocultar' : 'Mostrar' }}
-                        </button>
-                    </div>
+                    <label for="shop-reset-password" class="veshop-login-label">Nova senha</label>
+                    <input
+                        id="shop-reset-password"
+                        v-model="form.password"
+                        type="password"
+                        autocomplete="new-password"
+                        required
+                        class="form-control veshop-login-input"
+                        placeholder="Digite a nova senha"
+                    />
                     <InputError :message="form.errors.password" class="mt-1" />
                 </div>
 
-                <div class="d-flex align-items-center justify-content-between gap-3 mt-2">
-                    <label class="d-inline-flex align-items-center gap-2 text-muted small">
-                        <Checkbox
-                            v-model:checked="form.remember"
-                            name="remember"
-                            class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500"
-                        />
-                        Manter conectado
-                    </label>
-                    <Link :href="forgotPasswordUrl" class="veshop-login-link">
-                        Esqueci a senha
-                    </Link>
+                <div class="mb-2">
+                    <label for="shop-reset-password-confirmation" class="veshop-login-label">Confirmar nova senha</label>
+                    <input
+                        id="shop-reset-password-confirmation"
+                        v-model="form.password_confirmation"
+                        type="password"
+                        autocomplete="new-password"
+                        required
+                        class="form-control veshop-login-input"
+                        placeholder="Repita a nova senha"
+                    />
+                    <InputError :message="form.errors.password_confirmation" class="mt-1" />
                 </div>
 
                 <button
@@ -182,14 +177,9 @@ const submit = () => {
                     :disabled="form.processing"
                 >
                     <span v-if="form.processing" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
-                    {{ form.processing ? 'Entrando...' : 'Entrar no painel' }}
+                    {{ form.processing ? 'Salvando...' : 'Salvar nova senha' }}
                 </button>
             </form>
-
-            <p class="veshop-login-note mt-3 mb-0">
-                Ainda não tem conta?
-                <Link :href="registerUrl" class="veshop-login-link">Criar cadastro</Link>
-            </p>
         </div>
     </GuestLayout>
 </template>
@@ -212,4 +202,3 @@ const submit = () => {
     color: #ffffff;
 }
 </style>
-

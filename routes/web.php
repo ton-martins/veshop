@@ -8,6 +8,8 @@ use App\Http\Controllers\PublicShopController;
 use App\Http\Controllers\Shop\Auth\ShopAuthenticatedSessionController;
 use App\Http\Controllers\Shop\Auth\ShopEmailVerificationNotificationController;
 use App\Http\Controllers\Shop\Auth\ShopEmailVerificationPromptController;
+use App\Http\Controllers\Shop\Auth\ShopNewPasswordController;
+use App\Http\Controllers\Shop\Auth\ShopPasswordResetLinkController;
 use App\Http\Controllers\Shop\Auth\ShopRegisteredCustomerController;
 use App\Http\Controllers\Shop\Auth\ShopVerifyEmailController;
 use App\Http\Controllers\Shop\ShopAccountController;
@@ -119,6 +121,15 @@ Route::get('/shop/{slug}/cadastro', [ShopRegisteredCustomerController::class, 'c
     ->name('shop.auth.register');
 Route::post('/shop/{slug}/cadastro', [ShopRegisteredCustomerController::class, 'store'])
     ->name('shop.auth.register.store');
+Route::get('/shop/{slug}/esqueci-senha', [ShopPasswordResetLinkController::class, 'create'])
+    ->name('shop.password.request');
+Route::post('/shop/{slug}/esqueci-senha', [ShopPasswordResetLinkController::class, 'store'])
+    ->middleware('throttle:6,1')
+    ->name('shop.password.email');
+Route::get('/shop/{slug}/redefinir-senha/{token}', [ShopNewPasswordController::class, 'create'])
+    ->name('shop.password.reset');
+Route::post('/shop/{slug}/redefinir-senha', [ShopNewPasswordController::class, 'store'])
+    ->name('shop.password.update');
 
 Route::middleware(['shop.auth', 'shop.contractor'])->group(function () {
     Route::post('/shop/{slug}/favoritos/{product}', [ShopFavoriteController::class, 'store'])

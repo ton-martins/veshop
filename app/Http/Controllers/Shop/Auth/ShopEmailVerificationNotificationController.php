@@ -26,7 +26,10 @@ class ShopEmailVerificationNotificationController extends Controller
         abort_unless((int) $customer->contractor_id === (int) $contractor->id, 403);
 
         if (! $contractor->requiresEmailVerification() || $customer->hasVerifiedEmail()) {
-            return redirect()->route('shop.account', ['slug' => $contractor->slug]);
+            return redirect()->route('shop.show', [
+                'slug' => $contractor->slug,
+                'conta' => 1,
+            ]);
         }
 
         $dispatchResult = $this->verificationNotificationService->dispatch(

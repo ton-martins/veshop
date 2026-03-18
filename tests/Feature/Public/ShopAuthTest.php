@@ -4,10 +4,13 @@ namespace Tests\Feature\Public;
 
 use App\Models\Contractor;
 use App\Models\ShopCustomer;
+use App\Notifications\Shop\ResetShopCustomerPasswordNotification;
 use App\Notifications\Shop\VerifyShopCustomerEmailNotification;
 use App\Services\ShopVerificationNotificationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Mockery;
@@ -83,7 +86,10 @@ class ShopAuthTest extends TestCase
             'password_confirmation' => 'Password@123',
         ]);
 
-        $response->assertRedirect(route('shop.account', ['slug' => $contractor->slug]));
+        $response->assertRedirect(route('shop.show', [
+            'slug' => $contractor->slug,
+            'conta' => 1,
+        ]));
 
         $customer = ShopCustomer::query()
             ->where('contractor_id', $contractor->id)
@@ -166,7 +172,10 @@ class ShopAuthTest extends TestCase
 
         $response = $this->get($signedUrl);
 
-        $response->assertRedirect(route('shop.account', ['slug' => $contractor->slug]));
+        $response->assertRedirect(route('shop.show', [
+            'slug' => $contractor->slug,
+            'conta' => 1,
+        ]));
         $this->assertNotNull($customer->fresh()->email_verified_at);
         $this->assertAuthenticatedAs($customer->fresh(), 'shop');
     }
@@ -250,6 +259,88 @@ class ShopAuthTest extends TestCase
 
         $response->assertRedirect(route('shop.verification.notice', ['slug' => $contractor->slug]));
         $response->assertSessionHas('status', 'Nao foi possivel enviar o e-mail agora. Tente novamente em instantes.');
+    }
+
+    public function test_customer_can_request_password_reset_link_for_store(): void
+    {
+        $contractor = $this->createContractor('loja-reset-link');
+        $customer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Reset',
+            'email' => 'cliente-reset@example.com',
+            'password' => 'Password@123',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        Notification::fake();
+
+        $response = $this->post(route('shop.password.email', ['slug' => $contractor->slug]), [
+            'email' => $customer->email,
+        ]);
+
+        $response->assertSessionHas('status', 'Se o e-mail existir nesta loja, enviaremos um link de recuperação.');
+        Notification::assertSentTo($customer, ResetShopCustomerPasswordNotification::class);
+    }
+
+    public function test_password_reset_link_is_scoped_by_contractor(): void
+    {
+        $contractorA = $this->createContractor('loja-reset-a');
+        $contractorB = $this->createContractor('loja-reset-b');
+
+        $customerA = ShopCustomer::query()->create([
+            'contractor_id' => $contractorA->id,
+            'name' => 'Cliente A',
+            'email' => 'cliente-reset-multi@example.com',
+            'password' => 'Password@123',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $customerB = ShopCustomer::query()->create([
+            'contractor_id' => $contractorB->id,
+            'name' => 'Cliente B',
+            'email' => 'cliente-reset-multi@example.com',
+            'password' => 'Password@123',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        Notification::fake();
+
+        $this->post(route('shop.password.email', ['slug' => $contractorB->slug]), [
+            'email' => 'cliente-reset-multi@example.com',
+        ])->assertSessionHas('status', 'Se o e-mail existir nesta loja, enviaremos um link de recuperação.');
+
+        Notification::assertNotSentTo($customerA, ResetShopCustomerPasswordNotification::class);
+        Notification::assertSentTo($customerB, ResetShopCustomerPasswordNotification::class);
+    }
+
+    public function test_customer_can_reset_password_with_valid_token(): void
+    {
+        $contractor = $this->createContractor('loja-reset-password');
+
+        $customer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Reset Token',
+            'email' => 'cliente-reset-token@example.com',
+            'password' => 'Password@123',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $token = Password::broker('shop_customers')->createToken($customer);
+
+        $response = $this->post(route('shop.password.update', ['slug' => $contractor->slug]), [
+            'token' => $token,
+            'email' => $customer->email,
+            'password' => 'NovaSenha@123',
+            'password_confirmation' => 'NovaSenha@123',
+        ]);
+
+        $response->assertRedirect(route('shop.auth.login', ['slug' => $contractor->slug]));
+        $response->assertSessionHas('status', 'Senha redefinida com sucesso. Faça login para continuar.');
+        $this->assertTrue(Hash::check('NovaSenha@123', (string) $customer->fresh()->password));
     }
 
     private function createContractor(string $slug, bool $requireEmailVerification = true): Contractor

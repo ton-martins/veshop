@@ -27,7 +27,15 @@ const accountOrLoginUrl = computed(() => {
 
     return accountUrl.value;
 });
-const storeLogo = computed(() => props.contractor?.avatar_url || props.contractor?.logo_url || null);
+const normalizeBrandAsset = (value) => {
+    const safe = String(value ?? '').trim();
+    return safe !== '' ? safe : null;
+};
+const storeLogoLoadFailed = ref(false);
+const rawStoreLogo = computed(() =>
+    normalizeBrandAsset(props.contractor?.avatar_url) || normalizeBrandAsset(props.contractor?.logo_url),
+);
+const storeLogo = computed(() => (storeLogoLoadFailed.value ? null : rawStoreLogo.value));
 const storePrimaryColor = computed(() => normalizeHex(props.contractor?.primary_color || '', primaryColor.value));
 const storeInitials = computed(() => {
     const safe = String(storeName.value || '').trim();
@@ -97,6 +105,17 @@ const favoritesStorageKey = computed(() => `veshop:shop-favorites:${storeSlug.va
 const favoriteProductIds = ref([]);
 const favoriteProductIdSet = computed(() => new Set(favoriteProductIds.value));
 const favoriteSyncingIds = ref([]);
+
+watch(
+    () => [props.contractor?.avatar_url, props.contractor?.logo_url],
+    () => {
+        storeLogoLoadFailed.value = false;
+    },
+);
+
+const handleStoreLogoError = () => {
+    storeLogoLoadFailed.value = true;
+};
 
 const normalizeFavoriteIds = (values) => {
     if (!Array.isArray(values)) return [];
@@ -324,7 +343,13 @@ const hasStock = computed(() => Number(props.product?.stock_quantity || 0) > 0);
                         <Menu class="h-4 w-4" />
                     </button>
                     <div class="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-slate-100" :style="storeIconStyle">
-                        <img v-if="storeLogo" :src="storeLogo" :alt="storeName" class="h-full w-full object-cover" />
+                        <img
+                            v-if="storeLogo"
+                            :src="storeLogo"
+                            :alt="storeName"
+                            class="h-full w-full object-cover"
+                            @error="handleStoreLogoError"
+                        />
                         <span v-else class="text-xs font-semibold">{{ storeInitials }}</span>
                     </div>
                     <div class="min-w-0">
