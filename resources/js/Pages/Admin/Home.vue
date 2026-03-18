@@ -144,7 +144,7 @@ const serviceStats = computed(() => {
     if (canViewServiceCatalog.value) {
         cards.push({
             key: 'catalog',
-            label: 'ServiÃ§os ativos',
+            label: 'Serviços ativos',
             value: String(stats.active_services ?? 0),
             icon: Briefcase,
             tone: 'bg-slate-100 text-slate-700',
@@ -154,7 +154,7 @@ const serviceStats = computed(() => {
     if (hasAnyModule(['service_orders', 'finance'])) {
         cards.push({
             key: 'revenue',
-            label: 'Receita de serviÃ§os',
+            label: 'Receita de serviços',
             value: asCurrency(stats.revenue ?? 0),
             icon: CircleDollarSign,
             tone: 'bg-emerald-100 text-emerald-700',
@@ -168,9 +168,9 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
 </script>
 
 <template>
-    <Head title="VisÃ£o Geral" />
+    <Head title="Visão Geral" />
 
-    <AuthenticatedLayout area="admin" header-variant="compact" header-title="VisÃ£o Geral" :show-table-view-toggle="false">
+    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Visão Geral" :show-table-view-toggle="false">
         <section class="space-y-4" :style="overviewUiStyles">
             <template v-if="dashboardProfile === 'commercial'">
                 <CatalogBanner
@@ -212,7 +212,7 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
                     v-else
                     class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
                 >
-                    Nenhum mÃ³dulo comercial habilitado para este contratante.
+                    Nenhum módulo comercial habilitado para este contratante.
                 </div>
             </template>
 
@@ -235,12 +235,12 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
                     v-else
                     class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
                 >
-                    Nenhum mÃ³dulo de serviÃ§os habilitado para este contratante.
+                    Nenhum módulo de serviços habilitado para este contratante.
                 </div>
 
                 <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                     <div class="flex flex-wrap items-center justify-between gap-3">
-                        <h2 class="text-sm font-semibold text-slate-900">Fila de ordens de serviÃ§o</h2>
+                        <h2 class="text-sm font-semibold text-slate-900">Fila de ordens de serviço</h2>
                         <div class="flex items-center gap-2">
                             <Link
                                 v-if="canViewServiceOrders"
@@ -267,7 +267,7 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
                         v-if="!canViewServiceOrders"
                         class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
                     >
-                        O mÃ³dulo de ordens de serviÃ§o nÃ£o estÃ¡ habilitado para este contratante.
+                        O módulo de ordens de serviço não está habilitado para este contratante.
                     </div>
 
                     <div v-else-if="serviceQueue.length" class="mt-4 overflow-hidden rounded-xl border border-slate-200">
@@ -276,7 +276,7 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
                                 <tr>
                                     <th class="px-4 py-3">OS</th>
                                     <th class="px-4 py-3">Cliente</th>
-                                    <th class="px-4 py-3">ServiÃ§o</th>
+                                    <th class="px-4 py-3">Serviço</th>
                                     <th class="px-4 py-3">Status</th>
                                 </tr>
                             </thead>
@@ -288,7 +288,7 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
                                     <td class="px-4 py-3">
                                         <span
                                             class="rounded-full px-2 py-1 text-[11px] font-semibold"
-                                            :class="item.status === 'Em execuÃ§Ã£o'
+                                            :class="item.status === 'Em execução'
                                                 ? 'bg-blue-100 text-blue-700'
                                                 : item.status === 'Triagem'
                                                     ? 'bg-amber-100 text-amber-700'
@@ -306,7 +306,7 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
                         v-else
                         class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
                     >
-                        Nenhuma ordem de serviÃ§o registrada.
+                        Nenhuma ordem de serviço registrada.
                     </div>
                 </section>
             </template>

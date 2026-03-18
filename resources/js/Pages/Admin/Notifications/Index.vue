@@ -1,16 +1,29 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import { Bell, CheckCheck, Check } from 'lucide-vue-next';
 
 const props = defineProps({
-    notifications: { type: Array, default: () => [] },
+    notifications: {
+        type: Object,
+        default: () => ({
+            data: [],
+            links: [],
+        }),
+    },
     unread_count: { type: Number, default: 0 },
 });
 
 const page = usePage();
 const area = computed(() => (page.props.auth?.user?.role === 'master' ? 'master' : 'admin'));
+const notificationItems = computed(() => (
+    Array.isArray(props.notifications?.data) ? props.notifications.data : []
+));
+const paginationLinks = computed(() => (
+    Array.isArray(props.notifications?.links) ? props.notifications.links : []
+));
 
 const markReadForm = useForm({ id: '' });
 
@@ -57,9 +70,9 @@ const markOneAsRead = (id) => {
                 </div>
             </article>
 
-            <div v-if="notifications.length" class="space-y-3">
+            <div v-if="notificationItems.length" class="space-y-3">
                 <article
-                    v-for="item in notifications"
+                    v-for="item in notificationItems"
                     :key="item.id"
                     class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
                     :class="!item.read_at ? 'ring-1 ring-blue-100' : ''"
@@ -98,6 +111,9 @@ const markOneAsRead = (id) => {
 
             <div v-else class="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-12 text-center text-sm text-slate-500">
                 Você ainda não possui notificações.
+            </div>
+            <div v-if="paginationLinks.length" class="pt-1">
+                <PaginationLinks :links="paginationLinks" :min-links="4" />
             </div>
         </section>
     </AuthenticatedLayout>

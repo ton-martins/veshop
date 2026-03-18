@@ -16,9 +16,9 @@ class NotificationController extends Controller
 
         $notifications = $user->notifications()
             ->latest('created_at')
-            ->limit(120)
-            ->get()
-            ->map(static function ($notification): array {
+            ->paginate(20)
+            ->withQueryString()
+            ->through(static function ($notification): array {
                 $data = is_array($notification->data) ? $notification->data : [];
 
                 return [
@@ -29,9 +29,7 @@ class NotificationController extends Controller
                     'read_at' => optional($notification->read_at)?->toIso8601String(),
                     'created_at' => optional($notification->created_at)?->format('d/m/Y H:i'),
                 ];
-            })
-            ->values()
-            ->all();
+            });
 
         return Inertia::render('Admin/Notifications/Index', [
             'notifications' => $notifications,
@@ -65,3 +63,4 @@ class NotificationController extends Controller
         return back()->with('status', 'Notificações marcadas como lidas.');
     }
 }
+

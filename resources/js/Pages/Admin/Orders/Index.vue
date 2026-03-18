@@ -1,25 +1,32 @@
 ﻿<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
+import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import Modal from '@/Components/Modal.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import OrderDetailsModal from '@/Components/App/Orders/OrderDetailsModal.vue';
 import { useBranding } from '@/branding';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { Head, useForm, usePage, router } from '@inertiajs/vue3';
 import { ShoppingBag, Search, CheckCircle2, XCircle, Ban, Wallet, ListFilter } from 'lucide-vue-next';
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 const props = defineProps({
-    orders: { type: Array, default: () => [] },
+    orders: {
+        type: Object,
+        default: () => ({
+            data: [],
+            links: [],
+        }),
+    },
     orderStats: { type: Object, default: () => ({}) },
     pipeline: { type: Array, default: () => [] },
     statusOptions: { type: Array, default: () => [] },
-    filters: { type: Object, default: () => ({ search: '', status: '' }) },
+    filters: { type: Object, default: () => ({ search: '', status: '', pipeline: 'all' }) },
 });
 
 const orderSearch = ref(String(props.filters?.search ?? ''));
 const selectedStatus = ref(String(props.filters?.status ?? ''));
-const selectedPipelineKey = ref('all');
+const selectedPipelineKey = ref(String(props.filters?.pipeline ?? 'all'));
 const orderDetailsModalOpen = ref(false);
 const orderDetails = ref(null);
 const actionConfirmModalOpen = ref(false);
@@ -40,20 +47,24 @@ const ordersUiStyles = computed(() => ({
     '--orders-pipeline-active-border': withAlpha(tabAccentColor.value, 0.28),
 }));
 
-const pipelineStatusMap = {
-    all: [],
-    pending_confirmation: ['pending_confirmation', 'new'],
-    awaiting_payment: ['awaiting_payment', 'confirmed'],
-    paid: ['paid'],
-    cancelled: ['cancelled', 'rejected'],
-};
-
 const pipelineIconMap = {
     pending_confirmation: ShoppingBag,
     awaiting_payment: Wallet,
     paid: CheckCircle2,
     cancelled: XCircle,
 };
+
+const ordersData = computed(() => (
+    Array.isArray(props.orders?.data)
+        ? props.orders.data
+        : []
+));
+
+const paginationLinks = computed(() => (
+    Array.isArray(props.orders?.links)
+        ? props.orders.links
+        : []
+));
 
 const pipelineTabs = computed(() => {
     const baseTabs = (props.pipeline ?? []).map((item) => ({
@@ -67,7 +78,7 @@ const pipelineTabs = computed(() => {
         {
             key: 'all',
             label: 'Todos',
-            qty: Number(props.orders?.length ?? 0),
+            qty: Number(props.orderStats?.all ?? 0),
             icon: ListFilter,
         },
         ...baseTabs,
@@ -76,31 +87,73 @@ const pipelineTabs = computed(() => {
 
 const asCurrency = (value) => Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-const filteredOrders = computed(() => {
-    const query = String(orderSearch.value ?? '').trim().toLowerCase();
-    const status = String(selectedStatus.value ?? '').trim();
-    const pipelineKey = String(selectedPipelineKey.value ?? 'all').trim();
-    const pipelineStatuses = pipelineStatusMap[pipelineKey] ?? [];
+const filteredOrders = computed(() => ordersData.value);
+let filterDebounceTimer = null;
 
-    return (props.orders ?? []).filter((order) => {
-        const orderStatusValue = String(order?.status?.value ?? '').trim();
+const normalizePipeline = (value) => {
+    const safe = String(value ?? '').trim();
+    return ['pending_confirmation', 'awaiting_payment', 'paid', 'cancelled'].includes(safe)
+        ? safe
+        : 'all';
+};
 
-        if (pipelineStatuses.length && !pipelineStatuses.includes(orderStatusValue)) {
-            return false;
+const submitFilters = () => {
+    router.get(
+        route('admin.orders.index'),
+        {
+            search: String(orderSearch.value ?? '').trim() || undefined,
+            status: String(selectedStatus.value ?? '').trim() || undefined,
+            pipeline: normalizePipeline(selectedPipelineKey.value) !== 'all'
+                ? normalizePipeline(selectedPipelineKey.value)
+                : undefined,
+        },
+        {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+            only: ['orders', 'orderStats', 'pipeline', 'filters'],
+        },
+    );
+};
+
+const scheduleSubmitFilters = () => {
+    if (filterDebounceTimer) {
+        clearTimeout(filterDebounceTimer);
+    }
+
+    filterDebounceTimer = setTimeout(() => {
+        submitFilters();
+    }, 280);
+};
+
+watch([orderSearch, selectedStatus, selectedPipelineKey], () => {
+    scheduleSubmitFilters();
+});
+
+watch(
+    () => props.filters,
+    (filters) => {
+        const nextSearch = String(filters?.search ?? '');
+        const nextStatus = String(filters?.status ?? '');
+        const nextPipeline = normalizePipeline(filters?.pipeline ?? 'all');
+
+        if (orderSearch.value !== nextSearch) {
+            orderSearch.value = nextSearch;
         }
-
-        if (status && orderStatusValue !== status) {
-            return false;
+        if (selectedStatus.value !== nextStatus) {
+            selectedStatus.value = nextStatus;
         }
+        if (selectedPipelineKey.value !== nextPipeline) {
+            selectedPipelineKey.value = nextPipeline;
+        }
+    },
+);
 
-        if (!query) return true;
-
-        const code = String(order?.code ?? '').toLowerCase();
-        const customer = String(order?.customer ?? '').toLowerCase();
-        const contact = String(order?.customer_contact ?? '').toLowerCase();
-
-        return code.includes(query) || customer.includes(query) || contact.includes(query);
-    });
+onBeforeUnmount(() => {
+    if (filterDebounceTimer) {
+        clearTimeout(filterDebounceTimer);
+        filterDebounceTimer = null;
+    }
 });
 
 const clearSearch = () => {
@@ -439,6 +492,10 @@ const handleOrderDetailsAction = (payload) => {
 
                     <div v-if="!filteredOrders.length" class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
                         Nenhum pedido registrado para este contratante.
+                    </div>
+
+                    <div v-if="paginationLinks.length" class="pt-2">
+                        <PaginationLinks :links="paginationLinks" :min-links="4" />
                     </div>
                 </div>
             </section>

@@ -30,6 +30,7 @@ class OrderController extends Controller
 
         $search = trim((string) $request->string('search')->toString());
         $status = trim((string) $request->string('status')->toString());
+        $pipelineFilter = trim((string) $request->string('pipeline')->toString());
 
         $baseQuery = Sale::query()
             ->where('contractor_id', $contractor->id)
@@ -61,14 +62,18 @@ class OrderController extends Controller
             $ordersQuery->where('status', $status);
         }
 
+        $pipelineStatuses = $this->resolvePipelineStatuses($pipelineFilter);
+        if ($pipelineStatuses !== []) {
+            $ordersQuery->whereIn('status', $pipelineStatuses);
+        }
+
         $orders = $ordersQuery
-            ->limit(120)
-            ->get()
-            ->map(fn (Sale $sale): array => $this->toOrderPayload($sale))
-            ->values()
-            ->all();
+            ->paginate(20)
+            ->withQueryString()
+            ->through(fn (Sale $sale): array => $this->toOrderPayload($sale));
 
         $totals = [
+            'all' => (clone $baseQuery)->count(),
             'pending_confirmation' => (clone $baseQuery)
                 ->whereIn('status', [Sale::STATUS_NEW, Sale::STATUS_PENDING_CONFIRMATION])
                 ->count(),
@@ -99,6 +104,9 @@ class OrderController extends Controller
             'filters' => [
                 'search' => $search,
                 'status' => $status,
+                'pipeline' => in_array($pipelineFilter, ['pending_confirmation', 'awaiting_payment', 'paid', 'cancelled'], true)
+                    ? $pipelineFilter
+                    : 'all',
             ],
         ]);
     }
@@ -483,6 +491,20 @@ class OrderController extends Controller
             ['value' => Sale::STATUS_REJECTED, 'label' => 'Rejeitado'],
             ['value' => Sale::STATUS_CANCELLED, 'label' => 'Cancelado'],
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function resolvePipelineStatuses(string $pipeline): array
+    {
+        return match ($pipeline) {
+            'pending_confirmation' => [Sale::STATUS_PENDING_CONFIRMATION, Sale::STATUS_NEW],
+            'awaiting_payment' => [Sale::STATUS_AWAITING_PAYMENT, Sale::STATUS_CONFIRMED],
+            'paid' => [Sale::STATUS_PAID],
+            'cancelled' => [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED],
+            default => [],
+        };
     }
 
     /**
