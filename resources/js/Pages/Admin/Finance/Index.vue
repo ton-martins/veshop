@@ -806,6 +806,75 @@ const removeEntry = () => {
         onSuccess: closeDeleteEntry,
     });
 };
+
+const filePreview = ref({
+    open: false,
+    file: null,
+});
+
+const pdfZoom = ref('page-fit');
+const previewPaneClasses = 'h-full w-full rounded-xl border border-slate-200 bg-white';
+
+const openFilePreview = (file) => {
+    const publicUrl = String(file?.public_url ?? '').trim();
+    if (publicUrl === '') return;
+
+    filePreview.value = {
+        open: true,
+        file: {
+            original_name: String(file?.original_name ?? file?.name ?? 'Documento'),
+            public_url: publicUrl,
+            mime_type: String(file?.mime_type ?? ''),
+        },
+    };
+
+    pdfZoom.value = 'page-fit';
+};
+
+const closeFilePreview = () => {
+    filePreview.value = {
+        open: false,
+        file: null,
+    };
+};
+
+const previewKind = (file) => {
+    const mimeType = String(file?.mime_type ?? '').toLowerCase();
+    const originalName = String(file?.original_name ?? '').toLowerCase();
+    const publicUrl = String(file?.public_url ?? '').toLowerCase();
+    const target = `${originalName} ${publicUrl}`;
+
+    if (mimeType.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i.test(target)) {
+        return 'image';
+    }
+
+    if (mimeType.includes('pdf') || /\.pdf(\?|#|$)/i.test(target)) {
+        return 'pdf';
+    }
+
+    return 'other';
+};
+
+const setPdfZoom = (zoom) => {
+    if (!['page-fit', 'page-width', '125', '200'].includes(String(zoom))) return;
+    pdfZoom.value = String(zoom);
+};
+
+const pdfSrcFor = (file) => {
+    const src = String(file?.public_url ?? '').trim();
+    if (src === '') return '';
+
+    const fragment = {
+        'page-fit': 'view=Fit',
+        'page-width': 'view=FitH',
+        '125': 'zoom=125',
+        '200': 'zoom=200',
+    }[pdfZoom.value] || 'view=Fit';
+
+    return `${src}#${fragment}`;
+};
+
+const pdfIframeKey = (file) => `${String(file?.public_url ?? '')}-${pdfZoom.value}`;
 </script>
 
 <template>
@@ -1126,7 +1195,23 @@ const removeEntry = () => {
                             <tbody v-if="activeRows.length" class="divide-y divide-slate-100 bg-white">
                                 <tr v-for="item in activeRows" :key="item.id">
                                     <td class="px-4 py-3 font-semibold text-slate-900">{{ item.primary }}</td>
-                                    <td class="px-4 py-3 text-slate-600">{{ item.reference || '-' }}</td>
+                                    <td class="px-4 py-3 text-slate-600">
+                                        <div class="flex flex-col items-start gap-1">
+                                            <span>{{ item.reference || '-' }}</span>
+                                            <button
+                                                v-if="item.document_url"
+                                                type="button"
+                                                class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                                                @click="openFilePreview({
+                                                    original_name: item.document_name || 'Documento',
+                                                    public_url: item.document_url,
+                                                })"
+                                            >
+                                                <FileText class="h-3.5 w-3.5" />
+                                                {{ item.document_name || 'Documento' }}
+                                            </button>
+                                        </div>
+                                    </td>
                                     <td class="px-4 py-3 text-slate-600">{{ item.due }}</td>
                                     <td class="px-4 py-3 font-semibold text-slate-800">{{ item.value }}</td>
                                     <td class="px-4 py-3">
@@ -1186,16 +1271,18 @@ const removeEntry = () => {
                                 <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 font-semibold">
                                     {{ item.value }}
                                 </div>
-                                <a
+                                <button
                                     v-if="item.document_url"
-                                    :href="item.document_url"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                    type="button"
                                     class="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                    @click="openFilePreview({
+                                        original_name: item.document_name || 'Documento',
+                                        public_url: item.document_url,
+                                    })"
                                 >
                                     <FileText class="h-3.5 w-3.5" />
                                     {{ item.document_name || 'Documento' }}
-                                </a>
+                                </button>
                             </div>
 
                             <div class="mt-3 flex items-center justify-end gap-2">
@@ -1358,15 +1445,17 @@ const removeEntry = () => {
                         <p v-if="entryForm.errors.document" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.document }}</p>
 
                         <div v-if="isEditingEntry && editingEntry?.document_url" class="mt-2 flex flex-wrap items-center gap-2">
-                            <a
-                                :href="editingEntry.document_url"
-                                target="_blank"
-                                rel="noopener noreferrer"
+                            <button
+                                type="button"
                                 class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                @click="openFilePreview({
+                                    original_name: editingEntry.document_name || 'Documento atual',
+                                    public_url: editingEntry.document_url,
+                                })"
                             >
                                 <FileText class="h-3.5 w-3.5" />
                                 {{ editingEntry.document_name || 'Documento atual' }}
-                            </a>
+                            </button>
                             <button
                                 type="button"
                                 class="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
@@ -1644,6 +1733,65 @@ const removeEntry = () => {
             </WizardModalFrame>
         </Modal>
 
+        <Modal :show="filePreview.open" max-width="6xl" @close="closeFilePreview">
+            <div class="flex w-[calc(100vw-1rem)] max-w-[96vw] flex-col gap-4 rounded-3xl bg-white p-3 sm:w-full sm:p-6">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h3 class="text-lg font-semibold text-slate-900">{{ filePreview.file?.original_name }}</h3>
+                        <p class="text-xs text-slate-500">Pré-visualização rápida do arquivo ingerido.</p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2">
+                        <template v-if="previewKind(filePreview.file) === 'pdf'">
+                            <div class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 ring-1 ring-slate-200">
+                                <button type="button" class="rounded-full px-2 py-1 text-xs font-semibold" :class="pdfZoom === 'page-fit' ? 'bg-slate-200 text-slate-900' : 'text-slate-700 hover:bg-slate-200'" @click="setPdfZoom('page-fit')">Página</button>
+                                <button type="button" class="rounded-full px-2 py-1 text-xs font-semibold" :class="pdfZoom === 'page-width' ? 'bg-slate-200 text-slate-900' : 'text-slate-700 hover:bg-slate-200'" @click="setPdfZoom('page-width')">Largura</button>
+                                <button type="button" class="rounded-full px-2 py-1 text-xs font-semibold" :class="pdfZoom === '125' ? 'bg-slate-200 text-slate-900' : 'text-slate-700 hover:bg-slate-200'" @click="setPdfZoom('125')">125%</button>
+                                <button type="button" class="rounded-full px-2 py-1 text-xs font-semibold" :class="pdfZoom === '200' ? 'bg-slate-200 text-slate-900' : 'text-slate-700 hover:bg-slate-200'" @click="setPdfZoom('200')">200%</button>
+                            </div>
+                        </template>
+
+                        <a
+                            v-if="filePreview.file?.public_url"
+                            :href="filePreview.file?.public_url"
+                            target="_blank"
+                            rel="noopener"
+                            class="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500"
+                        >Abrir em nova aba</a>
+
+                        <button
+                            type="button"
+                            class="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-200"
+                            @click="closeFilePreview"
+                        >Fechar</button>
+                    </div>
+                </div>
+
+                <div class="scroll-area file-preview-scroll rounded-2xl border border-slate-200 bg-slate-50/60 p-2 sm:p-4">
+                    <template v-if="previewKind(filePreview.file) === 'image'">
+                        <img :src="filePreview.file?.public_url" alt="Pré-visualização do arquivo" :class="previewPaneClasses + ' block object-contain'" />
+                    </template>
+
+                    <template v-else-if="previewKind(filePreview.file) === 'pdf'">
+                        <iframe :key="pdfIframeKey(filePreview.file)" :src="pdfSrcFor(filePreview.file)" :class="previewPaneClasses" title="Pré-visualização do PDF" />
+                    </template>
+
+                    <template v-else>
+                        <div class="space-y-3 text-sm text-slate-600">
+                            <p>Não foi possível renderizar este formato aqui.</p>
+                            <a
+                                v-if="filePreview.file?.public_url"
+                                :href="filePreview.file?.public_url"
+                                class="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-500"
+                                target="_blank"
+                                rel="noopener"
+                            >Baixar arquivo</a>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </Modal>
+
         <DeleteConfirmModal
             :show="entryDeleteOpen"
             title="Excluir lançamento"
@@ -1737,6 +1885,31 @@ const removeEntry = () => {
 
 .finance-stat-icon {
     background: #f1f5f9;
+}
+
+.scroll-area {
+    overflow: auto;
+}
+
+.file-preview-scroll {
+    min-height: 18rem;
+    height: min(72vh, calc(100dvh - 220px));
+}
+
+.scroll-area::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: rgba(148, 163, 184, 0.45);
+}
+
+@media (min-width: 1024px) {
+    .file-preview-scroll {
+        height: min(78vh, calc(100dvh - 180px));
+    }
 }
 </style>
 
