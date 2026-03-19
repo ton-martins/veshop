@@ -1,189 +1,234 @@
-# Veshop - Guia Mestre
+# Veshop - Guia Mestre de Produto e Arquitetura
 
-Versão: v3.3  
-Última atualização: 18/03/2026
+Versão: v4.0  
+Última atualização: 19/03/2026
 
 ## 1. Objetivo
 
 Este é o documento único de referência do Veshop para:
 
-1. visão atual do produto;
-2. padrão de arquitetura, segurança e qualidade;
-3. backlog priorizado com status real;
-4. sequência de implementação para reduzir risco e retrabalho.
+1. estado real do sistema por módulo;
+2. planejamento por nicho e por tipo de negócio;
+3. padrão obrigatório de arquitetura, segurança e qualidade;
+4. roadmap de implementação com prioridade e critérios de entrega.
 
 ## 2. Regras obrigatórias da plataforma
 
-### 2.1 Idioma e codificação
+### 2.1 Idioma, conteúdo e codificação
 
-- Todo texto funcional da aplicação deve estar em português (pt-BR).
+- Todo texto funcional deve estar em português (pt-BR).
 - Arquivos e conteúdo devem ser mantidos em UTF-8.
-- Não publicar telas com texto quebrado, sem acentuação correta ou mistura de idioma sem necessidade.
+- Não publicar telas com texto quebrado, sem acentuação ou com mistura indevida de idioma.
 
 ### 2.2 Multi-tenant e autorização
 
 - Toda regra de negócio deve respeitar `contractor_id`.
 - Nenhum usuário pode acessar dados de outro contratante sem permissão explícita.
-- Rotas, policies e queries devem validar escopo de contratante.
+- Rotas, policies e consultas devem validar escopo de contratante.
 - Módulos devem respeitar plano e permissões habilitadas.
 
-### 2.3 Segurança e dados no frontend
+### 2.3 Segurança e privacidade
 
-- Evitar exposição desnecessária de dados no payload inicial do Inertia.
-- Não incluir segredo, token, senha ou dado sensível em logs.
-- Eventos críticos devem gerar trilha de auditoria.
+- Não expor dados sensíveis no payload inicial (Inertia/Vue).
+- Não logar segredos, tokens, senhas ou dados pessoais desnecessários.
+- Toda ação crítica deve gerar trilha de auditoria.
+- Upload e download de arquivos devem ser controlados por escopo de contratante.
 
-## 3. O que já está validado no sistema
+### 2.4 Padrão de engenharia
 
-### 3.1 Base de produto e operação
+- Código limpo e coeso por domínio.
+- Arquitetura modular e escalável (separar domínio global e domínio específico).
+- Cobertura mínima por testes de fluxo crítico (feature + regras de autorização).
+- Sem regressão visual grave em desktop e mobile.
+
+## 3. Estado atual validado (resumo)
 
 - Painel admin multi-tenant com contexto de contratante.
-- Loja virtual por contratante (`/shop/{slug}`) com catálogo, carrinho e checkout.
-- Fluxo de pedidos com pipeline operacional no admin.
-- Integração inicial de pagamentos com Mercado Pago (MVP Pix) e webhook.
-- Fluxo de checkout manual previsto para cenários sem gateway ativo.
+- Loja virtual por contratante com catálogo, carrinho e checkout.
+- Pedidos com pipeline no admin.
+- Página de vendas (PDV) no padrão de pedidos.
+- Financeiro Fase 1 (CRUD de lançamentos, anexos, filtros e paginação).
+- Integração Mercado Pago em MVP (Pix + webhook).
+- Fluxo de e-mail da loja corrigido (verificação e recuperação de senha).
+- Paginação aplicada em módulos principais.
+- Segurança de escopo reforçada em rotas críticas.
 
-### 3.2 UX/UI já implementada e padronizada
+## 4. Matriz de módulos por escopo
 
-- Menu lateral em padrão profissional, mantendo identidade do Veshop.
-- Header/footer do menu harmonizados com o mesmo padrão visual.
-- Uso de cor do contratante no menu com fallback para cor secundária do sistema.
-- Página de Contas com abas no topo e padrão replicado para outras telas principais.
-- Ajustes de layout para manter consistência em desktop e mobile.
+## 4.1 Global para ambos os nichos (Comércio e Serviços)
 
-### 3.3 Loja virtual
+Esses módulos são base da plataforma e devem funcionar em qualquer contratante:
 
-- Login e cadastro do cliente alinhados ao padrão visual do Veshop, com identidade do contratante.
-- Recuperação de senha do cliente criada no mesmo padrão visual.
-- Card de verificação de e-mail ajustado para o mesmo layout.
-- Fallback de logo por iniciais do contratante aplicado quando não houver logo.
-- Modal de favoritos ajustado para padrão de modal lateral, similar ao carrinho.
-- Cards de produto com cursor de ação (`pointer`) no hover.
+1. Autenticação, 2FA, recuperação de senha e verificação de e-mail.
+2. Multi-tenant (contexto, troca de contratante, escopo de dados).
+3. Usuários, perfis, permissões e plano contratado.
+4. Notificações in-app e e-mail.
+5. Upload de arquivos com controle de acesso.
+6. Relatórios assíncronos (jobs + exportação).
+7. Auditoria de eventos críticos.
+8. Branding e identidade por contratante.
+9. Manuais e onboarding operacional.
+10. Padrões visuais globais (menu, abas, cards, tabela, modais).
 
-### 3.4 Pedidos e visão geral
+Status atual: **Parcial** (base sólida, com pendências em notificações e organização final de manuais).
 
-- Página de pedidos com abas de pipeline em padrão visual do sistema.
-- Ações de pedido no card/lista com melhor organização para mobile.
-- Modal de detalhes de pedido compartilhado entre tela de pedidos e visão geral.
-- Visão Geral com abas no topo (`Loja virtual` e `PDV`) e ícones.
-- Sessões de pedidos recentes e vendas recentes usando o mesmo modal de detalhes.
-- Edição de pedido (MVP) no admin com modal dedicado.
-- Auditoria de segurança para edição de pedido (`order.updated.admin`).
-- Página `Vendas` criada para o PDV no mesmo padrão visual da página de pedidos (filtros, abas, cards, tabela e modal de detalhes).
+## 4.2 Global para tipos de negócio do contratante
 
-### 3.5 Paginação já implementada
+Esses módulos são globais no nível de operação empresarial e podem ser reutilizados por tipo de negócio:
 
-Paginação backend/frontend confirmada em:
+1. Cadastros base: clientes, fornecedores, categorias.
+2. Produtos/serviços (catálogo e variações por domínio).
+3. Pedidos/vendas com status e histórico.
+4. Financeiro gerencial (contas a pagar e receber).
+5. Gateways e formas de pagamento.
+6. Estoque (quando aplicável ao tipo de negócio).
+7. Dashboard operacional com métricas por contexto.
 
-- Pedidos: `20` por página.
-- Notificações: `20` por página.
-- Produtos: `10` por página.
-- Categorias: `10` por página.
-- Clientes: `10` por página.
-- Fornecedores: `10` por página.
-- Usuários: `10` por página.
-- Catálogo de serviços: `10` por página.
-- Planos (master): `10` por página.
-- Contratantes (master): `10` por página.
+Status atual: **Parcial** (estrutura existe, faltam capacidades avançadas e padronização final por tipo).
 
-### 3.6 E-mail e autenticação
+## 4.3 Específico por tipo de negócio (escopo inicial)
 
-- Envio de e-mail de verificação da loja corrigido em produção (SMTP/porta/esquema).
-- Template do e-mail de verificação traduzido para pt-BR.
-- Correções no fluxo de erro de login para evitar modal branco/iframe indevido.
-- Endereço obrigatório no cadastro público da loja (cliente final), conforme regra de negócio.
+### A) Loja (física/virtual)
 
-### 3.7 Segurança técnica já aplicada
+Entregue:
 
-- Middleware de escopo de contratante em rotas críticas.
-- Redução de exposição de dados no payload compartilhado do Inertia.
-- Base de auditoria de segurança consolidada no guia mestre.
+1. Loja virtual com login, cadastro, conta, favoritos e carrinho.
+2. Checkout com opção integrada (Mercado Pago MVP) e base para fluxo manual.
+3. Pedidos e vendas no admin com modal de detalhes e pipeline.
+4. PDV com página dedicada de vendas.
 
-### 3.8 Financeiro (Fase 1)
+Pendências para fechamento do módulo:
 
-- Estrutura de dados de lançamentos financeiros criada (`financial_entries`) com soft delete e índices.
-- CRUD de contas a pagar/receber implementado no admin com upload de documento.
-- Listagem com abas, filtros por busca/status e paginação (`20` por página).
-- Regras de segurança aplicadas: escopo por `contractor_id`, validação de forma de pagamento do contratante e bloqueio cross-tenant.
-- Testes de feature do fluxo financeiro adicionados e validados.
+1. Edição completa de pedido/venda (cliente, itens, quantidade, desconto, total e estoque).
+2. Produto com até 5 fotos, variações e promoção com cálculo seguro.
+3. Categorias com subcategorias refletindo na loja virtual.
+4. Taxa por forma de pagamento no PDV e na loja virtual.
+5. Fluxo dual de checkout totalmente padronizado (integrado/manual).
+6. Páginas legais LGPD (termos e política).
 
-## 4. Backlog priorizado (status real)
+Status: **Parcial avançado (próximo de concluído)**.
+
+### B) Barbearia
+
+Objetivo:
+
+1. Operação orientada a agenda.
+2. Serviços, profissionais, horários e fila de atendimento.
+3. Agendamento online com confirmação e status operacional.
+4. Comanda/fechamento financeiro por atendimento.
+
+Base já existente:
+
+1. Estrutura de nicho serviços.
+2. Módulos iniciais de serviços, catálogo e agenda (estrutura).
+
+Pendências:
+
+1. Modelagem de agenda por profissional e faixa de horário.
+2. Regras de bloqueio/conflito de horário.
+3. Fluxo de atendimento ponta a ponta (agendado, em atendimento, concluído, cancelado).
+4. Dashboard específico de barbearia (ocupação, ticket médio, recorrência).
+
+Status: **Pendente (fase de estruturação funcional)**.
+
+### C) Contábil
+
+Objetivo inicial (não fiscal nesta fase):
+
+1. Gestão gerencial da operação contábil do contratante.
+2. Organização financeira e documental por cliente.
+3. Controle de prazos, honorários e acompanhamento de carteira.
+
+Módulos recomendados para fase contábil gerencial:
+
+1. Plano de contas gerencial.
+2. Centro de custo.
+3. Conciliação bancária por importação (CSV/OFX).
+4. DRE gerencial e fluxo de caixa.
+5. Gestão de honorários por cliente.
+6. Agenda de vencimentos e obrigações internas.
+7. Repositório de documentos por cliente com histórico.
+
+Fora do escopo atual (futuro fiscal):
+
+1. SPED/ECD/ECF.
+2. Apuração tributária automatizada.
+3. Entregas fiscais governamentais.
+
+Status: **Pendente (fase de descoberta e desenho)**.
+
+## 5. Loja (física/virtual) - backlog de fechamento
+
+Prioridade para finalizar o módulo comercial antes dos demais tipos:
 
 | ID | Item | Status | Prioridade |
 | --- | --- | --- | --- |
-| 1 | UX/UI da loja virtual (feedback visual, carrinho mobile, consistência dos modais) | Concluído (MVP) | Crítica |
-| 2 | Edição de pedido/venda no admin com auditoria | Parcial (pedido MVP) | Alta |
-| 3 | Módulo financeiro (contas a pagar/receber + anexos + status + observações) | Parcial (Fase 1 concluída) | Crítica |
-| 4 | Finalizar páginas de estoque e pedidos + botão "Novo pedido" | Parcial (página Vendas concluída) | Alta |
-| 5 | Produto com até 5 fotos + variações + promoção (%) | Pendente | Alta |
-| 6 | Categorias com subcategorias | Pendente | Alta |
-| 7 | Mover "Manuais" para item independente no menu | Pendente | Média |
-| 8 | Checkout dual (Mercado Pago integrado + fluxo manual) com padrão único | Parcial | Crítica |
-| 9 | Notificações in-app + e-mail + estudo e viabilidade WhatsApp | Parcial | Alta |
-| 10 | Taxa por forma de pagamento (PDV e loja virtual) | Pendente | Alta |
-| 11 | Evitar renderização inicial quebrada nas páginas de login/cadastro da loja | Parcial | Alta |
-| 12 | Páginas legais (Termos de Uso e Política de Privacidade LGPD) | Pendente | Alta |
+| L1 | Edição completa de venda/pedido com recálculo e ajuste de estoque | Parcial | Crítica |
+| L2 | Produto com 5 fotos + variações + promoção (%) | Pendente | Alta |
+| L3 | Categorias com subcategorias na loja virtual | Pendente | Alta |
+| L4 | Checkout dual padronizado (integrado/manual) | Parcial | Crítica |
+| L5 | Taxa por forma de pagamento no pedido/venda | Pendente | Alta |
+| L6 | Notificações operacionais (in-app/e-mail) no fluxo de pedido | Parcial | Alta |
+| L7 | Páginas legais LGPD (termos/política) | Pendente | Alta |
 
-## 5. Diretrizes de arquitetura para os pendentes críticos
+Critério de conclusão do módulo Loja:
 
-### 5.1 ID 2 - Edição de pedido/venda
+1. pedido criado, pago (ou manual), faturado e concluído sem brecha de fluxo;
+2. edição segura com auditoria e sem inconsistência de estoque/total;
+3. experiência consistente em desktop/mobile para loja e admin;
+4. cobertura de testes nos fluxos críticos de checkout e operação.
 
-- MVP de pedido já implementado.
-- Próximos passos:
-  - expandir para edição de venda (PDV);
-  - definir campos editáveis por status;
-  - manter trilha auditável por campo alterado.
+## 6. Roadmap por fases
 
-### 5.2 ID 3 - Financeiro
+### Fase 1 - Fechamento Loja (agora)
 
-Implementar núcleo com:
+1. concluir L1, L2, L3, L4 e L5;
+2. consolidar notificações e páginas legais (L6, L7);
+3. revisar regressão geral do nicho comércio.
 
-- contas a pagar;
-- contas a receber;
-- campos mínimos: valor, vencimento, status, observações;
-- upload de documento por lançamento;
-- histórico de alterações.
+### Fase 2 - Módulo Contábil (gerencial)
 
-OCR (estudo):
+1. modelagem de dados contábeis gerenciais;
+2. telas e fluxos operacionais mínimos;
+3. relatórios gerenciais e auditoria de alterações.
 
-- fase inicial assistida (pré-preenchimento com confirmação do usuário);
-- sem automação cega na primeira versão.
+### Fase 3 - Módulo Barbearia
 
-### 5.3 ID 8 - Checkout dual
+1. agenda profissional com regras de disponibilidade;
+2. fluxo de atendimento operacional completo;
+3. dashboard específico do tipo de negócio.
 
-Padronizar dois modos por contratante:
+## 7. Diretriz de storage de arquivos do contratante
 
-- `integrado`: pagamento via gateway (Mercado Pago);
-- `manual`: pedido sem pagamento imediato, contratante conclui cobrança fora da plataforma.
+Estratégia adotada no Veshop:
 
-Regras obrigatórias:
+1. padrão inicial: storage centralizado pelo Veshop com isolamento por contratante;
+2. segurança obrigatória: autorização por escopo, validação de acesso e links controlados;
+3. evolução futura: opção de storage dedicado por contratante em plano avançado.
 
-- status de pedido e pagamento claros e auditáveis;
-- mesma experiência operacional para suporte e para o contratante;
-- sem ambiguidade no painel sobre "pedido criado" x "pedido pago".
+Observação:
 
-## 6. Padrão de qualidade para toda entrega
+- Centralizado simplifica operação, backup, monitoramento e suporte no estágio atual.
+- Storage dedicado deve ser tratado como feature enterprise com governança própria.
 
-Toda implementação só é considerada concluída se tiver:
+## 8. Definição de pronto (DoD)
 
-1. validação de escopo multi-tenant e autorização;
-2. textos em pt-BR (UTF-8);
+Toda entrega é considerada concluída somente se tiver:
+
+1. regra multi-tenant validada;
+2. textos em pt-BR (UTF-8) em backend e frontend;
 3. tratamento de erro amigável para usuário;
 4. logs sem dados sensíveis;
-5. atualização deste arquivo (`docs/veshop.md`) com status real.
+5. testes de fluxo crítico passando;
+6. atualização deste arquivo com status real.
 
-## 7. Próximo item recomendado de desenvolvimento
+## 9. Próximo passo recomendado
 
-Próximo passo: **ID 3 - Módulo financeiro (Fase 2: OCR assistido + alertas)**.
+Próximo passo de desenvolvimento: **Fechar a Fase 1 da Loja (L1 e L4 primeiro)**.
 
-Motivo:
+Ordem sugerida:
 
-1. Fase 1 já entregou o núcleo operacional (CRUD + anexos + filtros + paginação);
-2. OCR assistido aumenta produtividade sem comprometer segurança de dados;
-3. alertas financeiros conectam o módulo a notificações e rotina de cobrança.
-
-Escopo objetivo da próxima entrega:
-
-1. upload de documento com pré-extração OCR assistida (sugestão de campos, confirmação manual obrigatória);
-2. trilha de auditoria por campo ajustado após OCR;
-3. lembretes financeiros in-app (vencimento próximo e vencido), sem WhatsApp nesta fase.
+1. edição completa de venda/pedido com recálculo e estoque;
+2. fechamento do checkout dual integrado/manual;
+3. produto avançado (fotos, variações e promoção);
+4. subcategorias e taxa por forma de pagamento.
