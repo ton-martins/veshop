@@ -28,7 +28,7 @@ const { brandName, systemIconUrl } = useBranding();
                     </div>
                     <div class="d-flex mt-3">
                         <i class="ri-mail-send-fill text-light"></i>
-                        <a href="#!" class="text-white-50 ms-3 fs-xl">- suporte@veshop.app</a>
+                        <a href="#!" class="text-white-50 ms-3 fs-xl">- contato@veshop.com.br</a>
                     </div>
                     <div class="footer-icon-3 ms-lg-auto me-lg-5">
                         <ul class="d-flex mt-4">

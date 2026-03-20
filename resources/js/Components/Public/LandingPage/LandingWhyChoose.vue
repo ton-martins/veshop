@@ -3,10 +3,10 @@ import { computed } from 'vue';
 import { useBranding } from '@/branding';
 
 const advantages = [
-    'Multiempresa e multiusuario',
-    'Parametrizacao por segmento',
+    'Operações multi-tenant com gestão centralizada',
+    'Parametrização por segmento',
     'Controle fiscal e contabil',
-    'Escalavel para crescimento',
+    'Escalável para crescimento',
 ];
 
 const { landingImages } = useBranding();
@@ -37,21 +37,90 @@ const whyChooseImageUrl = computed(() => landingImages.value.why_choose || '/lan
                                 <h6 class="ms-3 m-0">{{ item }}</h6>
                             </div>
                         </div>
-                        <div class="main-btn mt-5 d-flex">
+                        <div class="main-btn mt-5 mb-3 d-flex">
                             <a href="#contacts" class="btn btn-primary fw-semibold">Falar com especialista</a>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-lg-6">
-                    <img
-                        :src="whyChooseImageUrl"
-                        alt="Equipe analisando indicadores no Veshop"
-                        class="img-fluid mt-4 shadow-sm rounded-2"
-                    />
+                    <div class="work-image-area">
+                        <div class="work-image-frame">
+                            <img
+                                :src="whyChooseImageUrl"
+                                alt="Equipe analisando indicadores no Veshop"
+                                class="work-image"
+                            />
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </section>
 </template>
+
+<style scoped>
+.work-section {
+    overflow: visible;
+}
+
+.work-image-area {
+    position: relative;
+    overflow: visible;
+}
+
+.work-image-frame {
+    position: relative;
+    padding: 16px;
+    border-radius: 32px;
+    background: #92e7a1;
+    box-shadow: 0 18px 40px rgba(107, 187, 32, 0.18);
+    isolation: isolate;
+}
+
+/* bloco decorativo de trás */
+.work-image-frame::before {
+    content: "";
+    position: absolute;
+    top: 18px;
+    left: 18px;
+    right: -14px;
+    bottom: -14px;
+    background: rgba(36, 129, 24, 0.18);
+    border-radius: 36px;
+    z-index: -1;
+}
+
+/* linha/borda decorativa extra */
+.work-image-frame::after {
+    content: "";
+    position: absolute;
+    top: -10px;
+    left: 10px;
+    right: -10px;
+    bottom: 10px;
+    border: 1px solid rgba(8, 103, 32, 0.12);
+    border-radius: 36px;
+    z-index: -1;
+}
+
+.work-image {
+    display: block;
+    width: 100%;
+    height: 420px;
+    object-fit: cover;
+    border-radius: 18px;
+}
+
+@media (max-width: 991px) {
+    .work-image {
+        height: auto;
+    }
+
+    .work-image-frame::before,
+    .work-image-frame::after {
+        display: none;
+    }
+}
+</style>
 
