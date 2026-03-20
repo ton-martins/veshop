@@ -425,7 +425,7 @@ onBeforeUnmount(() => {
                     </span>
 
                     <h1 class="veshop-hero-title">
-                        Gestão completa da sua empresa em uma só plataforma.
+                        Gestão completa da sua empresa em um só lugar.
                     </h1>
 
                     <p class="veshop-hero-subtitle">
