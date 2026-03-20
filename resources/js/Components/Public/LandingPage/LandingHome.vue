@@ -421,11 +421,11 @@ onBeforeUnmount(() => {
                 <div class="col-lg-7">
                     <span class="veshop-hero-badge">
                         <i class="ri-store-2-line"></i>
-                        ERP para comércio, varejos e serviços
+                        ERP para comércios e serviços
                     </span>
 
                     <h1 class="veshop-hero-title">
-                        Gestão completa para vendas, estoque, financeiro e muito mais em uma só plataforma.
+                        Gestão completa da sua empresa em uma só plataforma.
                     </h1>
 
                     <p class="veshop-hero-subtitle">
