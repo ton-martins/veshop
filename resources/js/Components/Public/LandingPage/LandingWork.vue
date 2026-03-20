@@ -30,7 +30,7 @@ const flowSteps = [
 ];
 
 const { landingImages } = useBranding();
-const workImageUrl = computed(() => landingImages.value.work || '/landing/images/group-working.jpg');
+const workImageUrl = computed(() => landingImages.value.work || '/landing/images/group-working.png');
 </script>
 
 <template>

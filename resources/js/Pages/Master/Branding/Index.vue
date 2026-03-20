@@ -55,10 +55,10 @@ const resolveLandingImages = (branding) => ({
         ?? '/landing/images/about.png',
     why_choose: branding?.landing_images?.why_choose
         ?? props.defaults?.landing_images?.why_choose
-        ?? '/landing/images/working.jpg',
+        ?? '/landing/images/working.png',
     work: branding?.landing_images?.work
         ?? props.defaults?.landing_images?.work
-        ?? '/landing/images/group-working.jpg',
+        ?? '/landing/images/group-working.png',
 });
 
 const hydrate = () => {

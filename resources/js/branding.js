@@ -30,8 +30,8 @@ const BRANDING = Object.freeze({
     },
     landingImages: {
         about: '/landing/images/about.png',
-        why_choose: '/landing/images/working.jpg',
-        work: '/landing/images/group-working.jpg',
+        why_choose: '/landing/images/working.png',
+        work: '/landing/images/group-working.png',
     },
 });
 

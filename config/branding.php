@@ -20,7 +20,7 @@ return [
     'accent_color' => env('BRANDING_ACCENT_COLOR', '#81D86F'),
     'landing_images' => [
         'about' => env('BRANDING_LANDING_ABOUT_IMAGE', '/landing/images/about.png'),
-        'why_choose' => env('BRANDING_LANDING_WHY_CHOOSE_IMAGE', '/landing/images/working.jpg'),
-        'work' => env('BRANDING_LANDING_WORK_IMAGE', '/landing/images/group-working.jpg'),
+        'why_choose' => env('BRANDING_LANDING_WHY_CHOOSE_IMAGE', '/landing/images/working.png'),
+        'work' => env('BRANDING_LANDING_WORK_IMAGE', '/landing/images/group-working.png'),
     ],
 ];

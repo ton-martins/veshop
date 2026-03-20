@@ -10,7 +10,7 @@ const advantages = [
 ];
 
 const { landingImages } = useBranding();
-const whyChooseImageUrl = computed(() => landingImages.value.why_choose || '/landing/images/working.jpg');
+const whyChooseImageUrl = computed(() => landingImages.value.why_choose || '/landing/images/working.png');
 </script>
 
 <template>

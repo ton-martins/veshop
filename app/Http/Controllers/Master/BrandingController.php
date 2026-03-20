@@ -132,8 +132,8 @@ class BrandingController extends Controller
             'favicon_url' => (string) config('branding.favicon_url', '/brand/favicon-veshop.ico'),
             'landing_images' => [
                 'about' => '/landing/images/about.png',
-                'why_choose' => '/landing/images/working.jpg',
-                'work' => '/landing/images/group-working.jpg',
+                'why_choose' => '/landing/images/working.png',
+                'work' => '/landing/images/group-working.png',
             ],
         ];
     }
