@@ -429,7 +429,7 @@ onBeforeUnmount(() => {
                     </h1>
 
                     <p class="veshop-hero-subtitle">
-                        O Veshop conecta operação, atendimento e gestão para lojas, mercados, distribuidores e outros nichos.
+                        O Veshop conecta operação, atendimento e gestão para lojas, ecommerces, distribuidores e outros nichos.
                         Tenha visão em tempo real do que acontece no negócio e tome decisões mais rápidas.
                     </p>
 
