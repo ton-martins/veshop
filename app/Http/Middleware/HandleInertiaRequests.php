@@ -80,6 +80,7 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'status' => fn () => $request->session()->get('status'),
                 'checkout_payment' => fn () => $request->session()->get('checkout_payment'),
+                'checkout_manual' => fn () => $request->session()->get('checkout_manual'),
             ],
             'notifications' => fn () => $canExposeSensitiveContext
                 ? $this->resolveNotificationsSummary($authenticatedUser)

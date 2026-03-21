@@ -83,15 +83,30 @@ const hasOpenCashSession = computed(() => Boolean(props.cashSession?.id));
 const productsSafe = computed(() => (Array.isArray(props.products) ? props.products : []));
 const clientsSafe = computed(() => (Array.isArray(props.clients) ? props.clients : []));
 
+const paymentMethodsSafe = computed(() =>
+    (Array.isArray(props.paymentMethods) ? props.paymentMethods : []).map((method) => ({
+        id: Number(method?.id ?? 0),
+        name: String(method?.name ?? ''),
+        code: String(method?.code ?? '').toLowerCase(),
+        is_default: Boolean(method?.is_default ?? false),
+        allows_installments: Boolean(method?.allows_installments ?? false),
+        max_installments: Number(method?.max_installments ?? 0) || null,
+        fee_fixed: normalizeMoneyInput(method?.fee_fixed ?? 0),
+        fee_percent: normalizeMoneyInput(method?.fee_percent ?? 0),
+    })).filter((method) => method.id > 0),
+);
+
 const paymentMethodOptions = computed(() =>
-    (props.paymentMethods ?? []).map((method) => ({
+    paymentMethodsSafe.value.map((method) => ({
         value: String(method.id),
-        label: method.name,
+        label: (method.fee_fixed > 0 || method.fee_percent > 0)
+            ? `${method.name} (+ taxa)`
+            : method.name,
     })),
 );
 
 const selectedPaymentMethod = computed(() =>
-    (props.paymentMethods ?? []).find((method) => String(method.id) === String(selectedPaymentMethodId.value)) ?? null,
+    paymentMethodsSafe.value.find((method) => String(method.id) === String(selectedPaymentMethodId.value)) ?? null,
 );
 
 const installmentOptions = computed(() => {
@@ -208,8 +223,29 @@ const subtotalAmount = computed(() =>
 );
 
 const discountValue = computed(() => normalizeMoneyInput(discountAmount.value));
-const surchargeValue = computed(() => normalizeMoneyInput(surchargeAmount.value));
-const totalAmount = computed(() => Math.max(0, subtotalAmount.value - discountValue.value + surchargeValue.value));
+const manualSurchargeValue = computed(() => normalizeMoneyInput(surchargeAmount.value));
+const baseAmount = computed(() => Math.max(0, subtotalAmount.value - discountValue.value + manualSurchargeValue.value));
+const paymentFeeAmount = computed(() => {
+    const method = selectedPaymentMethod.value;
+    if (!method) return 0;
+
+    if (method.fee_fixed <= 0 && method.fee_percent <= 0) {
+        return 0;
+    }
+
+    return normalizeMoneyInput(method.fee_fixed + (baseAmount.value * (method.fee_percent / 100)));
+});
+const totalAmount = computed(() => Math.max(0, baseAmount.value + paymentFeeAmount.value));
+const paymentFeeHint = computed(() => {
+    const method = selectedPaymentMethod.value;
+    if (!method) return '';
+
+    if (paymentFeeAmount.value > 0) {
+        return `Taxa aplicada na venda: + ${asCurrency(paymentFeeAmount.value)}.`;
+    }
+
+    return '';
+});
 const isCashPayment = computed(() =>
     String(selectedPaymentMethod.value?.code ?? '').trim().toLowerCase() === 'cash',
 );
@@ -532,7 +568,7 @@ function finalizeSale() {
         ? Number(installments.value || 0) || null
         : null;
     saleForm.discount_amount = discountValue.value;
-    saleForm.surcharge_amount = surchargeValue.value;
+    saleForm.surcharge_amount = manualSurchargeValue.value;
     saleForm.notes = notes.value;
     saleForm.items = cartItems.value.map((item) => ({
         product_id: item.product_id,
@@ -1026,6 +1062,9 @@ function submitCreateClient() {
                         </div>
 
                         <UiSelect v-model="selectedPaymentMethodId" :options="paymentMethodOptions" placeholder="Forma de pagamento" />
+                        <p v-if="paymentFeeHint" class="text-xs font-medium text-slate-500">
+                            {{ paymentFeeHint }}
+                        </p>
                         <UiSelect
                             v-if="selectedPaymentMethod?.allows_installments"
                             v-model="installments"
@@ -1084,7 +1123,11 @@ function submitCreateClient() {
                             </div>
                             <div class="mt-1 flex items-center justify-between">
                                 <span>Acréscimo</span>
-                                <span class="font-semibold">+ {{ asCurrency(surchargeValue) }}</span>
+                                <span class="font-semibold">+ {{ asCurrency(manualSurchargeValue) }}</span>
+                            </div>
+                            <div class="mt-1 flex items-center justify-between">
+                                <span>Taxa de pagamento</span>
+                                <span class="font-semibold">+ {{ asCurrency(paymentFeeAmount) }}</span>
                             </div>
                             <div v-if="isCashPayment" class="mt-1 flex items-center justify-between">
                                 <span>Valor pago</span>

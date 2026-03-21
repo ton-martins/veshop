@@ -153,6 +153,103 @@ class PdvFlowTest extends TestCase
         ]);
     }
 
+    public function test_admin_applies_payment_fee_on_pdv_sale_total(): void
+    {
+        $contractor = $this->createContractor('pdv-sale-fee');
+        $user = $this->createAdminUser([$contractor]);
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Produto Taxa',
+            'sku' => 'TAX-001',
+            'sale_price' => 100.00,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => null,
+            'code' => PaymentMethod::CODE_CREDIT_CARD,
+            'name' => 'Cartão',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => true,
+            'max_installments' => 12,
+            'fee_fixed' => 2.00,
+            'fee_percent' => 3.00,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->post(route('admin.pdv.cash.open'), [
+                'opening_balance' => 100,
+            ])
+            ->assertRedirect();
+
+        $response = $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->post(route('admin.pdv.sales.store'), [
+                'client_id' => null,
+                'payment_method_id' => $paymentMethod->id,
+                'installments' => 2,
+                'discount_amount' => 10,
+                'surcharge_amount' => 5,
+                'notes' => 'Venda com taxa',
+                'items' => [
+                    ['product_id' => $product->id, 'quantity' => 1],
+                ],
+            ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('sales', [
+            'contractor_id' => $contractor->id,
+            'source' => Sale::SOURCE_PDV,
+            'status' => Sale::STATUS_COMPLETED,
+            'subtotal_amount' => '100.00',
+            'discount_amount' => '10.00',
+            'surcharge_amount' => '9.85',
+            'total_amount' => '99.85',
+            'paid_amount' => '99.85',
+        ]);
+
+        $sale = Sale::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('source', Sale::SOURCE_PDV)
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertSame(5.00, (float) data_get($sale->metadata, 'charges.manual_surcharge_amount'));
+        $this->assertSame(4.85, (float) data_get($sale->metadata, 'charges.payment_fee_amount'));
+
+        $this->assertDatabaseHas('sale_payments', [
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'payment_method_id' => $paymentMethod->id,
+            'status' => 'paid',
+            'amount' => '99.85',
+        ]);
+
+        $payment = SalePayment::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('sale_id', $sale->id)
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertSame(4.85, (float) data_get($payment->metadata, 'fee_snapshot.fee_amount'));
+    }
+
     public function test_admin_cannot_finalize_sale_without_open_cash_session(): void
     {
         $contractor = $this->createContractor('pdv-without-open-cash');

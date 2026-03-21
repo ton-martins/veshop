@@ -259,7 +259,7 @@ Regras operacionais da Loja:
 
 Observação:
 
-- storage dedicado deve ser tratado como feature enterprise com governança propria.
+- storage dedicado deve ser tratado como feature enterprise com governança própria.
 
 ## 8. Definição de pronto (DoD)
 

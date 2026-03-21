@@ -3,6 +3,7 @@
 namespace Tests\Feature\Admin;
 
 use App\Models\Contractor;
+use App\Models\InventoryMovement;
 use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\Sale;
@@ -237,16 +238,34 @@ class OrderFlowTest extends TestCase
     {
         $contractor = $this->createContractor('pedidos-edicao');
         $user = $this->createAdminUser([$contractor]);
+        $client = \App\Models\Client::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Pedido',
+            'email' => 'cliente-pedido@example.com',
+            'phone' => '71999991234',
+            'is_active' => true,
+        ]);
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Camisa Polo',
+            'sku' => 'ORD-001',
+            'sale_price' => 60.00,
+            'stock_quantity' => 7,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
 
         $sale = Sale::query()->create([
             'contractor_id' => $contractor->id,
             'code' => 'PED-20260318-001',
             'source' => Sale::SOURCE_CATALOG,
             'status' => Sale::STATUS_PENDING_CONFIRMATION,
+            'client_id' => $client->id,
             'subtotal_amount' => 120,
             'discount_amount' => 0,
-            'surcharge_amount' => 0,
-            'total_amount' => 120,
+            'surcharge_amount' => 4,
+            'total_amount' => 124,
             'paid_amount' => 0,
             'change_amount' => 0,
             'shipping_mode' => Sale::SHIPPING_MODE_PICKUP,
@@ -255,7 +274,57 @@ class OrderFlowTest extends TestCase
             'metadata' => [
                 'customer_name' => 'Cliente Original',
                 'customer_contact' => '51999990000',
+                'stock_reduced' => true,
+                'charges' => [
+                    'subtotal_amount' => 120,
+                    'discount_amount' => 0,
+                    'shipping_amount' => 0,
+                    'payment_fee_amount' => 4,
+                    'payment_fee_fixed' => 4,
+                    'payment_fee_percent' => 0,
+                    'base_amount_before_fee' => 120,
+                    'surcharge_amount' => 4,
+                    'total_amount' => 124,
+                ],
             ],
+        ]);
+
+        SaleItem::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'product_id' => $product->id,
+            'description' => $product->name,
+            'sku' => $product->sku,
+            'quantity' => 2,
+            'unit_price' => 60,
+            'discount_amount' => 0,
+            'total_amount' => 120,
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => null,
+            'code' => PaymentMethod::CODE_PIX,
+            'name' => 'Pix',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        SalePayment::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'payment_method_id' => $paymentMethod->id,
+            'payment_gateway_id' => null,
+            'status' => SalePayment::STATUS_PENDING,
+            'amount' => 124,
+            'installments' => null,
+            'paid_at' => null,
         ]);
 
         $response = $this->actingAs($user)
@@ -264,21 +333,55 @@ class OrderFlowTest extends TestCase
                 'two_factor_passed' => true,
             ])
             ->put(route('admin.orders.update', $sale->id), [
+                'client_id' => $client->id,
                 'customer_name' => 'Cliente Atualizado',
                 'customer_contact' => 'cliente@exemplo.com',
+                'discount_amount' => 3,
                 'shipping_mode' => Sale::SHIPPING_MODE_DELIVERY,
                 'shipping_amount' => 12.5,
                 'shipping_estimate_days' => 2,
+                'items' => [
+                    [
+                        'product_id' => $product->id,
+                        'quantity' => 1,
+                        'discount_amount' => 5,
+                    ],
+                ],
                 'notes' => 'Ajuste manual feito pelo admin.',
             ]);
 
         $response->assertRedirect();
         $this->assertDatabaseHas('sales', [
             'id' => $sale->id,
+            'subtotal_amount' => '60.00',
+            'discount_amount' => '8.00',
+            'surcharge_amount' => '16.50',
+            'total_amount' => '68.50',
             'shipping_mode' => Sale::SHIPPING_MODE_DELIVERY,
             'shipping_amount' => '12.50',
             'shipping_estimate_days' => 2,
             'notes' => 'Ajuste manual feito pelo admin.',
+        ]);
+        $this->assertDatabaseHas('sale_items', [
+            'sale_id' => $sale->id,
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'discount_amount' => '5.00',
+            'total_amount' => '55.00',
+        ]);
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'stock_quantity' => 8,
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'contractor_id' => $contractor->id,
+            'product_id' => $product->id,
+            'type' => InventoryMovement::TYPE_RETURN,
+            'quantity' => 1,
+        ]);
+        $this->assertDatabaseHas('sale_payments', [
+            'sale_id' => $sale->id,
+            'amount' => '68.50',
         ]);
         $this->assertDatabaseHas('security_audit_logs', [
             'contractor_id' => $contractor->id,
@@ -296,6 +399,15 @@ class OrderFlowTest extends TestCase
     {
         $contractor = $this->createContractor('pedidos-edicao-bloqueio');
         $user = $this->createAdminUser([$contractor]);
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Produto Bloqueado',
+            'sku' => 'ORD-BLK',
+            'sale_price' => 75,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
 
         $sale = Sale::query()->create([
             'contractor_id' => $contractor->id,
@@ -315,6 +427,18 @@ class OrderFlowTest extends TestCase
             ],
         ]);
 
+        SaleItem::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'product_id' => $product->id,
+            'description' => $product->name,
+            'sku' => $product->sku,
+            'quantity' => 1,
+            'unit_price' => 75,
+            'discount_amount' => 0,
+            'total_amount' => 75,
+        ]);
+
         $response = $this->actingAs($user)
             ->withSession([
                 'current_contractor_id' => $contractor->id,
@@ -323,6 +447,13 @@ class OrderFlowTest extends TestCase
             ->from(route('admin.orders.index'))
             ->put(route('admin.orders.update', $sale->id), [
                 'customer_name' => 'Tentativa de alteração',
+                'items' => [
+                    [
+                        'product_id' => $product->id,
+                        'quantity' => 1,
+                        'discount_amount' => 0,
+                    ],
+                ],
             ]);
 
         $response->assertRedirect(route('admin.orders.index'));

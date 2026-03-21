@@ -612,7 +612,22 @@ const shippingConfig = computed(() => {
         estimated_days: raw.estimated_days ? Number(raw.estimated_days) : null,
     };
 });
-const paymentMethodOptions = computed(() => (props.payment_methods ?? []).map((method) => ({
+const normalizeMoney = (value) => {
+    const parsed = Number(value ?? 0);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, Math.round(parsed * 100) / 100);
+};
+
+const paymentMethodsSafe = computed(() => (Array.isArray(props.payment_methods) ? props.payment_methods : []).map((method) => ({
+    id: Number(method?.id ?? 0),
+    name: String(method?.name ?? ''),
+    code: String(method?.code ?? '').toLowerCase(),
+    fee_fixed: normalizeMoney(method?.fee_fixed ?? 0),
+    fee_percent: normalizeMoney(method?.fee_percent ?? 0),
+    checkout_mode: String(method?.checkout_mode ?? 'manual').toLowerCase() === 'integrated' ? 'integrated' : 'manual',
+})).filter((method) => method.id > 0));
+
+const paymentMethodOptions = computed(() => paymentMethodsSafe.value.map((method) => ({
     value: String(method.id),
     label: method.name,
 })));
@@ -635,6 +650,10 @@ const checkoutForm = useForm({
     items: [],
 });
 
+const selectedCheckoutPaymentMethod = computed(() =>
+    paymentMethodsSafe.value.find((method) => String(method.id) === String(checkoutForm.payment_method_id ?? '')) ?? null,
+);
+
 const profileForm = useForm({
     phone: String(shopCustomer.value?.phone ?? ''),
     cep: String(shopCustomer.value?.cep ?? ''),
@@ -649,10 +668,12 @@ const profileForm = useForm({
 const logoutForm = useForm({});
 
 const checkoutPaymentFromFlash = computed(() => page.props.flash?.checkout_payment ?? null);
+const checkoutManualFromFlash = computed(() => page.props.flash?.checkout_manual ?? null);
 const checkoutPayment = ref(null);
 const checkoutPaymentPanelOpen = ref(false);
 const checkoutPaymentPolling = ref(false);
 const checkoutPaymentCopied = ref(false);
+const checkoutManual = ref(null);
 let checkoutPaymentPollTimer = null;
 
 const showUiFeedback = (message, tone = 'success') => {
@@ -696,6 +717,23 @@ const normalizeCheckoutPaymentPayload = (payload) => {
         qr_code: String(payload.qr_code ?? ''),
         qr_code_base64: String(payload.qr_code_base64 ?? ''),
         expires_at: payload.expires_at ?? null,
+    };
+};
+
+const normalizeCheckoutManualPayload = (payload) => {
+    if (!payload || typeof payload !== 'object') return null;
+
+    const saleId = Number(payload.sale_id ?? 0);
+    if (!Number.isFinite(saleId) || saleId <= 0) return null;
+
+    return {
+        sale_id: saleId,
+        sale_code: String(payload.sale_code ?? ''),
+        total_amount: normalizeMoney(payload.total_amount ?? 0),
+        payment_method_name: String(payload.payment_method_name ?? 'A combinar com a loja'),
+        contractor_phone: String(payload.contractor_phone ?? ''),
+        whatsapp_url: String(payload.whatsapp_url ?? ''),
+        message: String(payload.message ?? ''),
     };
 };
 
@@ -788,6 +826,10 @@ const closeCheckoutPaymentPanel = () => {
     checkoutPaymentPanelOpen.value = false;
 };
 
+const closeManualCheckoutBanner = () => {
+    checkoutManual.value = null;
+};
+
 const copyCheckoutPixCode = async () => {
     const pixCode = String(checkoutPayment.value?.qr_code ?? '').trim();
     if (!pixCode || typeof navigator === 'undefined' || !navigator.clipboard) return;
@@ -814,6 +856,15 @@ watch(
         checkoutPaymentPanelOpen.value = true;
         checkoutPaymentCopied.value = false;
         startCheckoutPaymentPolling();
+    },
+    { immediate: true },
+);
+
+watch(
+    checkoutManualFromFlash,
+    (payload) => {
+        const normalized = normalizeCheckoutManualPayload(payload);
+        checkoutManual.value = normalized;
     },
     { immediate: true },
 );
@@ -850,7 +901,36 @@ const shippingFee = computed(() => {
     return Number(shippingConfig.value.fixed_fee || 0);
 });
 
-const orderTotal = computed(() => Number(cartSubtotal.value || 0) + Number(shippingFee.value || 0));
+const checkoutBaseAmount = computed(() => normalizeMoney(cartSubtotal.value + shippingFee.value));
+
+const checkoutPaymentFee = computed(() => {
+    const method = selectedCheckoutPaymentMethod.value;
+    if (!method) return 0;
+
+    const feeFixed = normalizeMoney(method.fee_fixed);
+    const feePercent = normalizeMoney(method.fee_percent);
+
+    if (feeFixed <= 0 && feePercent <= 0) return 0;
+
+    return normalizeMoney(feeFixed + (checkoutBaseAmount.value * (feePercent / 100)));
+});
+
+const checkoutPaymentFeeHint = computed(() => {
+    const method = selectedCheckoutPaymentMethod.value;
+    if (!method) return '';
+
+    if (checkoutPaymentFee.value > 0) {
+        return `Taxa da forma selecionada: + ${currency(checkoutPaymentFee.value)}.`;
+    }
+
+    if (method.checkout_mode === 'manual') {
+        return 'Pagamento confirmado manualmente com a loja após o envio do pedido.';
+    }
+
+    return '';
+});
+
+const orderTotal = computed(() => normalizeMoney(checkoutBaseAmount.value + checkoutPaymentFee.value));
 const checkoutErrorMessage = computed(() =>
     checkoutForm.errors.customer_name
     || checkoutForm.errors.customer_phone
@@ -1219,6 +1299,51 @@ watch(cartOpen, (isOpen) => {
                         </button>
                     </div>
                 </div>
+            </section>
+
+            <section
+                v-if="checkoutManual"
+                class="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 shadow-sm"
+            >
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div class="space-y-1">
+                        <p class="text-sm font-semibold">
+                            Pedido {{ checkoutManual.sale_code || `#${checkoutManual.sale_id}` }} enviado para confirmação manual
+                        </p>
+                        <p class="text-xs">
+                            Total: <span class="font-semibold">{{ currency(checkoutManual.total_amount) }}</span>
+                            <span class="mx-1">•</span>
+                            Pagamento: <span class="font-semibold">{{ checkoutManual.payment_method_name || 'A combinar com a loja' }}</span>
+                        </p>
+                        <p
+                            v-if="checkoutManual.message"
+                            class="whitespace-pre-line text-xs text-amber-800"
+                        >
+                            {{ checkoutManual.message }}
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <a
+                            v-if="checkoutManual.whatsapp_url"
+                            :href="checkoutManual.whatsapp_url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex items-center justify-center rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
+                        >
+                            Enviar no WhatsApp
+                        </a>
+                        <button
+                            type="button"
+                            class="inline-flex items-center justify-center rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
+                            @click="closeManualCheckoutBanner"
+                        >
+                            Fechar aviso
+                        </button>
+                    </div>
+                </div>
+                <p v-if="!checkoutManual.whatsapp_url && checkoutManual.contractor_phone" class="mt-2 text-xs text-amber-800">
+                    Contato da loja: {{ checkoutManual.contractor_phone }}.
+                </p>
             </section>
 
             <section v-if="storefrontBlocks.hero" class="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -1684,6 +1809,9 @@ watch(cartOpen, (isOpen) => {
                                     {{ method.label }}
                                 </option>
                             </select>
+                            <p v-if="checkoutPaymentFeeHint" class="text-[11px] font-medium text-slate-500">
+                                {{ checkoutPaymentFeeHint }}
+                            </p>
                             <textarea
                                 v-model="checkoutForm.notes"
                                 rows="2"
@@ -1700,6 +1828,10 @@ watch(cartOpen, (isOpen) => {
                         <div class="flex items-center justify-between text-sm">
                             <span class="text-slate-500">Frete</span>
                             <span class="text-base font-semibold text-slate-900">{{ currency(shippingFee) }}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Taxa de pagamento</span>
+                            <span class="text-base font-semibold text-slate-900">{{ currency(checkoutPaymentFee) }}</span>
                         </div>
                         <div class="flex items-center justify-between text-sm">
                             <span class="text-slate-500">Total</span>

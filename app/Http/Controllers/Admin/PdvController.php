@@ -18,6 +18,7 @@ use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SalePayment;
+use App\Support\PaymentFeeSnapshot;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -132,6 +133,8 @@ class PdvController extends Controller
                 'max_installments' => $method->max_installments,
                 'payment_gateway_id' => $method->payment_gateway_id,
                 'payment_gateway_name' => $method->paymentGateway?->name,
+                'fee_fixed' => round((float) ($method->fee_fixed ?? 0), 2),
+                'fee_percent' => round((float) ($method->fee_percent ?? 0), 2),
             ])
             ->values()
             ->all();
@@ -424,8 +427,12 @@ class PdvController extends Controller
             }
 
             $discount = round((float) ($data['discount_amount'] ?? 0), 2);
-            $surcharge = round((float) ($data['surcharge_amount'] ?? 0), 2);
-            $total = round($subtotal - $discount + $surcharge, 2);
+            $manualSurcharge = round((float) ($data['surcharge_amount'] ?? 0), 2);
+            $baseAmount = round($subtotal - $discount + $manualSurcharge, 2);
+            $paymentFeeSnapshot = PaymentFeeSnapshot::fromPaymentMethod($paymentMethod);
+            $paymentFeeAmount = PaymentFeeSnapshot::resolveFeeAmount($baseAmount, $paymentFeeSnapshot);
+            $surcharge = round($manualSurcharge + $paymentFeeAmount, 2);
+            $total = round($baseAmount + $paymentFeeAmount, 2);
 
             if ($total <= 0) {
                 throw ValidationException::withMessages([
@@ -449,6 +456,21 @@ class PdvController extends Controller
                 'change_amount' => 0,
                 'notes' => $data['notes'] ?? null,
                 'completed_at' => now(),
+                'metadata' => [
+                    'checkout_mode' => 'pdv',
+                    'payment_method_snapshot' => $paymentFeeSnapshot,
+                    'charges' => [
+                        'subtotal_amount' => round($subtotal, 2),
+                        'discount_amount' => round($discount, 2),
+                        'manual_surcharge_amount' => round($manualSurcharge, 2),
+                        'payment_fee_amount' => round($paymentFeeAmount, 2),
+                        'payment_fee_fixed' => round((float) ($paymentFeeSnapshot['fee_fixed'] ?? 0), 2),
+                        'payment_fee_percent' => round((float) ($paymentFeeSnapshot['fee_percent'] ?? 0), 2),
+                        'base_amount_before_fee' => round($baseAmount, 2),
+                        'surcharge_amount' => round($surcharge, 2),
+                        'total_amount' => round($total, 2),
+                    ],
+                ],
             ]);
 
             foreach ($preparedLines as $line) {
@@ -500,6 +522,17 @@ class PdvController extends Controller
                 'amount' => $total,
                 'installments' => $installments,
                 'paid_at' => now(),
+                'metadata' => [
+                    'checkout_mode' => 'pdv',
+                    'fee_snapshot' => [
+                        'base_amount' => round($baseAmount, 2),
+                        'fee_amount' => round($paymentFeeAmount, 2),
+                        'fee_fixed' => round((float) ($paymentFeeSnapshot['fee_fixed'] ?? 0), 2),
+                        'fee_percent' => round((float) ($paymentFeeSnapshot['fee_percent'] ?? 0), 2),
+                        'payment_method_code' => $paymentFeeSnapshot['payment_method_code'],
+                        'payment_method_name' => $paymentFeeSnapshot['payment_method_name'],
+                    ],
+                ],
             ]);
 
             if ($paymentMethod->code === PaymentMethod::CODE_CASH) {
@@ -642,5 +675,3 @@ class PdvController extends Controller
         return $code;
     }
 }
-
-

@@ -14,6 +14,7 @@ use App\Models\SaleItem;
 use App\Models\SalePayment;
 use App\Models\ShopCustomer;
 use App\Models\ShopCustomerFavorite;
+use App\Support\PaymentFeeSnapshot;
 use App\Support\StorefrontSettings;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -171,12 +172,6 @@ class PublicShopController extends Controller
                 ->where('id', $paymentMethod->payment_gateway_id)
                 ->where('is_active', true)
                 ->first();
-
-            if (! $paymentGateway) {
-                throw ValidationException::withMessages([
-                    'payment_method_id' => 'O gateway selecionado para esta forma de pagamento esta indisponivel.',
-                ]);
-            }
         }
 
         $rawItems = collect($data['items'] ?? []);
@@ -252,13 +247,21 @@ class PublicShopController extends Controller
 
             $shippingQuote = $this->resolveShippingQuote($contractor, $data, $subtotal);
             $shippingAmount = (float) $shippingQuote['amount'];
-            $total = round($subtotal + $shippingAmount, 2);
+            $baseAmount = round($subtotal + $shippingAmount, 2);
+            $paymentFeeSnapshot = PaymentFeeSnapshot::fromPaymentMethod($paymentMethod);
+            $paymentFeeAmount = PaymentFeeSnapshot::resolveFeeAmount($baseAmount, $paymentFeeSnapshot);
+            $surchargeAmount = round($shippingAmount + $paymentFeeAmount, 2);
+            $total = round($baseAmount + $paymentFeeAmount, 2);
 
             if ($total <= 0) {
                 throw ValidationException::withMessages([
                     'items' => 'O valor total do pedido precisa ser maior que zero.',
                 ]);
             }
+
+            $checkoutMode = $paymentMethod && $paymentGateway && $this->shouldCreatePixIntent($paymentMethod, $paymentGateway)
+                ? 'integrated'
+                : 'manual';
 
             $client = $this->resolveOrCreateCheckoutClient($contractor, $data, $shopCustomer);
 
@@ -277,28 +280,40 @@ class PublicShopController extends Controller
                     'checkout_idempotency_key' => $idempotencyKey,
                     'source' => Sale::SOURCE_CATALOG,
                     'status' => Sale::STATUS_PENDING_CONFIRMATION,
-                'subtotal_amount' => $subtotal,
-                'discount_amount' => 0,
-                'surcharge_amount' => $shippingAmount,
-                'total_amount' => $total,
-                'paid_amount' => 0,
-                'change_amount' => 0,
-                'shipping_mode' => (string) $shippingQuote['mode'],
-                'shipping_amount' => $shippingAmount,
-                'shipping_estimate_days' => $shippingQuote['estimate_days'],
-                'shipping_address' => $shippingQuote['address'],
-                'notes' => $data['notes'] ?? null,
+                    'subtotal_amount' => $subtotal,
+                    'discount_amount' => 0,
+                    'surcharge_amount' => $surchargeAmount,
+                    'total_amount' => $total,
+                    'paid_amount' => 0,
+                    'change_amount' => 0,
+                    'shipping_mode' => (string) $shippingQuote['mode'],
+                    'shipping_amount' => $shippingAmount,
+                    'shipping_estimate_days' => $shippingQuote['estimate_days'],
+                    'shipping_address' => $shippingQuote['address'],
+                    'notes' => $data['notes'] ?? null,
                     'metadata' => [
                         'checkout_channel' => 'public_shop',
                         'checkout_idempotency_key' => $idempotencyKey,
+                        'checkout_mode' => $checkoutMode,
                         'customer_name' => $data['customer_name'] ?? $shopCustomer->name,
-                    'customer_phone' => $this->normalizePhone($data['customer_phone'] ?? $shopCustomer->phone),
-                    'customer_email' => $data['customer_email'] ?? $shopCustomer->email,
-                    'shipping_mode' => $shippingQuote['mode'],
-                    'shipping_label' => $shippingQuote['label'],
-                    'shipping_amount' => $shippingAmount,
-                ],
-            ]);
+                        'customer_phone' => $this->normalizePhone($data['customer_phone'] ?? $shopCustomer->phone),
+                        'customer_email' => $data['customer_email'] ?? $shopCustomer->email,
+                        'shipping_mode' => $shippingQuote['mode'],
+                        'shipping_label' => $shippingQuote['label'],
+                        'shipping_amount' => $shippingAmount,
+                        'payment_method_snapshot' => $paymentFeeSnapshot,
+                        'charges' => [
+                            'subtotal_amount' => round($subtotal, 2),
+                            'shipping_amount' => round($shippingAmount, 2),
+                            'payment_fee_amount' => round($paymentFeeAmount, 2),
+                            'payment_fee_fixed' => round((float) ($paymentFeeSnapshot['fee_fixed'] ?? 0), 2),
+                            'payment_fee_percent' => round((float) ($paymentFeeSnapshot['fee_percent'] ?? 0), 2),
+                            'base_amount_before_fee' => round($baseAmount, 2),
+                            'surcharge_amount' => round($surchargeAmount, 2),
+                            'total_amount' => round($total, 2),
+                        ],
+                    ],
+                ]);
 
             foreach ($preparedLines as $line) {
                 /** @var Product $product */
@@ -322,11 +337,22 @@ class PublicShopController extends Controller
                         'contractor_id' => $contractor->id,
                         'sale_id' => $sale->id,
                         'payment_method_id' => $paymentMethod->id,
-                        'payment_gateway_id' => $paymentMethod->payment_gateway_id,
+                        'payment_gateway_id' => $paymentGateway?->id,
                         'status' => SalePayment::STATUS_PENDING,
-                    'amount' => $total,
+                        'amount' => $total,
                         'installments' => null,
                         'paid_at' => null,
+                        'metadata' => [
+                            'checkout_mode' => $checkoutMode,
+                            'fee_snapshot' => [
+                                'base_amount' => round($baseAmount, 2),
+                                'fee_amount' => round($paymentFeeAmount, 2),
+                                'fee_fixed' => round((float) ($paymentFeeSnapshot['fee_fixed'] ?? 0), 2),
+                                'fee_percent' => round((float) ($paymentFeeSnapshot['fee_percent'] ?? 0), 2),
+                                'payment_method_code' => $paymentFeeSnapshot['payment_method_code'],
+                                'payment_method_name' => $paymentFeeSnapshot['payment_method_name'],
+                            ],
+                        ],
                     ]);
 
                     if ($paymentGateway && $this->shouldCreatePixIntent($paymentMethod, $paymentGateway)) {
@@ -351,17 +377,23 @@ class PublicShopController extends Controller
         }
 
         $checkoutPayment = null;
+        $checkoutManual = null;
         if ($createdSaleId) {
             $createdSale = Sale::query()->find($createdSaleId);
             if ($createdSale) {
                 app(\App\Services\OrderNotificationService::class)->notifyOrderCreated($createdSale);
                 $checkoutPayment = $this->resolveCheckoutPaymentPayload($createdSale);
+                if (! ($checkoutPayment !== null && $this->isPixPaymentPayload($checkoutPayment))) {
+                    $checkoutManual = $this->resolveManualCheckoutPayload($contractor, $createdSale);
+                }
             }
         }
 
         $redirect = back()->with('status', 'Pedido enviado com sucesso. Aguarde a confirmação da loja.');
         if ($checkoutPayment !== null && $this->isPixPaymentPayload($checkoutPayment)) {
             $redirect = $redirect->with('checkout_payment', $checkoutPayment);
+        } elseif ($checkoutManual !== null) {
+            $redirect = $redirect->with('checkout_manual', $checkoutManual);
         }
 
         return $redirect;
@@ -478,22 +510,40 @@ class PublicShopController extends Controller
     }
 
     /**
-     * @return array<int, array{id: int, name: string, code: string}>
+     * @return array<int, array{
+     *   id:int,
+     *   name:string,
+     *   code:string,
+     *   fee_fixed:float,
+     *   fee_percent:float,
+     *   checkout_mode:string
+     * }>
      */
     private function resolveCheckoutPaymentMethods(Contractor $contractor): array
     {
         return PaymentMethod::query()
             ->where('contractor_id', $contractor->id)
             ->where('is_active', true)
+            ->with('paymentGateway:id,provider,is_active')
             ->orderByDesc('is_default')
             ->orderBy('sort_order')
             ->orderBy('name')
-            ->get(['id', 'name', 'code'])
-            ->map(static fn (PaymentMethod $method): array => [
-                'id' => (int) $method->id,
-                'name' => (string) $method->name,
-                'code' => (string) $method->code,
-            ])
+            ->get(['id', 'name', 'code', 'fee_fixed', 'fee_percent', 'payment_gateway_id'])
+            ->map(static function (PaymentMethod $method): array {
+                $gateway = $method->paymentGateway;
+                $isIntegrated = $gateway
+                    && (bool) $gateway->is_active
+                    && (string) $gateway->provider !== PaymentGateway::PROVIDER_MANUAL;
+
+                return [
+                    'id' => (int) $method->id,
+                    'name' => (string) $method->name,
+                    'code' => (string) $method->code,
+                    'fee_fixed' => round((float) ($method->fee_fixed ?? 0), 2),
+                    'fee_percent' => round((float) ($method->fee_percent ?? 0), 2),
+                    'checkout_mode' => $isIntegrated ? 'integrated' : 'manual',
+                ];
+            })
             ->values()
             ->all();
     }
@@ -701,6 +751,72 @@ class PublicShopController extends Controller
         $digits = preg_replace('/\D+/', '', (string) ($value ?? ''));
 
         return is_string($digits) ? trim($digits) : '';
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolveManualCheckoutPayload(Contractor $contractor, Sale $sale): ?array
+    {
+        $sale->loadMissing([
+            'payments:id,sale_id,payment_method_id',
+            'payments.paymentMethod:id,name',
+        ]);
+
+        /** @var SalePayment|null $latestPayment */
+        $latestPayment = $sale->payments
+            ->sortByDesc('id')
+            ->first();
+
+        $paymentMethodName = trim((string) ($latestPayment?->paymentMethod?->name ?? ''));
+        if ($paymentMethodName === '') {
+            $paymentMethodName = 'A combinar com a loja';
+        }
+
+        $message = $this->buildManualCheckoutMessage($sale, $paymentMethodName);
+        $whatsappPhone = $this->normalizeWhatsappPhone($contractor->phone);
+        $whatsappUrl = $whatsappPhone !== null
+            ? 'https://wa.me/'.$whatsappPhone.'?text='.rawurlencode($message)
+            : null;
+
+        return [
+            'sale_id' => (int) $sale->id,
+            'sale_code' => (string) $sale->code,
+            'total_amount' => round((float) $sale->total_amount, 2),
+            'payment_method_name' => $paymentMethodName,
+            'contractor_phone' => $contractor->phone ? (string) $contractor->phone : null,
+            'whatsapp_url' => $whatsappUrl,
+            'message' => $message,
+        ];
+    }
+
+    private function buildManualCheckoutMessage(Sale $sale, string $paymentMethodName): string
+    {
+        $formattedTotal = 'R$ '.number_format((float) $sale->total_amount, 2, ',', '.');
+
+        return "Olá! Acabei de finalizar o pedido {$sale->code}.\n"
+            ."Total do pedido: {$formattedTotal}.\n"
+            ."Forma de pagamento: {$paymentMethodName}.\n"
+            .'Pode confirmar para mim, por favor?';
+    }
+
+    private function normalizeWhatsappPhone(?string $value): ?string
+    {
+        $digits = $this->normalizePhone($value);
+
+        if ($digits === '') {
+            return null;
+        }
+
+        if (str_starts_with($digits, '55') && in_array(strlen($digits), [12, 13], true)) {
+            return $digits;
+        }
+
+        if (in_array(strlen($digits), [10, 11], true)) {
+            return '55'.$digits;
+        }
+
+        return null;
     }
 
     /**

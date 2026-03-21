@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Client;
 use App\Models\Contractor;
 use App\Models\InventoryMovement;
 use App\Models\Product;
 use App\Models\Sale;
+use App\Models\SaleItem;
 use App\Models\SalePayment;
 use App\Models\SecurityAuditLog;
 use App\Services\SecurityAuditLogger;
@@ -99,11 +101,45 @@ class OrderController extends Controller
             ['key' => 'cancelled', 'label' => 'Rejeitados/cancelados', 'qty' => (int) $totals['cancelled'], 'tone' => 'bg-rose-100 text-rose-700'],
         ];
 
+        $clients = Client::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->limit(500)
+            ->get(['id', 'name', 'email', 'phone'])
+            ->map(static fn (Client $client): array => [
+                'id' => (int) $client->id,
+                'name' => (string) $client->name,
+                'email' => $client->email ? (string) $client->email : null,
+                'phone' => $client->phone ? (string) $client->phone : null,
+            ])
+            ->values()
+            ->all();
+
+        $products = Product::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->limit(800)
+            ->get(['id', 'name', 'sku', 'sale_price', 'stock_quantity', 'image_url'])
+            ->map(static fn (Product $product): array => [
+                'id' => (int) $product->id,
+                'name' => (string) $product->name,
+                'sku' => $product->sku ? (string) $product->sku : null,
+                'sale_price' => (float) $product->sale_price,
+                'stock_quantity' => (int) $product->stock_quantity,
+                'image_url' => $product->image_url ? (string) $product->image_url : null,
+            ])
+            ->values()
+            ->all();
+
         return Inertia::render('Admin/Orders/Index', [
             'orders' => $orders,
             'orderStats' => $totals,
             'pipeline' => $pipeline,
             'statusOptions' => $this->resolveStatusOptions(),
+            'clients' => $clients,
+            'products' => $products,
             'filters' => [
                 'search' => $search,
                 'status' => $status,
@@ -120,19 +156,76 @@ class OrderController extends Controller
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
 
         $validated = $request->validate([
+            'client_id' => ['nullable', 'integer'],
             'customer_name' => ['nullable', 'string', 'max:120'],
             'customer_contact' => ['nullable', 'string', 'max:160'],
+            'discount_amount' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'shipping_mode' => ['nullable', Rule::in([Sale::SHIPPING_MODE_PICKUP, Sale::SHIPPING_MODE_DELIVERY])],
-            'shipping_amount' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_amount' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'shipping_estimate_days' => ['nullable', 'integer', 'min:0', 'max:365'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'items' => ['required', 'array', 'min:1', 'max:80'],
+            'items.*.product_id' => ['required', 'integer'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
+            'items.*.discount_amount' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
         ]);
+
+        $clientId = isset($validated['client_id']) && $validated['client_id'] !== ''
+            ? (int) $validated['client_id']
+            : null;
+
+        $selectedClient = null;
+        if ($clientId !== null) {
+            $selectedClient = Client::query()
+                ->where('contractor_id', $contractor->id)
+                ->where('id', $clientId)
+                ->where('is_active', true)
+                ->first();
+
+            if (! $selectedClient) {
+                throw ValidationException::withMessages([
+                    'client_id' => 'Cliente inválido para o contratante ativo.',
+                ]);
+            }
+        }
+
+        $requestedItems = collect($validated['items'])
+            ->map(static function (array $row): array {
+                return [
+                    'product_id' => (int) ($row['product_id'] ?? 0),
+                    'quantity' => (int) ($row['quantity'] ?? 0),
+                    'discount_amount' => round((float) ($row['discount_amount'] ?? 0), 2),
+                ];
+            })
+            ->filter(static fn (array $row): bool => $row['product_id'] > 0 && $row['quantity'] > 0)
+            ->values();
+
+        if ($requestedItems->isEmpty()) {
+            throw ValidationException::withMessages([
+                'items' => 'Adicione ao menos um produto no pedido.',
+            ]);
+        }
 
         $updatedSaleId = null;
         $updatedSaleCode = null;
         $changedFields = [];
+        $oldTotalForLog = null;
+        $newTotalForLog = null;
 
-        DB::transaction(function () use ($contractor, $sale, $validated, &$updatedSaleId, &$updatedSaleCode, &$changedFields): void {
+        DB::transaction(function () use (
+            $contractor,
+            $sale,
+            $validated,
+            $requestedItems,
+            $clientId,
+            $selectedClient,
+            $request,
+            &$updatedSaleId,
+            &$updatedSaleCode,
+            &$changedFields,
+            &$oldTotalForLog,
+            &$newTotalForLog
+        ): void {
             $lockedSale = $this->lockOrderForContractor($contractor, $sale->id);
 
             if (! $this->canEditOrder($lockedSale)) {
@@ -142,27 +235,265 @@ class OrderController extends Controller
             }
 
             $metadata = is_array($lockedSale->metadata) ? $lockedSale->metadata : [];
+            $beforeSurchargeComponents = $this->resolveOrderSurchargeComponents($lockedSale, $metadata);
+            $beforeItems = $this->normalizeExistingItems($lockedSale->items);
+            $beforeSubtotal = round((float) $lockedSale->subtotal_amount, 2);
+            $beforeTotal = round((float) $lockedSale->total_amount, 2);
+            $beforeDiscount = round((float) $lockedSale->discount_amount, 2);
+            $beforeSurcharge = round((float) $lockedSale->surcharge_amount, 2);
+            $beforeClientId = $lockedSale->client_id ? (int) $lockedSale->client_id : null;
+            $beforeShippingMode = (string) ($lockedSale->shipping_mode ?? '');
+            $beforeShippingAmount = round((float) ($lockedSale->shipping_amount ?? 0), 2);
+            $beforeShippingEstimateDays = $lockedSale->shipping_estimate_days !== null ? (int) $lockedSale->shipping_estimate_days : null;
+            $beforeNotes = trim((string) ($lockedSale->notes ?? ''));
+
             $before = [
                 'customer_name' => trim((string) ($metadata['customer_name'] ?? ($lockedSale->client?->name ?? ''))),
                 'customer_contact' => trim((string) ($metadata['customer_contact'] ?? ($lockedSale->client?->phone ?? ($lockedSale->client?->email ?? '')))),
-                'shipping_mode' => (string) ($lockedSale->shipping_mode ?? ''),
-                'shipping_amount' => (float) ($lockedSale->shipping_amount ?? 0),
-                'shipping_estimate_days' => $lockedSale->shipping_estimate_days !== null ? (int) $lockedSale->shipping_estimate_days : null,
-                'notes' => trim((string) ($lockedSale->notes ?? '')),
             ];
 
-            $nextCustomerName = trim((string) ($validated['customer_name'] ?? ''));
-            $nextCustomerContact = trim((string) ($validated['customer_contact'] ?? ''));
+            $nextShippingAmount = array_key_exists('shipping_amount', $validated)
+                ? round((float) ($validated['shipping_amount'] ?? 0), 2)
+                : $beforeShippingAmount;
             $nextShippingMode = array_key_exists('shipping_mode', $validated)
                 ? (string) ($validated['shipping_mode'] ?? '')
-                : (string) ($lockedSale->shipping_mode ?? '');
-            $nextShippingAmount = array_key_exists('shipping_amount', $validated)
-                ? (float) ($validated['shipping_amount'] ?? 0)
-                : (float) ($lockedSale->shipping_amount ?? 0);
+                : $beforeShippingMode;
             $nextShippingEstimateDays = array_key_exists('shipping_estimate_days', $validated)
                 ? ($validated['shipping_estimate_days'] !== null ? (int) $validated['shipping_estimate_days'] : null)
-                : ($lockedSale->shipping_estimate_days !== null ? (int) $lockedSale->shipping_estimate_days : null);
+                : $beforeShippingEstimateDays;
+
+            $stockReduced = (bool) ($metadata['stock_reduced'] ?? false);
+            $stockRestored = (bool) ($metadata['stock_restored'] ?? false);
+            $shouldAdjustStock = $stockReduced && ! $stockRestored;
+
+            $groupedRequestedItems = $this->groupRequestedItems($requestedItems);
+            $oldQtyByProduct = $lockedSale->items
+                ->groupBy(static fn (SaleItem $item): int => (int) $item->product_id)
+                ->map(static fn (Collection $rows): int => (int) $rows->sum(static fn (SaleItem $item): int => (int) $item->quantity));
+
+            $allProductIds = $oldQtyByProduct->keys()
+                ->merge($groupedRequestedItems->keys())
+                ->map(static fn (mixed $value): int => (int) $value)
+                ->unique()
+                ->values();
+
+            $products = Product::query()
+                ->where('contractor_id', $contractor->id)
+                ->whereIn('id', $allProductIds->all())
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            if ($products->count() !== $allProductIds->count()) {
+                throw ValidationException::withMessages([
+                    'items' => 'Um ou mais produtos são inválidos para o contratante ativo.',
+                ]);
+            }
+
+            $preparedLines = [];
+            $subtotal = 0.0;
+            $lineDiscountTotal = 0.0;
+
+            foreach ($groupedRequestedItems as $productId => $row) {
+                $safeProductId = (int) $productId;
+                $quantity = (int) ($row['quantity'] ?? 0);
+                $requestedLineDiscount = round((float) ($row['discount_amount'] ?? 0), 2);
+
+                /** @var Product|null $product */
+                $product = $products->get($safeProductId);
+                if (! $product) {
+                    throw ValidationException::withMessages([
+                        'items' => 'Produto inválido na edição do pedido.',
+                    ]);
+                }
+
+                if ($quantity <= 0) {
+                    throw ValidationException::withMessages([
+                        'items' => "Quantidade inválida para o produto {$product->name}.",
+                    ]);
+                }
+
+                $oldQuantity = (int) ($oldQtyByProduct->get($safeProductId) ?? 0);
+                $delta = $quantity - $oldQuantity;
+
+                if ($shouldAdjustStock && $delta > 0 && $delta > (int) $product->stock_quantity) {
+                    throw ValidationException::withMessages([
+                        'items' => "Estoque insuficiente para o produto {$product->name}.",
+                    ]);
+                }
+
+                if (! $shouldAdjustStock && $quantity > (int) $product->stock_quantity) {
+                    throw ValidationException::withMessages([
+                        'items' => "Estoque insuficiente para o produto {$product->name}.",
+                    ]);
+                }
+
+                $unitPrice = round((float) $product->sale_price, 2);
+                $lineSubtotal = round($unitPrice * $quantity, 2);
+                $lineDiscount = min(max($requestedLineDiscount, 0.0), $lineSubtotal);
+                $lineTotal = round($lineSubtotal - $lineDiscount, 2);
+
+                $preparedLines[$safeProductId] = [
+                    'product' => $product,
+                    'quantity' => $quantity,
+                    'unit_price' => $unitPrice,
+                    'line_subtotal' => $lineSubtotal,
+                    'discount_amount' => $lineDiscount,
+                    'line_total' => $lineTotal,
+                ];
+
+                $subtotal += $lineSubtotal;
+                $lineDiscountTotal += $lineDiscount;
+            }
+
+            $globalDiscount = round((float) ($validated['discount_amount'] ?? 0), 2);
+            $discountTotal = round($lineDiscountTotal + $globalDiscount, 2);
+            $preservedNonShippingSurcharge = round((float) ($beforeSurchargeComponents['non_shipping_surcharge'] ?? 0), 2);
+            $paymentFeeAmount = round((float) ($beforeSurchargeComponents['payment_fee_amount'] ?? 0), 2);
+            $surcharge = round($nextShippingAmount + $preservedNonShippingSurcharge, 2);
+            $total = round($subtotal - $discountTotal + $surcharge, 2);
+
+            if ($total <= 0) {
+                throw ValidationException::withMessages([
+                    'discount_amount' => 'O valor total do pedido precisa ser maior que zero.',
+                ]);
+            }
+
+            $afterItems = collect($preparedLines)
+                ->map(static fn (array $line, int $productId): array => [
+                    'product_id' => $productId,
+                    'quantity' => (int) $line['quantity'],
+                    'discount_amount' => round((float) $line['discount_amount'], 2),
+                ])
+                ->sortBy('product_id')
+                ->values()
+                ->all();
+
+            $itemsChanged = serialize($beforeItems) !== serialize($afterItems);
+
+            $nextCustomerName = trim((string) ($validated['customer_name'] ?? ''));
+            if ($nextCustomerName === '' && $selectedClient) {
+                $nextCustomerName = trim((string) $selectedClient->name);
+            }
+
+            $nextCustomerContact = trim((string) ($validated['customer_contact'] ?? ''));
+            if ($nextCustomerContact === '' && $selectedClient) {
+                $nextCustomerContact = trim((string) ($selectedClient->phone ?? $selectedClient->email ?? ''));
+            }
+
             $nextNotes = trim((string) ($validated['notes'] ?? ''));
+
+            $hasFinancialChange = (
+                abs($beforeSubtotal - $subtotal) > 0.0001
+                || abs($beforeTotal - $total) > 0.0001
+                || abs($beforeDiscount - $discountTotal) > 0.0001
+                || abs($beforeSurcharge - $surcharge) > 0.0001
+            );
+
+            $hasShippingChange = (
+                $beforeShippingMode !== $nextShippingMode
+                || abs($beforeShippingAmount - $nextShippingAmount) > 0.0001
+                || $beforeShippingEstimateDays !== $nextShippingEstimateDays
+            );
+
+            $hasClientOrMetaChange = (
+                $beforeClientId !== $clientId
+                || $before['customer_name'] !== $nextCustomerName
+                || $before['customer_contact'] !== $nextCustomerContact
+                || $beforeNotes !== $nextNotes
+            );
+
+            if (! $itemsChanged && ! $hasFinancialChange && ! $hasShippingChange && ! $hasClientOrMetaChange) {
+                $updatedSaleId = (int) $lockedSale->id;
+                $updatedSaleCode = (string) $lockedSale->code;
+                $oldTotalForLog = $beforeTotal;
+                $newTotalForLog = $beforeTotal;
+
+                return;
+            }
+
+            $newSaleItemsByProduct = [];
+            if ($itemsChanged) {
+                $lockedSale->items()->delete();
+
+                foreach ($preparedLines as $productId => $line) {
+                    /** @var Product $product */
+                    $product = $line['product'];
+
+                    $newSaleItemsByProduct[$productId] = SaleItem::query()->create([
+                        'contractor_id' => $contractor->id,
+                        'sale_id' => $lockedSale->id,
+                        'product_id' => (int) $product->id,
+                        'description' => (string) $product->name,
+                        'sku' => $product->sku ? (string) $product->sku : null,
+                        'quantity' => (int) $line['quantity'],
+                        'unit_price' => (float) $line['unit_price'],
+                        'discount_amount' => (float) $line['discount_amount'],
+                        'total_amount' => (float) $line['line_total'],
+                    ]);
+                }
+
+                if ($shouldAdjustStock) {
+                    foreach ($allProductIds as $productIdValue) {
+                        $productId = (int) $productIdValue;
+                        /** @var Product|null $product */
+                        $product = $products->get($productId);
+                        if (! $product) {
+                            continue;
+                        }
+
+                        $oldQuantity = (int) ($oldQtyByProduct->get($productId) ?? 0);
+                        $newQuantity = (int) (($preparedLines[$productId]['quantity'] ?? null) ?? 0);
+                        $delta = $newQuantity - $oldQuantity;
+
+                        if ($delta === 0) {
+                            continue;
+                        }
+
+                        $balanceBefore = (int) $product->stock_quantity;
+                        $movementQuantity = abs($delta);
+                        $movementType = $delta > 0
+                            ? InventoryMovement::TYPE_OUT
+                            : InventoryMovement::TYPE_RETURN;
+
+                        $balanceAfter = $delta > 0
+                            ? max(0, $balanceBefore - $movementQuantity)
+                            : $balanceBefore + $movementQuantity;
+
+                        $product->stock_quantity = $balanceAfter;
+                        $product->save();
+
+                        $saleItemId = isset($newSaleItemsByProduct[$productId])
+                            ? (int) $newSaleItemsByProduct[$productId]->id
+                            : null;
+
+                        InventoryMovement::query()->create([
+                            'contractor_id' => $contractor->id,
+                            'product_id' => $productId,
+                            'sale_item_id' => $saleItemId,
+                            'user_id' => $request->user()?->id,
+                            'type' => $movementType,
+                            'quantity' => $movementQuantity,
+                            'balance_before' => $balanceBefore,
+                            'balance_after' => $balanceAfter,
+                            'unit_cost' => $product->cost_price,
+                            'reason' => "Ajuste de edição do pedido {$lockedSale->code}",
+                            'reference_type' => Sale::class,
+                            'reference_id' => $lockedSale->id,
+                            'occurred_at' => now(),
+                            'metadata' => [
+                                'old_quantity' => $oldQuantity,
+                                'new_quantity' => $newQuantity,
+                            ],
+                        ]);
+                    }
+                }
+            }
+
+            $paymentsAdjusted = false;
+            if (abs($beforeTotal - $total) > 0.0001) {
+                $paymentsAdjusted = $this->redistributePayments($lockedSale, $total);
+            }
 
             if ($nextCustomerName === '') {
                 unset($metadata['customer_name']);
@@ -176,32 +507,93 @@ class OrderController extends Controller
                 $metadata['customer_contact'] = $nextCustomerContact;
             }
 
+            $charges = is_array($metadata['charges'] ?? null) ? $metadata['charges'] : [];
+            $paymentMethodSnapshot = is_array($metadata['payment_method_snapshot'] ?? null)
+                ? $metadata['payment_method_snapshot']
+                : [];
+
+            $paymentFeeFixed = round(max(0, (float) ($charges['payment_fee_fixed'] ?? ($paymentMethodSnapshot['fee_fixed'] ?? 0))), 2);
+            $paymentFeePercent = round(max(0, (float) ($charges['payment_fee_percent'] ?? ($paymentMethodSnapshot['fee_percent'] ?? 0))), 2);
+            $baseAmountBeforeFee = round(max(0, $subtotal - $discountTotal + $nextShippingAmount), 2);
+
+            $metadata['charges'] = [
+                ...$charges,
+                'subtotal_amount' => round($subtotal, 2),
+                'discount_amount' => round($discountTotal, 2),
+                'shipping_amount' => round($nextShippingAmount, 2),
+                'payment_fee_amount' => round($paymentFeeAmount, 2),
+                'payment_fee_fixed' => $paymentFeeFixed,
+                'payment_fee_percent' => $paymentFeePercent,
+                'base_amount_before_fee' => $baseAmountBeforeFee,
+                'surcharge_amount' => round($surcharge, 2),
+                'total_amount' => round($total, 2),
+            ];
+
             $lockedSale->fill([
+                'client_id' => $clientId,
                 'shipping_mode' => $nextShippingMode !== '' ? $nextShippingMode : null,
                 'shipping_amount' => $nextShippingAmount,
                 'shipping_estimate_days' => $nextShippingEstimateDays,
+                'subtotal_amount' => round($subtotal, 2),
+                'discount_amount' => round($discountTotal, 2),
+                'surcharge_amount' => round($surcharge, 2),
+                'total_amount' => round($total, 2),
+                'paid_amount' => in_array((string) $lockedSale->status, [Sale::STATUS_PAID, Sale::STATUS_COMPLETED], true)
+                    ? round($total, 2)
+                    : min(round((float) $lockedSale->paid_amount, 2), round($total, 2)),
                 'notes' => $nextNotes !== '' ? $nextNotes : null,
                 'metadata' => $metadata,
             ])->save();
 
-            $after = [
-                'customer_name' => $nextCustomerName,
-                'customer_contact' => $nextCustomerContact,
-                'shipping_mode' => $nextShippingMode,
-                'shipping_amount' => $nextShippingAmount,
-                'shipping_estimate_days' => $nextShippingEstimateDays,
-                'notes' => $nextNotes,
-            ];
-
-            foreach ($after as $field => $afterValue) {
-                $beforeValue = $before[$field] ?? null;
-                if ($beforeValue !== $afterValue) {
-                    $changedFields[] = $field;
+            if ($beforeClientId !== $clientId) {
+                $changedFields[] = 'client_id';
+            }
+            if ($before['customer_name'] !== $nextCustomerName) {
+                $changedFields[] = 'customer_name';
+            }
+            if ($before['customer_contact'] !== $nextCustomerContact) {
+                $changedFields[] = 'customer_contact';
+            }
+            if ($beforeShippingMode !== $nextShippingMode) {
+                $changedFields[] = 'shipping_mode';
+            }
+            if (abs($beforeShippingAmount - $nextShippingAmount) > 0.0001) {
+                $changedFields[] = 'shipping_amount';
+            }
+            if ($beforeShippingEstimateDays !== $nextShippingEstimateDays) {
+                $changedFields[] = 'shipping_estimate_days';
+            }
+            if ($beforeNotes !== $nextNotes) {
+                $changedFields[] = 'notes';
+            }
+            if ($itemsChanged) {
+                $changedFields[] = 'items';
+                if ($shouldAdjustStock) {
+                    $changedFields[] = 'stock';
                 }
             }
+            if (abs($beforeSubtotal - $subtotal) > 0.0001) {
+                $changedFields[] = 'subtotal_amount';
+            }
+            if (abs($beforeDiscount - $discountTotal) > 0.0001) {
+                $changedFields[] = 'discount_amount';
+            }
+            if (abs($beforeSurcharge - $surcharge) > 0.0001) {
+                $changedFields[] = 'surcharge_amount';
+            }
+            if (abs($beforeTotal - $total) > 0.0001) {
+                $changedFields[] = 'total_amount';
+                $changedFields[] = 'paid_amount';
+            }
+            if ($paymentsAdjusted) {
+                $changedFields[] = 'payments';
+            }
 
+            $changedFields = array_values(array_unique($changedFields));
             $updatedSaleId = (int) $lockedSale->id;
             $updatedSaleCode = (string) $lockedSale->code;
+            $oldTotalForLog = $beforeTotal;
+            $newTotalForLog = $total;
         });
 
         if ($changedFields !== [] && $updatedSaleId) {
@@ -214,6 +606,8 @@ class OrderController extends Controller
                     'sale_id' => $updatedSaleId,
                     'sale_code' => $updatedSaleCode,
                     'changed_fields' => $changedFields,
+                    'old_total' => $oldTotalForLog,
+                    'new_total' => $newTotalForLog,
                 ],
             );
         }
@@ -580,7 +974,13 @@ class OrderController extends Controller
             ->where('contractor_id', $contractor->id)
             ->where('id', $saleId)
             ->whereIn('source', self::ORDER_SOURCES)
-            ->with(['items:id,sale_id,product_id,quantity', 'payments:id,sale_id,status'])
+            ->with([
+                'client:id,name,email,phone',
+                'items:id,sale_id,product_id,description,sku,quantity,unit_price,discount_amount,total_amount',
+                'items.product:id,image_url',
+                'payments:id,sale_id,payment_method_id,status,amount',
+                'payments.paymentMethod:id,name,code',
+            ])
             ->lockForUpdate()
             ->first();
 
@@ -646,16 +1046,27 @@ class OrderController extends Controller
             $customerContact = trim((string) ($sale->client?->email ?? ($metadata['customer_email'] ?? ($metadata['customer_phone'] ?? ''))));
         }
 
+        $itemDiscountTotal = round((float) $sale->items->sum(static fn (SaleItem $item): float => (float) $item->discount_amount), 2);
+        $globalDiscountAmount = max(0.0, round((float) $sale->discount_amount - $itemDiscountTotal, 2));
+        $surchargeComponents = $this->resolveOrderSurchargeComponents($sale, $metadata);
+
         return [
             'id' => (int) $sale->id,
             'code' => (string) $sale->code,
+            'client_id' => $sale->client_id ? (int) $sale->client_id : null,
             'customer' => $customerName,
             'customer_contact' => $customerContact,
             'channel' => 'Loja virtual',
+            'subtotal_amount' => (float) $sale->subtotal_amount,
+            'discount_amount' => (float) $sale->discount_amount,
+            'global_discount_amount' => $globalDiscountAmount,
+            'non_shipping_surcharge_amount' => (float) $surchargeComponents['non_shipping_surcharge'],
+            'payment_fee_amount' => (float) $surchargeComponents['payment_fee_amount'],
             'total_amount' => (float) $sale->total_amount,
             'total_items' => (int) $sale->items->sum(static fn ($item): int => (int) $item->quantity),
             'items' => $sale->items
-                ->map(static fn ($item): array => [
+                ->map(static fn (SaleItem $item): array => [
+                    'product_id' => $item->product_id ? (int) $item->product_id : null,
                     'description' => (string) $item->description,
                     'sku' => $item->sku !== null ? (string) $item->sku : null,
                     'image_url' => $item->product?->image_url !== null ? (string) $item->product->image_url : null,
@@ -708,6 +1119,104 @@ class OrderController extends Controller
         ], true);
     }
 
+    /**
+     * @param Collection<int, SaleItem> $items
+     * @return list<array{product_id:int,quantity:int,discount_amount:float}>
+     */
+    private function normalizeExistingItems(Collection $items): array
+    {
+        return $items
+            ->groupBy(static fn (SaleItem $item): int => (int) $item->product_id)
+            ->map(static fn (Collection $rows, int|string $productId): array => [
+                'product_id' => (int) $productId,
+                'quantity' => (int) $rows->sum(static fn (SaleItem $item): int => (int) $item->quantity),
+                'discount_amount' => round((float) $rows->sum(static fn (SaleItem $item): float => (float) $item->discount_amount), 2),
+            ])
+            ->sortBy('product_id')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param Collection<int, array{product_id:int,quantity:int,discount_amount:float}> $requestedItems
+     * @return Collection<int, array{product_id:int,quantity:int,discount_amount:float}>
+     */
+    private function groupRequestedItems(Collection $requestedItems): Collection
+    {
+        return $requestedItems
+            ->groupBy(static fn (array $row): int => (int) $row['product_id'])
+            ->map(static fn (Collection $rows, int|string $productId): array => [
+                'product_id' => (int) $productId,
+                'quantity' => (int) $rows->sum(static fn (array $row): int => (int) $row['quantity']),
+                'discount_amount' => round((float) $rows->sum(static fn (array $row): float => (float) ($row['discount_amount'] ?? 0)), 2),
+            ]);
+    }
+
+    private function redistributePayments(Sale $sale, float $targetTotal): bool
+    {
+        $payments = $sale->payments->values();
+        if ($payments->isEmpty()) {
+            return false;
+        }
+
+        $targetTotal = round($targetTotal, 2);
+        $currentTotal = round((float) $payments->sum(static fn (SalePayment $payment): float => (float) $payment->amount), 2);
+
+        if (abs($currentTotal - $targetTotal) <= 0.0001) {
+            return false;
+        }
+
+        if ($payments->count() === 1) {
+            /** @var SalePayment $single */
+            $single = $payments->first();
+            $single->amount = $targetTotal;
+            $single->save();
+
+            return true;
+        }
+
+        $remaining = $targetTotal;
+        $lastIndex = $payments->count() - 1;
+
+        foreach ($payments as $index => $payment) {
+            $amount = 0.0;
+
+            if ($index === $lastIndex) {
+                $amount = round($remaining, 2);
+            } elseif ($currentTotal > 0) {
+                $ratio = (float) $payment->amount / $currentTotal;
+                $amount = round($targetTotal * $ratio, 2);
+                $remaining = round($remaining - $amount, 2);
+            }
+
+            $payment->amount = $amount;
+            $payment->save();
+        }
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $metadata
+     * @return array{shipping_amount:float,payment_fee_amount:float,non_shipping_surcharge:float}
+     */
+    private function resolveOrderSurchargeComponents(Sale $sale, array $metadata): array
+    {
+        $shippingAmount = round(max(0, (float) $sale->shipping_amount), 2);
+        $surchargeAmount = round(max(0, (float) $sale->surcharge_amount), 2);
+        $derivedNonShipping = round(max(0, $surchargeAmount - $shippingAmount), 2);
+
+        $charges = is_array($metadata['charges'] ?? null) ? $metadata['charges'] : [];
+        $paymentFeeFromCharges = round(max(0, (float) ($charges['payment_fee_amount'] ?? 0)), 2);
+        $paymentFeeAmount = $paymentFeeFromCharges > 0 ? $paymentFeeFromCharges : $derivedNonShipping;
+
+        return [
+            'shipping_amount' => $shippingAmount,
+            'payment_fee_amount' => $paymentFeeAmount,
+            'non_shipping_surcharge' => max($derivedNonShipping, $paymentFeeAmount),
+        ];
+    }
+
     private function appendNote(?string $base, ?string $extra): ?string
     {
         $current = trim((string) ($base ?? ''));
@@ -738,3 +1247,4 @@ class OrderController extends Controller
         app(\App\Services\OrderNotificationService::class)->notifyOrderStatusChanged($sale);
     }
 }
+

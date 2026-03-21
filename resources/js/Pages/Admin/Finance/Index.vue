@@ -1189,15 +1189,17 @@ const pdfIframeKey = (file) => `${String(file?.public_url ?? '')}-${pdfZoom.valu
                                     <th class="px-4 py-3">Vencimento</th>
                                     <th class="px-4 py-3">Valor</th>
                                     <th class="px-4 py-3">Status</th>
-                                    <th class="px-4 py-3 text-right">Acoes</th>
+                                    <th class="px-4 py-3 text-right">Ações</th>
                                 </tr>
                             </thead>
                             <tbody v-if="activeRows.length" class="divide-y divide-slate-100 bg-white">
                                 <tr v-for="item in activeRows" :key="item.id">
-                                    <td class="px-4 py-3 font-semibold text-slate-900">{{ item.primary }}</td>
+                                    <td class="px-4 py-3">
+                                        <p class="font-semibold text-slate-900">{{ item.primary }}</p>
+                                        <p class="text-[11px] text-slate-400">{{ item.reference || '' }}</p>
+                                    </td>
                                     <td class="px-4 py-3 text-slate-600">
                                         <div class="flex flex-col items-start gap-1">
-                                            <span>{{ item.reference || '-' }}</span>
                                             <button
                                                 v-if="item.document_url"
                                                 type="button"

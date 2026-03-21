@@ -129,6 +129,97 @@ class ShopCheckoutTest extends TestCase
         ]);
     }
 
+    public function test_checkout_applies_payment_fee_and_returns_manual_whatsapp_cta_when_no_gateway_is_active(): void
+    {
+        $contractor = $this->createContractor('loja-taxa-manual');
+        $contractor->phone = '(71) 99999-8888';
+        $contractor->save();
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Tênis Casual',
+            'sku' => 'TEN-100',
+            'sale_price' => 100.00,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => null,
+            'code' => PaymentMethod::CODE_CREDIT_CARD,
+            'name' => 'Cartão de crédito',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => true,
+            'max_installments' => 6,
+            'fee_fixed' => 2.00,
+            'fee_percent' => 3.00,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Taxa',
+            'email' => 'cliente-taxa@example.com',
+            'phone' => '71999990055',
+            'cep' => '41810-000',
+            'street' => 'Rua das Flores',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), [
+                'customer_name' => 'Cliente Taxa',
+                'customer_phone' => '(71) 99999-0055',
+                'customer_email' => 'cliente-taxa@example.com',
+                'payment_method_id' => $paymentMethod->id,
+                'items' => [
+                    ['product_id' => $product->id, 'quantity' => 1],
+                ],
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+        $response->assertSessionHas('checkout_manual');
+
+        $manualPayload = $response->getSession()->get('checkout_manual');
+        $this->assertNotEmpty((string) data_get($manualPayload, 'whatsapp_url'));
+        $this->assertStringContainsString('https://wa.me/5571999998888', (string) data_get($manualPayload, 'whatsapp_url'));
+
+        $sale = Sale::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('source', Sale::SOURCE_CATALOG)
+            ->firstOrFail();
+
+        $this->assertSame(100.00, (float) $sale->subtotal_amount);
+        $this->assertSame(0.00, (float) $sale->shipping_amount);
+        $this->assertSame(5.00, (float) $sale->surcharge_amount);
+        $this->assertSame(105.00, (float) $sale->total_amount);
+        $this->assertSame(5.00, (float) data_get($sale->metadata, 'charges.payment_fee_amount'));
+        $this->assertSame(2.00, (float) data_get($sale->metadata, 'charges.payment_fee_fixed'));
+        $this->assertSame(3.00, (float) data_get($sale->metadata, 'charges.payment_fee_percent'));
+        $this->assertSame('manual', (string) data_get($sale->metadata, 'checkout_mode'));
+
+        $payment = SalePayment::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('sale_id', $sale->id)
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertSame(105.00, (float) $payment->amount);
+        $this->assertSame('manual', (string) data_get($payment->metadata, 'checkout_mode'));
+        $this->assertSame(5.00, (float) data_get($payment->metadata, 'fee_snapshot.fee_amount'));
+    }
+
     public function test_checkout_pix_with_mercado_pago_creates_payment_intent_and_updates_sale_status(): void
     {
         $contractor = $this->createContractor('loja-mp');
