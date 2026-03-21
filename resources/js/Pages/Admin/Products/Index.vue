@@ -163,6 +163,14 @@ const productForm = useForm({
 const deleteForm = useForm({});
 
 const isEditing = computed(() => Boolean(editingProduct.value?.id));
+const galleryLimitPerProduct = computed(() => Number(props.storage?.gallery_limit_per_product ?? 5) || 5);
+const currentGalleryImageCount = computed(() =>
+    Array.isArray(productForm.gallery_images) ? productForm.gallery_images.length : 0,
+);
+const galleryAvailableSlots = computed(() =>
+    Math.max(0, galleryLimitPerProduct.value - currentGalleryImageCount.value),
+);
+const isGalleryPickerDisabled = computed(() => galleryAvailableSlots.value <= 0);
 
 const openCreate = () => {
     revokeGalleryPreviewUrls();
@@ -271,14 +279,18 @@ const parseVariationAttributes = (value) => {
         }, {});
 };
 
+const openGalleryPicker = () => {
+    if (isGalleryPickerDisabled.value) return;
+    if (galleryInputRef.value) {
+        galleryInputRef.value.click();
+    }
+};
+
 const onGalleryFilesChange = (event) => {
     const files = Array.from(event?.target?.files ?? []);
     if (!files.length) return;
 
-    const limit = Number(props.storage?.gallery_limit_per_product ?? 5) || 5;
-    const currentImages = Array.isArray(productForm.gallery_images) ? productForm.gallery_images.length : 0;
-    const availableSlots = Math.max(0, limit - currentImages);
-    const acceptedFiles = files.slice(0, availableSlots);
+    const acceptedFiles = files.slice(0, galleryAvailableSlots.value);
 
     productForm.gallery_files = [
         ...(Array.isArray(productForm.gallery_files) ? productForm.gallery_files : []),
@@ -402,6 +414,16 @@ const goToPreviousProductStep = () => {
 const goToNextProductStep = () => {
     if (isLastProductStep.value) return;
     productWizardStep.value += 1;
+};
+
+const setProductWizardStep = (step) => {
+    if (!isEditing.value) return;
+
+    const parsedStep = Number(step);
+    if (!Number.isFinite(parsedStep)) return;
+
+    const safeStep = Math.min(productWizardSteps.length, Math.max(1, Math.floor(parsedStep)));
+    productWizardStep.value = safeStep;
 };
 
 const formatMoney = (value) => {
@@ -679,6 +701,8 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                 description="Preencha os dados por etapas para facilitar o cadastro."
                 :steps="productWizardSteps"
                 :current-step="productWizardStep"
+                :steps-clickable="isEditing"
+                @step-change="setProductWizardStep"
                 @close="closeModal"
             >
                 <div v-if="productWizardStep <= 3" class="grid gap-3 md:grid-cols-2">
@@ -709,19 +733,33 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                             <div class="flex items-center justify-between gap-2">
                                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Galeria de fotos</p>
                                 <span class="text-[11px] font-semibold text-slate-500">
-                                    {{ Array.isArray(productForm.gallery_images) ? productForm.gallery_images.length : 0 }}/{{ props.storage?.gallery_limit_per_product || 5 }}
+                                    {{ currentGalleryImageCount }}/{{ galleryLimitPerProduct }}
                                 </span>
+                            </div>
+                            <div class="mt-2 flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="isGalleryPickerDisabled"
+                                    @click="openGalleryPicker"
+                                >
+                                    Escolher arquivos
+                                </button>
+                                <span class="text-[11px] text-slate-500">Formatos: JPG, PNG e WEBP.</span>
                             </div>
                             <input
                                 ref="galleryInputRef"
                                 type="file"
                                 accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                                 multiple
-                                class="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"
+                                class="hidden"
                                 @change="onGalleryFilesChange"
                             >
                             <p class="mt-1 text-[11px] text-slate-500">
-                                Envie até {{ props.storage?.gallery_limit_per_product || 5 }} imagens por produto.
+                                Envie até {{ galleryLimitPerProduct }} imagens por produto.
+                                <span v-if="isGalleryPickerDisabled" class="font-semibold text-amber-700">
+                                    Limite atingido.
+                                </span>
                             </p>
 
                             <div

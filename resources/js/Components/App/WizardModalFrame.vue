@@ -19,13 +19,21 @@ const props = defineProps({
         type: Number,
         default: 1,
     },
+    stepsClickable: {
+        type: Boolean,
+        default: false,
+    },
+    maxClickableStep: {
+        type: Number,
+        default: null,
+    },
     showClose: {
         type: Boolean,
         default: true,
     },
 });
 
-const emit = defineEmits(['close']);
+const emit = defineEmits(['close', 'step-change']);
 const slots = useSlots();
 
 const stepsSafe = computed(() => {
@@ -47,6 +55,23 @@ const stepsGridClass = computed(() => {
 });
 
 const hasFooter = computed(() => Boolean(slots.footer));
+
+const isStepClickable = (stepNumber) => {
+    if (!props.stepsClickable) return false;
+
+    if (props.maxClickableStep === null || props.maxClickableStep === undefined) return true;
+
+    const parsedMax = Number(props.maxClickableStep);
+    if (!Number.isFinite(parsedMax)) return true;
+
+    const safeMax = Math.max(1, Math.floor(parsedMax));
+    return stepNumber <= safeMax;
+};
+
+const onStepClick = (stepNumber) => {
+    if (!isStepClickable(stepNumber)) return;
+    emit('step-change', stepNumber);
+};
 </script>
 
 <template>
@@ -78,9 +103,13 @@ const hasFooter = computed(() => Boolean(slots.footer));
                 v-for="(step, index) in stepsSafe"
                 :key="`wizard-step-${index}`"
                 type="button"
-                disabled
+                :disabled="!isStepClickable(index + 1)"
                 class="flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition disabled:cursor-default"
-                :class="index + 1 === currentStepSafe ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600'"
+                :class="[
+                    index + 1 === currentStepSafe ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600',
+                    isStepClickable(index + 1) ? 'hover:border-slate-300 hover:bg-slate-50' : '',
+                ]"
+                @click="onStepClick(index + 1)"
             >
                 {{ step }}
             </button>

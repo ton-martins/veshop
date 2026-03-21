@@ -199,7 +199,7 @@
     {
         key: 'manuais',
         label: 'Manuais',
-        icon: 'BookOpenCheck',
+        icon: 'FileText',
         links: [
             {
                 key: 'admin-manuals',
