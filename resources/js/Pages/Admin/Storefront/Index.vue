@@ -1,11 +1,14 @@
-<script setup>
+﻿<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { Store, Truck } from 'lucide-vue-next';
 
 const props = defineProps({
+    initialTab: { type: String, default: 'vitrine' },
     contractor: { type: Object, default: () => ({}) },
     storefront: { type: Object, default: () => ({}) },
+    shopShipping: { type: Object, default: () => ({}) },
     products: { type: Array, default: () => [] },
     templates: { type: Array, default: () => [] },
     shop_url: { type: String, default: '' },
@@ -14,8 +17,29 @@ const props = defineProps({
 const page = usePage();
 const statusMessage = computed(() => page.props.flash?.status ?? null);
 
-const form = useForm({
-    template: 'comercio',
+const tabs = [
+    { key: 'vitrine', label: 'Vitrine', icon: Store },
+    { key: 'frete', label: 'Frete', icon: Truck },
+];
+const allowedTabs = new Set(tabs.map((tab) => tab.key));
+const activeTab = ref(allowedTabs.has(props.initialTab) ? props.initialTab : 'vitrine');
+
+watch(() => props.initialTab, (tab) => {
+    activeTab.value = allowedTabs.has(tab) ? tab : 'vitrine';
+});
+
+const setActiveTab = (tab) => {
+    if (!allowedTabs.has(tab)) return;
+    activeTab.value = tab;
+
+    if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', tab);
+        window.history.replaceState(window.history.state, '', url.toString());
+    }
+};
+
+const storefrontForm = useForm({
     hero_enabled: true,
     hero_title: '',
     hero_subtitle: '',
@@ -29,30 +53,46 @@ const form = useForm({
     catalog_subtitle: '',
 });
 
-const hydrate = () => {
+const shippingForm = useForm({
+    shipping_pickup_enabled: true,
+    shipping_delivery_enabled: true,
+    shipping_fixed_fee: 0,
+    shipping_free_over: '',
+    shipping_estimated_days: 2,
+});
+
+const hydrateStorefront = () => {
     const storefront = props.storefront ?? {};
     const blocks = storefront.blocks ?? {};
     const hero = storefront.hero ?? {};
     const promotions = storefront.promotions ?? {};
     const catalog = storefront.catalog ?? {};
 
-    form.template = storefront.template ?? 'comercio';
-    form.hero_enabled = blocks.hero ?? true;
-    form.hero_title = hero.title ?? '';
-    form.hero_subtitle = hero.subtitle ?? '';
-    form.promotions_enabled = blocks.promotions ?? true;
-    form.promotions_title = promotions.title ?? '';
-    form.promotions_subtitle = promotions.subtitle ?? '';
-    form.promotion_product_ids = Array.isArray(promotions.product_ids)
+    storefrontForm.hero_enabled = blocks.hero ?? true;
+    storefrontForm.hero_title = hero.title ?? '';
+    storefrontForm.hero_subtitle = hero.subtitle ?? '';
+    storefrontForm.promotions_enabled = blocks.promotions ?? true;
+    storefrontForm.promotions_title = promotions.title ?? '';
+    storefrontForm.promotions_subtitle = promotions.subtitle ?? '';
+    storefrontForm.promotion_product_ids = Array.isArray(promotions.product_ids)
         ? promotions.product_ids.map((id) => String(id))
         : [];
-    form.categories_enabled = blocks.categories ?? true;
-    form.catalog_enabled = blocks.catalog ?? true;
-    form.catalog_title = catalog.title ?? '';
-    form.catalog_subtitle = catalog.subtitle ?? '';
+    storefrontForm.categories_enabled = blocks.categories ?? true;
+    storefrontForm.catalog_enabled = blocks.catalog ?? true;
+    storefrontForm.catalog_title = catalog.title ?? '';
+    storefrontForm.catalog_subtitle = catalog.subtitle ?? '';
 };
 
-watch(() => props.storefront, hydrate, { deep: true, immediate: true });
+const hydrateShipping = () => {
+    shippingForm.shipping_pickup_enabled = props.shopShipping?.pickup_enabled ?? true;
+    shippingForm.shipping_delivery_enabled = props.shopShipping?.delivery_enabled ?? true;
+    shippingForm.shipping_fixed_fee = props.shopShipping?.fixed_fee ?? 0;
+    shippingForm.shipping_free_over = props.shopShipping?.free_over ?? '';
+    shippingForm.shipping_estimated_days = props.shopShipping?.estimated_days ?? 2;
+};
+
+watch(() => props.storefront, hydrateStorefront, { deep: true, immediate: true });
+watch(() => props.shopShipping, hydrateShipping, { deep: true, immediate: true });
 
 const productOptions = computed(() =>
     (props.products ?? []).map((product) => ({
@@ -61,18 +101,22 @@ const productOptions = computed(() =>
     })),
 );
 
-const selectedPromotionCount = computed(() => form.promotion_product_ids.length);
+const selectedPromotionCount = computed(() => storefrontForm.promotion_product_ids.length);
 const previewBrandName = computed(() => props.contractor?.brand_name || props.contractor?.name || 'Loja');
 const activeBlocksCount = computed(() =>
-    [form.hero_enabled, form.promotions_enabled, form.categories_enabled, form.catalog_enabled]
-        .filter(Boolean)
-        .length,
+    [storefrontForm.hero_enabled, storefrontForm.promotions_enabled, storefrontForm.categories_enabled, storefrontForm.catalog_enabled].filter(Boolean).length,
 );
 
-const submit = () => {
-    form.transform((data) => ({
+const currentTemplate = computed(() => String(props.storefront?.template ?? '').trim().toLowerCase());
+const currentTemplateMeta = computed(() =>
+    (props.templates ?? []).find((item) => String(item?.value ?? '').trim().toLowerCase() === currentTemplate.value) ?? null,
+);
+
+const submitStorefront = () => {
+    storefrontForm.transform((data) => ({
         ...data,
         _method: 'put',
+        section: 'storefront',
         banners_enabled: false,
         banners: [],
         promotion_product_ids: (data.promotion_product_ids ?? [])
@@ -83,20 +127,27 @@ const submit = () => {
         forceFormData: true,
     });
 };
+
+const submitShipping = () => {
+    shippingForm.transform((data) => ({
+        ...data,
+        _method: 'put',
+        section: 'shipping',
+    })).post(route('admin.storefront.update'), {
+        preserveScroll: true,
+    });
+};
 </script>
 
 <template>
     <AuthenticatedLayout area="admin" header-variant="compact" header-title="Loja Virtual">
         <Head title="Loja Virtual" />
 
-        <div
-            v-if="statusMessage"
-            class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
-        >
+        <div v-if="statusMessage" class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
             {{ statusMessage }}
         </div>
 
-        <div class="space-y-6">
+        <section class="space-y-4">
             <section class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Loja pública</p>
@@ -116,169 +167,103 @@ const submit = () => {
                 <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Blocos ativos</p>
                     <p class="mt-2 text-2xl font-bold text-slate-900">{{ activeBlocksCount }}</p>
-                    <p class="mt-1 text-xs text-slate-500">de 4 blocos disponíveis</p>
                 </article>
 
                 <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Promoções</p>
                     <p class="mt-2 text-2xl font-bold text-slate-900">{{ selectedPromotionCount }}</p>
-                    <p class="mt-1 text-xs text-slate-500">itens selecionados</p>
                 </article>
             </section>
 
-            <form
-                class="overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-sm"
-                @submit.prevent="submit"
-            >
-                <header class="border-b border-emerald-100/80 px-6 py-5">
-                    <h2 class="text-sm font-semibold text-emerald-900">Configurações da loja virtual</h2>
-                    <p class="mt-1 text-xs text-slate-500">
-                        Personalize títulos, promoções e a ordem dos blocos da vitrine pública.
-                    </p>
-                </header>
+            <div class="flex flex-wrap gap-2">
+                <button
+                    v-for="tab in tabs"
+                    :key="tab.key"
+                    type="button"
+                    class="inline-flex items-center gap-1 rounded-xl border px-3 py-2 text-xs font-semibold"
+                    :class="activeTab === tab.key ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700'"
+                    @click="setActiveTab(tab.key)"
+                >
+                    <component :is="tab.icon" class="h-3.5 w-3.5" />
+                    {{ tab.label }}
+                </button>
+            </div>
 
-                <div class="space-y-6 px-6 py-6">
-                    <section class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Modelo da loja</p>
-                        <select
-                            v-model="form.template"
-                            class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-                        >
-                            <option
-                                v-for="template in templates"
-                                :key="`template-${template.value}`"
-                                :value="template.value"
-                            >
-                                {{ template.label }}
-                            </option>
-                        </select>
-                        <p class="mt-2 text-xs text-slate-500">
-                            {{ templates.find((item) => item.value === form.template)?.description || 'Defina o foco da vitrine.' }}
-                        </p>
-                        <p v-if="form.errors.template" class="mt-2 text-[11px] text-rose-600">{{ form.errors.template }}</p>
-                    </section>
+            <form v-if="activeTab === 'vitrine'" class="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" @submit.prevent="submitStorefront">
+                <section class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Modelo da loja</p>
+                    <div class="mt-2 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                        <p class="text-sm font-semibold text-slate-800">{{ currentTemplateMeta?.label || 'Modelo padrão' }}</p>
+                        <span class="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">Somente leitura</span>
+                    </div>
+                </section>
 
-                    <section class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Blocos ativos</p>
-                        <div class="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-2">
-                            <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                <span>Hero principal</span>
-                                <input v-model="form.hero_enabled" type="checkbox" class="rounded border-slate-300">
-                            </label>
-                            <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                <span>Promoções</span>
-                                <input v-model="form.promotions_enabled" type="checkbox" class="rounded border-slate-300">
-                            </label>
-                            <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                <span>Categorias</span>
-                                <input v-model="form.categories_enabled" type="checkbox" class="rounded border-slate-300">
-                            </label>
-                            <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                <span>Catálogo principal</span>
-                                <input v-model="form.catalog_enabled" type="checkbox" class="rounded border-slate-300">
-                            </label>
-                        </div>
-                    </section>
+                <section class="grid gap-3 md:grid-cols-2">
+                    <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <span>Hero principal</span>
+                        <input v-model="storefrontForm.hero_enabled" type="checkbox" class="rounded border-slate-300">
+                    </label>
+                    <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <span>Promoções</span>
+                        <input v-model="storefrontForm.promotions_enabled" type="checkbox" class="rounded border-slate-300">
+                    </label>
+                    <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <span>Categorias</span>
+                        <input v-model="storefrontForm.categories_enabled" type="checkbox" class="rounded border-slate-300">
+                    </label>
+                    <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <span>Catálogo</span>
+                        <input v-model="storefrontForm.catalog_enabled" type="checkbox" class="rounded border-slate-300">
+                    </label>
+                </section>
 
-                    <section class="rounded-2xl border border-slate-200 bg-white p-4">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cabeçalho da vitrine</p>
-                        <div class="mt-3 grid gap-3">
-                            <div>
-                                <label class="text-xs font-medium uppercase tracking-wide text-slate-500">Título</label>
-                                <input
-                                    v-model="form.hero_title"
-                                    type="text"
-                                    maxlength="120"
-                                    class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                    placeholder="Ex.: Compre em nossa loja"
-                                >
-                                <p v-if="form.errors.hero_title" class="mt-1 text-[11px] text-rose-600">{{ form.errors.hero_title }}</p>
-                            </div>
-                            <div>
-                                <label class="text-xs font-medium uppercase tracking-wide text-slate-500">Subtítulo</label>
-                                <textarea
-                                    v-model="form.hero_subtitle"
-                                    rows="2"
-                                    maxlength="220"
-                                    class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                    placeholder="Mensagem principal da loja"
-                                />
-                                <p v-if="form.errors.hero_subtitle" class="mt-1 text-[11px] text-rose-600">{{ form.errors.hero_subtitle }}</p>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="rounded-2xl border border-slate-200 bg-white p-4">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Promoções</p>
-                        <div class="mt-3 grid gap-3">
-                            <input
-                                v-model="form.promotions_title"
-                                type="text"
-                                maxlength="80"
-                                class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                placeholder="Título das promoções"
-                            >
-                            <textarea
-                                v-model="form.promotions_subtitle"
-                                rows="2"
-                                maxlength="220"
-                                class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                placeholder="Subtítulo das promoções"
-                            />
-                            <div>
-                                <label class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                    Itens em destaque ({{ selectedPromotionCount }} selecionado(s))
-                                </label>
-                                <select
-                                    v-model="form.promotion_product_ids"
-                                    multiple
-                                    class="mt-1 h-48 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-                                >
-                                    <option
-                                        v-for="option in productOptions"
-                                        :key="`promotion-item-${option.value}`"
-                                        :value="option.value"
-                                    >
-                                        {{ option.label }}
-                                    </option>
-                                </select>
-                                <p class="mt-1 text-[11px] text-slate-500">Sem seleção, a loja usa os primeiros itens ativos como fallback.</p>
-                            </div>
-                        </div>
-                        <p v-if="form.errors.promotion_product_ids" class="mt-2 text-[11px] text-rose-600">{{ form.errors.promotion_product_ids }}</p>
-                    </section>
-
-                    <section class="rounded-2xl border border-slate-200 bg-white p-4">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Catálogo</p>
-                        <div class="mt-3 grid gap-3">
-                            <input
-                                v-model="form.catalog_title"
-                                type="text"
-                                maxlength="80"
-                                class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                placeholder="Título do catálogo"
-                            >
-                            <textarea
-                                v-model="form.catalog_subtitle"
-                                rows="2"
-                                maxlength="220"
-                                class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                placeholder="Subtítulo do catálogo"
-                            />
-                        </div>
-                    </section>
+                <div class="grid gap-3 md:grid-cols-2">
+                    <input v-model="storefrontForm.hero_title" type="text" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Título da vitrine">
+                    <input v-model="storefrontForm.promotions_title" type="text" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Título das promoções">
+                    <textarea v-model="storefrontForm.hero_subtitle" rows="2" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Subtítulo da vitrine" />
+                    <textarea v-model="storefrontForm.promotions_subtitle" rows="2" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Subtítulo das promoções" />
                 </div>
 
-                <footer class="border-t border-emerald-100/80 bg-white px-6 py-4">
-                    <button
-                        type="submit"
-                        class="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                        :disabled="form.processing"
-                    >
-                        {{ form.processing ? 'Salvando...' : 'Salvar configurações' }}
+                <div>
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Itens em destaque ({{ selectedPromotionCount }})
+                    </label>
+                    <select v-model="storefrontForm.promotion_product_ids" multiple class="mt-1 h-40 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                        <option v-for="option in productOptions" :key="option.value" :value="option.value">
+                            {{ option.label }}
+                        </option>
+                    </select>
+                </div>
+
+                <div class="flex justify-end">
+                    <button type="submit" class="rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white" :disabled="storefrontForm.processing">
+                        {{ storefrontForm.processing ? 'Salvando...' : 'Salvar vitrine' }}
                     </button>
-                </footer>
+                </div>
             </form>
-        </div>
+
+            <form v-else class="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" @submit.prevent="submitShipping">
+                <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    <span>Permitir retirada na loja</span>
+                    <input v-model="shippingForm.shipping_pickup_enabled" type="checkbox" class="rounded border-slate-300">
+                </label>
+                <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    <span>Permitir entrega</span>
+                    <input v-model="shippingForm.shipping_delivery_enabled" type="checkbox" class="rounded border-slate-300">
+                </label>
+
+                <div class="grid gap-3 md:grid-cols-3">
+                    <input v-model="shippingForm.shipping_fixed_fee" type="number" min="0" step="0.01" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Taxa fixa (R$)">
+                    <input v-model="shippingForm.shipping_free_over" type="number" min="0" step="0.01" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Frete grátis acima (R$)">
+                    <input v-model="shippingForm.shipping_estimated_days" type="number" min="1" max="60" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Prazo (dias)">
+                </div>
+
+                <div class="flex justify-end">
+                    <button type="submit" class="rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white" :disabled="shippingForm.processing">
+                        {{ shippingForm.processing ? 'Salvando...' : 'Salvar frete' }}
+                    </button>
+                </div>
+            </form>
+        </section>
     </AuthenticatedLayout>
 </template>

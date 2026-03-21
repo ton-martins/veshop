@@ -24,7 +24,7 @@ class OrderNotificationService
     private function notifyByStatus(Sale $sale, string $title, string $message): void
     {
         $sale->loadMissing([
-            'contractor:id,slug',
+            'contractor:id,slug,settings',
             'shopCustomer:id',
         ]);
 

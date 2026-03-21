@@ -10,7 +10,9 @@ use App\Models\Contractor;
 use App\Models\Product;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -29,7 +31,9 @@ class CategoryController extends Controller
 
         $query = Category::query()
             ->where('contractor_id', $contractor->id)
-            ->withCount('products');
+            ->with('parent:id,name')
+            ->withCount('products')
+            ->withCount('children');
 
         if ($search !== '') {
             $query->where(function ($innerQuery) use ($search): void {
@@ -54,10 +58,13 @@ class CategoryController extends Controller
             ->through(static function (Category $category): array {
                 return [
                     'id' => $category->id,
+                    'parent_id' => $category->parent_id ? (int) $category->parent_id : null,
+                    'parent_name' => $category->parent?->name !== null ? (string) $category->parent->name : null,
                     'name' => $category->name,
                     'slug' => $category->slug,
                     'description' => $category->description,
                     'products_count' => (int) $category->products_count,
+                    'children_count' => (int) $category->children_count,
                     'is_active' => (bool) $category->is_active,
                     'status_label' => $category->is_active ? 'Ativa' : 'Inativa',
                     'created_at' => optional($category->created_at)?->format('d/m/Y H:i'),
@@ -83,14 +90,27 @@ class CategoryController extends Controller
             ->whereNull('category_id')
             ->count();
 
+        $rootCategories = Category::query()
+            ->where('contractor_id', $contractor->id)
+            ->whereNull('parent_id')
+            ->count();
+
+        $subcategories = Category::query()
+            ->where('contractor_id', $contractor->id)
+            ->whereNotNull('parent_id')
+            ->count();
+
         return Inertia::render('Admin/Categories/Index', [
             'categories' => $categories,
+            'parentOptions' => $this->resolveParentOptions($contractor),
             'filters' => [
                 'search' => $search,
                 'status' => $status,
             ],
             'stats' => [
                 'categories' => $totalCategories,
+                'root' => $rootCategories,
+                'subcategories' => $subcategories,
                 'active' => $activeCategories,
                 'products_linked' => $linkedProducts,
                 'uncategorized' => $uncategorizedProducts,
@@ -107,6 +127,7 @@ class CategoryController extends Controller
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
 
         $data = $request->validated();
+        $this->assertParentBelongsToContractor($contractor, $data['parent_id'] ?? null);
         $slugBase = $data['slug'] ?: $data['name'];
         $data['slug'] = $this->resolveUniqueSlug($contractor, $slugBase);
         $data['contractor_id'] = $contractor->id;
@@ -127,6 +148,8 @@ class CategoryController extends Controller
         $category = $this->resolveOwnedCategory($contractor, $category);
 
         $data = $request->validated();
+        $this->assertParentBelongsToContractor($contractor, $data['parent_id'] ?? null, $category->id);
+        $this->assertNoCategoryHierarchyCycle($contractor, $category, $data['parent_id'] ?? null);
         $slugBase = $data['slug'] ?: $data['name'];
         $data['slug'] = $this->resolveUniqueSlug($contractor, $slugBase, $category->id);
 
@@ -211,5 +234,96 @@ class CategoryController extends Controller
             ->where('slug', $slug)
             ->when($ignoreCategoryId, static fn ($query) => $query->where('id', '!=', $ignoreCategoryId))
             ->exists();
+    }
+
+    private function assertParentBelongsToContractor(Contractor $contractor, mixed $parentId, ?int $currentCategoryId = null): void
+    {
+        if (! $parentId) {
+            return;
+        }
+
+        $safeParentId = (int) $parentId;
+
+        if ($currentCategoryId !== null && $safeParentId === $currentCategoryId) {
+            throw ValidationException::withMessages([
+                'parent_id' => 'A categoria não pode ser filha dela mesma.',
+            ]);
+        }
+
+        $exists = Category::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('id', $safeParentId)
+            ->exists();
+
+        if ($exists) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'parent_id' => 'Subcategoria inválida para o contratante ativo.',
+        ]);
+    }
+
+    private function assertNoCategoryHierarchyCycle(Contractor $contractor, Category $category, mixed $parentId): void
+    {
+        if (! $parentId) {
+            return;
+        }
+
+        $visited = collect([(int) $category->id]);
+        $currentParentId = (int) $parentId;
+
+        while ($currentParentId > 0) {
+            if ($visited->contains($currentParentId)) {
+                throw ValidationException::withMessages([
+                    'parent_id' => 'Não é possível criar ciclo entre categorias e subcategorias.',
+                ]);
+            }
+
+            $visited->push($currentParentId);
+
+            $nextParentId = Category::query()
+                ->where('contractor_id', $contractor->id)
+                ->where('id', $currentParentId)
+                ->value('parent_id');
+
+            $currentParentId = (int) ($nextParentId ?? 0);
+        }
+    }
+
+    /**
+     * @return list<array{id:int,name:string,parent_id:int|null}>
+     */
+    private function resolveParentOptions(Contractor $contractor): array
+    {
+        $categories = Category::query()
+            ->where('contractor_id', $contractor->id)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'parent_id']);
+
+        $groupedByParent = $categories
+            ->groupBy(static fn (Category $category): int => (int) ($category->parent_id ?? 0));
+
+        $flattened = [];
+        $appendChildren = function (int $parentId, int $depth) use (&$appendChildren, &$flattened, $groupedByParent): void {
+            /** @var Collection<int, Category> $children */
+            $children = $groupedByParent->get($parentId, collect());
+
+            foreach ($children as $child) {
+                $prefix = str_repeat('— ', max(0, $depth));
+                $flattened[] = [
+                    'id' => (int) $child->id,
+                    'name' => trim("{$prefix}{$child->name}"),
+                    'parent_id' => $child->parent_id ? (int) $child->parent_id : null,
+                ];
+
+                $appendChildren((int) $child->id, $depth + 1);
+            }
+        };
+
+        $appendChildren(0, 0);
+
+        return $flattened;
     }
 }

@@ -103,8 +103,16 @@
                 key: 'admin-finance',
                 label: 'Contas',
                 route: 'admin.finance.index',
-                match: ['admin.finance.*'],
+                match: ['admin.finance.index', 'admin.finance.payables', 'admin.finance.receivables', 'admin.finance.entries.*'],
                 icon: 'Banknote',
+                module: 'finance',
+            },
+            {
+                key: 'admin-finance-payments',
+                label: 'Pagamentos',
+                route: 'admin.finance.payments',
+                match: ['admin.finance.payments', 'admin.finance.gateways.*', 'admin.finance.methods.*'],
+                icon: 'CreditCard',
                 module: 'finance',
             },
         ],
@@ -171,13 +179,6 @@
         icon: 'Cog',
         links: [
             {
-                key: 'admin-manuals',
-                label: 'Manuais',
-                route: 'admin.manuals.index',
-                match: ['admin.manuals.*'],
-                icon: 'BookOpenCheck',
-            },
-            {
                 key: 'admin-storefront',
                 label: 'Loja virtual',
                 route: 'admin.storefront.index',
@@ -192,6 +193,20 @@
                 match: ['admin.branding.*'],
                 icon: 'Palette',
                 module: 'files',
+            },
+        ],
+    },
+    {
+        key: 'manuais',
+        label: 'Manuais',
+        icon: 'BookOpenCheck',
+        links: [
+            {
+                key: 'admin-manuals',
+                label: 'Central de manuais',
+                route: 'admin.manuals.index',
+                match: ['admin.manuals.*'],
+                icon: 'BookOpenCheck',
             },
         ],
     },

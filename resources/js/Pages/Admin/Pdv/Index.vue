@@ -57,6 +57,9 @@ const featuredProductsModalOpen = ref(false);
 const featuredProductsSearch = ref('');
 const featuredProductIds = ref([]);
 const createClientModalOpen = ref(false);
+const variationPickerModalOpen = ref(false);
+const variationPickerProduct = ref(null);
+const variationPickerVariationId = ref('');
 
 const openCashForm = useForm({ opening_balance: '0.00', notes: '' });
 const closeCashForm = useForm({ closing_balance: '', notes: '' });
@@ -500,8 +503,52 @@ function asCurrency(value) {
     return Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function addToCart(product) {
-    const existing = cartItems.value.find((item) => Number(item.product_id) === Number(product.id));
+function buildCartItemKey(productId, variationId = null) {
+    const safeProductId = Number(productId) || 0;
+    const safeVariationId = Number(variationId) || 0;
+    return `${safeProductId}:${safeVariationId}`;
+}
+
+function resolveDefaultVariation(product) {
+    const variations = Array.isArray(product?.variations) ? product.variations : [];
+    return variations.find((variation) => Number(variation?.stock_quantity ?? 0) > 0) ?? null;
+}
+
+function closeVariationPickerModal() {
+    variationPickerModalOpen.value = false;
+    variationPickerProduct.value = null;
+    variationPickerVariationId.value = '';
+}
+
+function openVariationPickerModal(product) {
+    const variations = Array.isArray(product?.variations)
+        ? product.variations.filter((variation) => Number(variation?.stock_quantity ?? 0) > 0)
+        : [];
+
+    if (!variations.length) return;
+
+    variationPickerProduct.value = {
+        ...product,
+        variations,
+    };
+    variationPickerVariationId.value = String(variations[0].id);
+    variationPickerModalOpen.value = true;
+}
+
+function addProductVariationToCart(product, variationId) {
+    const variations = Array.isArray(product?.variations) ? product.variations : [];
+    const selectedVariation = variations.find((variation) => Number(variation.id) === Number(variationId)) ?? null;
+    if (!selectedVariation) return;
+
+    const productId = Number(product.id);
+    const safeVariationId = Number(selectedVariation.id);
+    const lineKey = buildCartItemKey(productId, safeVariationId);
+    const lineStock = Number(selectedVariation.stock_quantity ?? 0);
+    const linePrice = Number(selectedVariation.sale_price ?? 0);
+    const lineSku = selectedVariation.sku || product.sku || null;
+    const lineName = `${product.name} • ${selectedVariation.name}`;
+
+    const existing = cartItems.value.find((item) => String(item.key) === lineKey);
 
     if (existing) {
         if (existing.quantity < Number(existing.stock_quantity ?? 0)) existing.quantity += 1;
@@ -509,17 +556,76 @@ function addToCart(product) {
     }
 
     cartItems.value.push({
-        product_id: Number(product.id),
-        name: product.name,
+        key: lineKey,
+        product_id: productId,
+        variation_id: safeVariationId,
+        variation_name: selectedVariation.name,
+        name: lineName,
+        sku: lineSku,
         image_url: product.image_url || '',
         quantity: 1,
-        unit_price: Number(product.sale_price ?? 0),
-        stock_quantity: Number(product.stock_quantity ?? 0),
+        unit_price: linePrice,
+        stock_quantity: lineStock,
     });
 }
 
-function removeFromCart(productId) {
-    cartItems.value = cartItems.value.filter((item) => Number(item.product_id) !== Number(productId));
+function addToCart(product) {
+    const hasVariations = Boolean(product?.has_variations);
+    const variations = Array.isArray(product?.variations)
+        ? product.variations.filter((variation) => Number(variation?.stock_quantity ?? 0) > 0)
+        : [];
+
+    if (hasVariations && !variations.length) return;
+
+    if (hasVariations && variations.length > 1) {
+        openVariationPickerModal(product);
+        return;
+    }
+
+    if (hasVariations) {
+        addProductVariationToCart(product, variations[0]?.id);
+        return;
+    }
+
+    const productId = Number(product.id);
+    const lineKey = buildCartItemKey(productId, null);
+    const lineStock = Number(product.stock_quantity ?? 0);
+    const linePrice = Number(product.sale_price ?? 0);
+    const lineSku = product.sku || null;
+    const lineName = product.name;
+
+    const existing = cartItems.value.find((item) => String(item.key) === lineKey);
+
+    if (existing) {
+        if (existing.quantity < Number(existing.stock_quantity ?? 0)) existing.quantity += 1;
+        return;
+    }
+
+    cartItems.value.push({
+        key: lineKey,
+        product_id: productId,
+        variation_id: variationId,
+        variation_name: defaultVariation?.name ?? '',
+        name: lineName,
+        sku: lineSku,
+        image_url: product.image_url || '',
+        quantity: 1,
+        unit_price: linePrice,
+        stock_quantity: lineStock,
+    });
+}
+
+function confirmVariationPickerSelection() {
+    const product = variationPickerProduct.value;
+    if (!product) return;
+
+    addProductVariationToCart(product, variationPickerVariationId.value);
+    closeVariationPickerModal();
+}
+
+function removeFromCart(productId, variationId = null) {
+    const lineKey = buildCartItemKey(productId, variationId);
+    cartItems.value = cartItems.value.filter((item) => String(item.key) !== lineKey);
 }
 
 function increase(item) {
@@ -528,7 +634,7 @@ function increase(item) {
 
 function decrease(item) {
     if (item.quantity <= 1) {
-        removeFromCart(item.product_id);
+        removeFromCart(item.product_id, item.variation_id);
         return;
     }
 
@@ -572,6 +678,7 @@ function finalizeSale() {
     saleForm.notes = notes.value;
     saleForm.items = cartItems.value.map((item) => ({
         product_id: item.product_id,
+        variation_id: item.variation_id || null,
         quantity: item.quantity,
     }));
 
@@ -914,7 +1021,7 @@ function submitCreateClient() {
                     <div class="mt-3 space-y-2 md:max-h-44 md:overflow-y-auto md:pr-1">
                         <article
                             v-for="item in cartItems"
-                            :key="item.product_id"
+                            :key="item.key"
                             class="rounded-xl border border-slate-300 bg-slate-50/80 px-3 py-2"
                         >
                             <div class="flex items-center justify-between gap-2">
@@ -931,9 +1038,12 @@ function submitCreateClient() {
                                             sem
                                         </div>
                                     </div>
-                                    <p class="truncate text-sm font-semibold text-slate-900">{{ item.name }}</p>
+                                    <div class="min-w-0">
+                                        <p class="truncate text-sm font-semibold text-slate-900">{{ item.name }}</p>
+                                        <p v-if="item.sku" class="truncate text-[11px] text-slate-500">{{ item.sku }}</p>
+                                    </div>
                                 </div>
-                                <button type="button" class="rounded p-1 text-slate-500 transition hover:bg-slate-200" @click="removeFromCart(item.product_id)">
+                                <button type="button" class="rounded p-1 text-slate-500 transition hover:bg-slate-200" @click="removeFromCart(item.product_id, item.variation_id)">
                                     <Trash2 class="h-3.5 w-3.5" />
                                 </button>
                             </div>
@@ -1233,6 +1343,55 @@ function submitCreateClient() {
                         </button>
                         <button type="button" class="rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60" :disabled="closeCashForm.processing" @click="submitCloseCash">
                             {{ closeCashForm.processing ? 'Fechando...' : 'Fechar caixa' }}
+                        </button>
+                    </div>
+                </template>
+            </WizardModalFrame>
+        </Modal>
+
+        <Modal :show="variationPickerModalOpen" max-width="5xl" @close="closeVariationPickerModal">
+            <WizardModalFrame
+                title="Selecionar variação"
+                description="Escolha a variação para adicionar ao carrinho."
+                :steps="['Variação']"
+                :current-step="1"
+                @close="closeVariationPickerModal"
+            >
+                <div class="space-y-3">
+                    <p class="text-sm font-semibold text-slate-900">
+                        {{ variationPickerProduct?.name || 'Produto' }}
+                    </p>
+                    <div class="space-y-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Variação disponível</label>
+                        <select
+                            v-model="variationPickerVariationId"
+                            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        >
+                            <option
+                                v-for="variation in variationPickerProduct?.variations || []"
+                                :key="`pdv-variation-picker-${variation.id}`"
+                                :value="String(variation.id)"
+                            >
+                                {{ variation.name }} - {{ asCurrency(variation.sale_price) }} - estoque {{ variation.stock_quantity }}
+                            </option>
+                        </select>
+                    </div>
+                </div>
+                <template #footer>
+                    <div class="flex items-center justify-end gap-2">
+                        <button
+                            type="button"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                            @click="closeVariationPickerModal"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
+                            @click="confirmVariationPickerSelection"
+                        >
+                            Adicionar
                         </button>
                     </div>
                 </template>

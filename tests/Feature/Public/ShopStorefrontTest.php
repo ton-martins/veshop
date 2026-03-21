@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Public;
 
+use App\Models\Category;
 use App\Models\Contractor;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -133,6 +134,61 @@ class ShopStorefrontTest extends TestCase
         );
     }
 
+    public function test_public_shop_exposes_parent_and_subcategory_with_hierarchical_count(): void
+    {
+        $contractor = $this->createContractor('loja-subcategorias-vitrine');
+
+        $parentCategory = Category::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Roupas',
+            'slug' => 'roupas',
+            'description' => null,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $childCategory = Category::query()->create([
+            'contractor_id' => $contractor->id,
+            'parent_id' => $parentCategory->id,
+            'name' => 'Camisetas',
+            'slug' => 'camisetas',
+            'description' => null,
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+
+        Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'category_id' => $childCategory->id,
+            'name' => 'Camiseta Básica',
+            'sku' => 'CAM-100',
+            'sale_price' => 59.90,
+            'stock_quantity' => 12,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $response = $this->get(route('shop.show', ['slug' => $contractor->slug]));
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('Public/Shop')
+            ->where('categories', static function ($categories) use ($parentCategory, $childCategory): bool {
+                $categoriesById = collect($categories)->keyBy(static fn (array $category): int => (int) $category['id']);
+                $parent = $categoriesById->get((int) $parentCategory->id);
+                $child = $categoriesById->get((int) $childCategory->id);
+
+                if (! is_array($parent) || ! is_array($child)) {
+                    return false;
+                }
+
+                return (int) ($parent['products_count'] ?? 0) === 1
+                    && (int) ($child['products_count'] ?? 0) === 1
+                    && (int) ($child['parent_id'] ?? 0) === (int) $parentCategory->id;
+            })
+        );
+    }
+
     private function createContractor(string $slug): Contractor
     {
         return Contractor::query()->create([
@@ -151,4 +207,3 @@ class ShopStorefrontTest extends TestCase
         ]);
     }
 }
-

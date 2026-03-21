@@ -213,6 +213,7 @@ const favoritesModalOpen = ref(false);
 const productModalOpen = ref(false);
 const productModalQuantity = ref(1);
 const productModalId = ref(null);
+const productModalVariationId = ref('');
 const addToCartProcessing = ref(false);
 const profileCepLookupLoading = ref(false);
 const profileCepLookupError = ref('');
@@ -224,10 +225,66 @@ const uiFeedback = ref({
 });
 let uiFeedbackTimer = null;
 
+const categoriesSafe = computed(() =>
+    (Array.isArray(props.categories) ? props.categories : [])
+        .map((category) => ({
+            id: Number(category?.id ?? 0),
+            parent_id: Number(category?.parent_id ?? 0) || null,
+            name: String(category?.name ?? '').trim(),
+            products_count: Number(category?.products_count ?? 0),
+        }))
+        .filter((category) => Number.isFinite(category.id) && category.id > 0 && category.name !== ''),
+);
+
+const categoriesByParent = computed(() => {
+    const grouped = new Map();
+
+    for (const category of categoriesSafe.value) {
+        const parentKey = Number(category.parent_id || 0);
+        if (!grouped.has(parentKey)) {
+            grouped.set(parentKey, []);
+        }
+
+        grouped.get(parentKey).push(category);
+    }
+
+    for (const [, children] of grouped.entries()) {
+        children.sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'));
+    }
+
+    return grouped;
+});
+
+const buildCategoryList = (parentId = 0, depth = 0, bucket = []) => {
+    const children = categoriesByParent.value.get(parentId) ?? [];
+
+    for (const child of children) {
+        const prefix = depth > 0 ? `${'— '.repeat(depth)}` : '';
+        bucket.push({
+            ...child,
+            label: `${prefix}${child.name}`,
+        });
+
+        buildCategoryList(child.id, depth + 1, bucket);
+    }
+
+    return bucket;
+};
+
 const categoryList = computed(() => [
-    { id: 'all', name: 'Todos', products_count: props.products.length },
-    ...props.categories.map((c) => ({ id: Number(c.id), name: String(c.name), products_count: Number(c.products_count || 0) })),
+    { id: 'all', name: 'Todos', label: 'Todos', products_count: props.products.length, parent_id: null },
+    ...buildCategoryList(0, 0, []),
 ]);
+
+const collectDescendantCategoryIds = (categoryId, bucket = []) => {
+    const children = categoriesByParent.value.get(Number(categoryId)) ?? [];
+    for (const child of children) {
+        bucket.push(Number(child.id));
+        collectDescendantCategoryIds(child.id, bucket);
+    }
+
+    return bucket;
+};
 
 const filteredProducts = computed(() => {
     const term = normalize(search.value);
@@ -238,7 +295,13 @@ const filteredProducts = computed(() => {
     }
 
     if (selectedCategory.value !== 'all') {
-        list = list.filter((p) => Number(p.category_id) === Number(selectedCategory.value));
+        const selectedCategoryId = Number(selectedCategory.value);
+        const scopedCategoryIds = new Set([
+            selectedCategoryId,
+            ...collectDescendantCategoryIds(selectedCategoryId, []),
+        ]);
+
+        list = list.filter((p) => scopedCategoryIds.has(Number(p.category_id)));
     }
     if (term) {
         list = list.filter((p) => normalize([p.name, p.sku, p.description, p.category_name].filter(Boolean).join(' ')).includes(term));
@@ -287,6 +350,14 @@ watch(
 
 const currency = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const productImage = (product) => {
+    const galleryImage = Array.isArray(product?.images)
+        ? product.images.find((image) => String(image?.image_url ?? '').trim() !== '')
+        : null;
+    const galleryUrl = String(galleryImage?.image_url ?? '').trim();
+    if (galleryUrl !== '') {
+        return galleryUrl;
+    }
+
     const raw = String(product?.image_url || '').trim();
     return raw || `https://placehold.co/480x480/e2e8f0/475569?text=${encodeURIComponent(String(product?.name || 'Produto'))}`;
 };
@@ -394,6 +465,7 @@ const closeAllShopModals = () => {
     favoritesModalOpen.value = false;
     productModalOpen.value = false;
     productModalId.value = null;
+    productModalVariationId.value = '';
     productModalQuantity.value = 1;
 };
 
@@ -443,6 +515,7 @@ const closeFavoritesModal = () => {
 const closeProductModal = () => {
     productModalOpen.value = false;
     productModalId.value = null;
+    productModalVariationId.value = '';
     productModalQuantity.value = 1;
     addToCartProcessing.value = false;
     syncModalQueryString();
@@ -456,8 +529,22 @@ onMounted(() => {
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) return;
         cartItems.value = parsed
-            .map((i) => ({ product_id: Number(i.product_id), quantity: Math.max(1, Number(i.quantity || 1)) }))
-            .filter((i) => productMap.value.has(i.product_id));
+            .map((i) => ({
+                product_id: Number(i.product_id),
+                variation_id: i.variation_id === null || i.variation_id === undefined || i.variation_id === ''
+                    ? null
+                    : Number(i.variation_id),
+                quantity: Math.max(1, Number(i.quantity || 1)),
+            }))
+            .filter((i) => {
+                const product = productMap.value.get(i.product_id);
+                if (!product) return false;
+
+                if (!product.has_variations) return true;
+
+                return Array.isArray(product.variations)
+                    && product.variations.some((variation) => Number(variation.id) === Number(i.variation_id));
+            });
     } catch {
         cartItems.value = [];
     }
@@ -556,12 +643,74 @@ watch(
     },
 );
 
+watch(
+    [productModalOpen, activeModalProduct, activeModalVariations],
+    ([isOpen, product, variations]) => {
+        if (!isOpen || !product) {
+            productModalVariationId.value = '';
+            productModalQuantity.value = 1;
+            return;
+        }
+
+        if (!product.has_variations) {
+            productModalVariationId.value = '';
+            productModalQuantity.value = 1;
+            return;
+        }
+
+        const selectedId = Number(productModalVariationId.value || 0);
+        const hasSelected = variations.some((variation) => Number(variation.id) === selectedId);
+
+        if (!hasSelected) {
+            productModalVariationId.value = variations[0] ? String(variations[0].id) : '';
+        }
+
+        productModalQuantity.value = 1;
+    },
+    { immediate: true },
+);
+
 const cartDetailed = computed(() =>
     cartItems.value
         .map((i) => {
             const product = productMap.value.get(Number(i.product_id));
             if (!product) return null;
-            return { ...i, product, line_total: Number(product.sale_price || 0) * Number(i.quantity || 1) };
+
+            const variationId = i.variation_id !== null && i.variation_id !== undefined && i.variation_id !== ''
+                ? Number(i.variation_id)
+                : null;
+            const variation = variationId && Array.isArray(product.variations)
+                ? product.variations.find((candidate) => Number(candidate.id) === variationId)
+                : null;
+
+            if (product.has_variations && !variation) {
+                return null;
+            }
+
+            const unitPrice = variation ? Number(variation.sale_price || 0) : Number(product.sale_price || 0);
+            const stockQuantity = variation ? Number(variation.stock_quantity || 0) : Number(product.stock_quantity || 0);
+            if (stockQuantity <= 0) {
+                return null;
+            }
+            const quantity = Math.min(stockQuantity, Math.max(1, Number(i.quantity || 1)));
+            const variationName = variation ? String(variation.name || '') : '';
+            const lineName = variationName ? `${product.name} • ${variationName}` : String(product.name || '');
+            const lineSku = variation
+                ? String(variation.sku || product.sku || '').trim()
+                : String(product.sku || '').trim();
+
+            return {
+                ...i,
+                product,
+                variation,
+                variation_id: variation ? Number(variation.id) : null,
+                quantity,
+                stock_quantity: stockQuantity,
+                unit_price: unitPrice,
+                display_name: lineName,
+                display_sku: lineSku || null,
+                line_total: unitPrice * quantity,
+            };
         })
         .filter(Boolean),
 );
@@ -583,6 +732,31 @@ const activeModalProduct = computed(() => {
     return productMap.value.get(Number(productModalId.value)) ?? null;
 });
 
+const activeModalVariations = computed(() => {
+    const product = activeModalProduct.value;
+    if (!product || !Array.isArray(product.variations)) return [];
+
+    return product.variations
+        .filter((variation) => Number(variation.stock_quantity || 0) > 0)
+        .map((variation) => ({
+            id: Number(variation.id),
+            name: String(variation.name || ''),
+            sku: String(variation.sku || ''),
+            sale_price: Number(variation.sale_price || 0),
+            stock_quantity: Number(variation.stock_quantity || 0),
+            attributes: variation.attributes && typeof variation.attributes === 'object'
+                ? variation.attributes
+                : {},
+        }));
+});
+
+const selectedModalVariation = computed(() => {
+    if (!activeModalProduct.value?.has_variations) return null;
+
+    const selectedId = Number(productModalVariationId.value || 0);
+    return activeModalVariations.value.find((variation) => Number(variation.id) === selectedId) ?? null;
+});
+
 const activeModalRelatedProducts = computed(() => {
     const active = activeModalProduct.value;
     if (!active) return [];
@@ -597,7 +771,23 @@ const activeModalRelatedProducts = computed(() => {
     return related.slice(0, 8);
 });
 
-const modalProductHasStock = computed(() => Number(activeModalProduct.value?.stock_quantity || 0) > 0);
+const modalProductStockQuantity = computed(() => {
+    if (activeModalProduct.value?.has_variations) {
+        return Number(selectedModalVariation.value?.stock_quantity || 0);
+    }
+
+    return Number(activeModalProduct.value?.stock_quantity || 0);
+});
+
+const modalProductUnitPrice = computed(() => {
+    if (activeModalProduct.value?.has_variations) {
+        return Number(selectedModalVariation.value?.sale_price || 0);
+    }
+
+    return Number(activeModalProduct.value?.sale_price || 0);
+});
+
+const modalProductHasStock = computed(() => modalProductStockQuantity.value > 0);
 
 const cartCount = computed(() => cartDetailed.value.reduce((acc, i) => acc + Number(i.quantity || 0), 0));
 const cartSubtotal = computed(() => cartDetailed.value.reduce((acc, i) => acc + Number(i.line_total || 0), 0));
@@ -989,46 +1179,108 @@ const createCheckoutIdempotencyKey = () => {
     return `shop-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
-const addProductToCart = (id, quantity = 1) => {
+const cartLineKey = (productId, variationId = null) =>
+    `${Number(productId) || 0}:${Number(variationId || 0) || 0}`;
+
+const addProductToCart = (id, quantity = 1, variationIdInput = null) => {
     const safeId = Number(id);
     const safeQty = Math.max(1, Number(quantity || 1));
     const product = productMap.value.get(safeId);
     if (!product) return;
 
-    const stock = Math.max(0, Number(product.stock_quantity || 0));
+    const variations = Array.isArray(product.variations) ? product.variations : [];
+    const hasVariations = Boolean(product.has_variations) && variations.length > 0;
+    const selectedVariationId = hasVariations
+        ? Number(variationIdInput || 0)
+        : 0;
+    const selectedVariation = hasVariations
+        ? variations.find((variation) => Number(variation.id) === selectedVariationId) ?? null
+        : null;
+
+    if (hasVariations && !selectedVariation) {
+        showUiFeedback('Selecione uma variação do produto.', 'warning');
+        return;
+    }
+
+    const stock = Math.max(
+        0,
+        Number(selectedVariation ? selectedVariation.stock_quantity : product.stock_quantity || 0),
+    );
     if (stock <= 0) {
         showUiFeedback('Produto sem estoque no momento.', 'warning');
         return;
     }
 
-    const existing = cartItems.value.find((item) => Number(item.product_id) === safeId);
+    const safeVariationId = selectedVariation ? Number(selectedVariation.id) : null;
+    const key = cartLineKey(safeId, safeVariationId);
+    const existing = cartItems.value.find((item) =>
+        cartLineKey(item.product_id, item.variation_id) === key
+    );
+
+    const unitPrice = Number(selectedVariation ? selectedVariation.sale_price : product.sale_price || 0);
+    const variationName = selectedVariation ? String(selectedVariation.name || '') : '';
+    const displayName = variationName ? `${product.name} • ${variationName}` : String(product.name || '');
+    const displaySku = selectedVariation
+        ? String(selectedVariation.sku || product.sku || '').trim()
+        : String(product.sku || '').trim();
+
     if (!existing) {
         cartItems.value.push({
+            key,
             product_id: safeId,
+            variation_id: safeVariationId,
+            variation_name: variationName,
             quantity: Math.min(stock, safeQty),
+            stock_quantity: stock,
+            unit_price: unitPrice,
+            display_name: displayName,
+            display_sku: displaySku || null,
         });
         showUiFeedback('Produto adicionado ao carrinho.');
         return;
     }
 
     existing.quantity = Math.min(stock, Math.max(1, Number(existing.quantity || 1)) + safeQty);
+    existing.stock_quantity = stock;
+    existing.unit_price = unitPrice;
+    existing.display_name = displayName;
+    existing.display_sku = displaySku || null;
     showUiFeedback('Quantidade atualizada no carrinho.');
 };
 
-const increment = (id) => {
-    const item = cartItems.value.find((i) => Number(i.product_id) === Number(id));
-    const product = productMap.value.get(Number(id));
+const increment = (productId, variationId = null) => {
+    const item = cartItems.value.find((i) =>
+        cartLineKey(i.product_id, i.variation_id) === cartLineKey(productId, variationId)
+    );
+    const product = productMap.value.get(Number(productId));
     if (!item || !product) return;
-    if (item.quantity < Number(product.stock_quantity || 0)) item.quantity += 1;
+
+    let stock = Number(product.stock_quantity || 0);
+    if (item.variation_id !== null && item.variation_id !== undefined && item.variation_id !== '') {
+        const variation = Array.isArray(product.variations)
+            ? product.variations.find((candidate) => Number(candidate.id) === Number(item.variation_id))
+            : null;
+        stock = Number(variation?.stock_quantity || 0);
+    }
+
+    if (item.quantity < stock) item.quantity += 1;
 };
-const decrement = (id) => {
-    const item = cartItems.value.find((i) => Number(i.product_id) === Number(id));
+const decrement = (productId, variationId = null) => {
+    const item = cartItems.value.find((i) =>
+        cartLineKey(i.product_id, i.variation_id) === cartLineKey(productId, variationId)
+    );
     if (!item) return;
     item.quantity -= 1;
-    if (item.quantity <= 0) cartItems.value = cartItems.value.filter((i) => Number(i.product_id) !== Number(id));
+    if (item.quantity <= 0) {
+        cartItems.value = cartItems.value.filter((i) =>
+            cartLineKey(i.product_id, i.variation_id) !== cartLineKey(productId, variationId)
+        );
+    }
 };
-const removeFromCart = (id) => {
-    cartItems.value = cartItems.value.filter((i) => Number(i.product_id) !== Number(id));
+const removeFromCart = (productId, variationId = null) => {
+    cartItems.value = cartItems.value.filter((i) =>
+        cartLineKey(i.product_id, i.variation_id) !== cartLineKey(productId, variationId)
+    );
 };
 
 const isFavorite = (productId) => favoriteProductIdSet.value.has(Number(productId));
@@ -1059,7 +1311,7 @@ const toggleFavorite = async (productId) => {
 };
 
 const incrementModalProductQty = () => {
-    const stock = Math.max(1, Number(activeModalProduct.value?.stock_quantity || 1));
+    const stock = Math.max(1, Number(modalProductStockQuantity.value || 1));
     productModalQuantity.value = Math.min(stock, Number(productModalQuantity.value || 1) + 1);
 };
 
@@ -1074,7 +1326,11 @@ const addActiveModalProductToCart = () => {
 
     addToCartProcessing.value = true;
     window.setTimeout(() => {
-        addProductToCart(product.id, productModalQuantity.value);
+        addProductToCart(
+            product.id,
+            productModalQuantity.value,
+            product.has_variations ? Number(productModalVariationId.value || 0) : null,
+        );
         cartOpen.value = true;
         addToCartProcessing.value = false;
     }, 350);
@@ -1160,6 +1416,7 @@ const checkout = () => {
 
     checkoutForm.items = cartDetailed.value.map((item) => ({
         product_id: Number(item.product.id),
+        variation_id: item.variation ? Number(item.variation.id) : null,
         quantity: Number(item.quantity),
     }));
 
@@ -1421,7 +1678,9 @@ watch(cartOpen, (isOpen) => {
                         </div>
                         <div class="space-y-1.5 p-3">
                             <h3 class="min-h-[2.25rem] text-sm font-semibold leading-tight text-slate-900">{{ product.name }}</h3>
-                            <p class="text-sm font-bold text-slate-900">{{ currency(product.sale_price) }}</p>
+                            <p class="text-sm font-bold text-slate-900">
+                                {{ product.has_variations ? `A partir de ${currency(product.sale_price)}` : currency(product.sale_price) }}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -1443,7 +1702,7 @@ watch(cartOpen, (isOpen) => {
                         @click="selectedCategory = category.id"
                     >
                         <Tags class="h-3.5 w-3.5" />
-                        {{ category.name }}
+                        {{ category.label || category.name }}
                         <span class="inline-flex min-w-[20px] items-center justify-center rounded-full border px-1.5 py-0.5 text-[10px] font-bold" :class="String(selectedCategory) === String(category.id) ? 'border-white/35 bg-white/20 text-white' : 'border-slate-200 bg-slate-100 text-slate-600'">{{ category.products_count }}</span>
                     </button>
                 </div>
@@ -1480,7 +1739,9 @@ watch(cartOpen, (isOpen) => {
                             <h3 class="min-h-[2.5rem] text-sm font-semibold leading-tight text-slate-900">{{ product.name }}</h3>
                             <div>
                                 <p class="text-[11px] text-slate-500">Preço</p>
-                                <p class="text-base font-bold text-slate-900">{{ currency(product.sale_price) }}</p>
+                                <p class="text-base font-bold text-slate-900">
+                                    {{ product.has_variations ? `A partir de ${currency(product.sale_price)}` : currency(product.sale_price) }}
+                                </p>
                             </div>
                             <p class="text-[11px] text-slate-500">Toque para ver detalhes</p>
                         </div>
@@ -1601,7 +1862,7 @@ watch(cartOpen, (isOpen) => {
                                     class="inline-flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
                                     @click="selectedCategory = category.id; leftMenuOpen = false; scrollCategories()"
                                 >
-                                    <span class="truncate">{{ category.name }}</span>
+                                    <span class="truncate">{{ category.label || category.name }}</span>
                                     <span class="ml-2 inline-flex min-w-[20px] items-center justify-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
                                         {{ category.products_count }}
                                     </span>
@@ -1645,22 +1906,23 @@ watch(cartOpen, (isOpen) => {
                     </div>
                     <div class="flex-1 space-y-3 overflow-y-auto p-4" :class="cartMobileStep === 2 ? 'hidden md:block' : 'block'">
                         <div v-if="!cartDetailed.length" class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">Seu carrinho está vazio.</div>
-                        <article v-for="item in cartDetailed" :key="`cart-${item.product.id}`" class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                        <article v-for="item in cartDetailed" :key="`cart-${item.product.id}-${item.variation_id || 0}`" class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                             <div class="flex items-start gap-3">
                                 <img :src="productImage(item.product)" :alt="item.product.name" class="h-16 w-16 rounded-xl object-cover" />
                                 <div class="min-w-0 flex-1">
-                                    <p class="truncate text-sm font-semibold text-slate-900">{{ item.product.name }}</p>
-                                    <p class="mt-1 text-xs text-slate-500">{{ currency(item.product.sale_price) }} cada</p>
+                                    <p class="truncate text-sm font-semibold text-slate-900">{{ item.display_name }}</p>
+                                    <p v-if="item.display_sku" class="mt-0.5 text-[11px] text-slate-500">SKU: {{ item.display_sku }}</p>
+                                    <p class="mt-1 text-xs text-slate-500">{{ currency(item.unit_price) }} cada</p>
                                     <div class="mt-3 flex items-center justify-between gap-2">
                                         <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white">
-                                            <button type="button" class="inline-flex h-8 w-8 items-center justify-center text-slate-600 hover:bg-slate-50" @click="decrement(item.product.id)"><Minus class="h-3.5 w-3.5" /></button>
+                                            <button type="button" class="inline-flex h-8 w-8 items-center justify-center text-slate-600 hover:bg-slate-50" @click="decrement(item.product.id, item.variation_id)"><Minus class="h-3.5 w-3.5" /></button>
                                             <span class="min-w-[34px] text-center text-sm font-semibold text-slate-800">{{ item.quantity }}</span>
-                                            <button type="button" class="inline-flex h-8 w-8 items-center justify-center text-slate-600 hover:bg-slate-50" @click="increment(item.product.id)"><Plus class="h-3.5 w-3.5" /></button>
+                                            <button type="button" class="inline-flex h-8 w-8 items-center justify-center text-slate-600 hover:bg-slate-50" @click="increment(item.product.id, item.variation_id)"><Plus class="h-3.5 w-3.5" /></button>
                                         </div>
                                         <p class="text-sm font-bold text-slate-900">{{ currency(item.line_total) }}</p>
                                     </div>
                                 </div>
-                                <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100" @click="removeFromCart(item.product.id)"><Trash2 class="h-3.5 w-3.5" /></button>
+                                <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100" @click="removeFromCart(item.product.id, item.variation_id)"><Trash2 class="h-3.5 w-3.5" /></button>
                             </div>
                         </article>
                     </div>
@@ -1883,16 +2145,41 @@ watch(cartOpen, (isOpen) => {
                                 <div class="space-y-4">
                                     <div class="space-y-1">
                                         <h2 class="text-2xl font-bold tracking-tight text-slate-900">{{ activeModalProduct.name }}</h2>
-                                        <p class="text-xs text-slate-500">{{ activeModalProduct.sku || 'Sem SKU' }}</p>
+                                        <p class="text-xs text-slate-500">
+                                            {{
+                                                selectedModalVariation?.sku
+                                                    || activeModalProduct.sku
+                                                    || 'Sem SKU'
+                                            }}
+                                        </p>
                                     </div>
 
                                     <p v-if="activeModalProduct.description" class="text-sm leading-relaxed text-slate-600">{{ activeModalProduct.description }}</p>
 
+                                    <div
+                                        v-if="activeModalProduct.has_variations && activeModalVariations.length"
+                                        class="rounded-2xl border border-slate-200 bg-white p-4"
+                                    >
+                                        <p class="text-[11px] uppercase tracking-wide text-slate-500">Variação</p>
+                                        <select
+                                            v-model="productModalVariationId"
+                                            class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                                        >
+                                            <option
+                                                v-for="variation in activeModalVariations"
+                                                :key="`modal-variation-${variation.id}`"
+                                                :value="String(variation.id)"
+                                            >
+                                                {{ variation.name }} • {{ currency(variation.sale_price) }} • estoque {{ variation.stock_quantity }}
+                                            </option>
+                                        </select>
+                                    </div>
+
                                     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                                         <p class="text-[11px] uppercase tracking-wide text-slate-500">Preço</p>
-                                        <p class="mt-1 text-2xl font-bold text-slate-900">{{ currency(activeModalProduct.sale_price) }}</p>
+                                        <p class="mt-1 text-2xl font-bold text-slate-900">{{ currency(modalProductUnitPrice) }}</p>
                                         <p class="mt-2 text-xs font-semibold" :class="modalProductHasStock ? 'text-emerald-700' : 'text-rose-600'">
-                                            {{ modalProductHasStock ? `${activeModalProduct.stock_quantity} ${activeModalProduct.unit || 'un'} em estoque` : 'Indisponível no momento' }}
+                                            {{ modalProductHasStock ? `${modalProductStockQuantity} ${activeModalProduct.unit || 'un'} em estoque` : 'Indisponível no momento' }}
                                         </p>
                                     </div>
 
@@ -1908,7 +2195,7 @@ watch(cartOpen, (isOpen) => {
                                                 type="button"
                                                 class="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
                                                 style="background: var(--catalog-primary-strong)"
-                                                :disabled="!modalProductHasStock || addToCartProcessing"
+                                                :disabled="!modalProductHasStock || addToCartProcessing || (activeModalProduct.has_variations && !selectedModalVariation)"
                                                 @click="addActiveModalProductToCart"
                                             >
                                                 <span v-if="addToCartProcessing" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>

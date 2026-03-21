@@ -71,6 +71,37 @@ class Product extends Model
         return $this->hasMany(InventoryMovement::class);
     }
 
+    public function images(): HasMany
+    {
+        return $this->hasMany(ProductImage::class)
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    public function variations(): HasMany
+    {
+        return $this->hasMany(ProductVariation::class)
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    public function activeVariations(): HasMany
+    {
+        return $this->variations()->where('is_active', true);
+    }
+
+    public function availableStockQuantity(): int
+    {
+        if ($this->relationLoaded('variations')) {
+            $activeVariations = $this->variations->where('is_active', true);
+            if ($activeVariations->isNotEmpty()) {
+                return (int) $activeVariations->sum(static fn (ProductVariation $variation): int => (int) $variation->stock_quantity);
+            }
+        }
+
+        return (int) $this->stock_quantity;
+    }
+
     public function shopFavorites(): HasMany
     {
         return $this->hasMany(ShopCustomerFavorite::class);

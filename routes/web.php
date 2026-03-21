@@ -93,6 +93,14 @@ Route::get('/', function () {
     ]);
 });
 
+Route::get('/termos-de-uso', static function () {
+    return Inertia::render('Public/Legal/Terms');
+})->name('legal.terms');
+
+Route::get('/politica-de-privacidade', static function () {
+    return Inertia::render('Public/Legal/Privacy');
+})->name('legal.privacy');
+
 Route::get('/home', DashboardRedirectController::class)
     ->middleware(['auth', '2fa', 'verified'])
     ->name('home');

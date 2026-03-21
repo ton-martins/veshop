@@ -4,6 +4,7 @@ namespace Tests;
 
 use App\Models\User;
 use App\Services\TwoFactorService;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use RuntimeException;
 
@@ -20,6 +21,7 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         $this->assertLaravelDatabaseConfigIsSafe();
+        $this->withoutMiddleware(ValidateCsrfToken::class);
     }
 
     protected function actingAsWithTwoFactor(User $user): static

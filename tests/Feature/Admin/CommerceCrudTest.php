@@ -57,6 +57,43 @@ class CommerceCrudTest extends TestCase
         ]);
     }
 
+    public function test_admin_can_create_subcategory_for_current_contractor(): void
+    {
+        $contractor = $this->createContractor('contratante-categorias', Contractor::NICHE_COMMERCIAL);
+        $parent = Category::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Roupas',
+            'slug' => 'roupas',
+            'description' => null,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $user = $this->createAdminUser([$contractor]);
+
+        $response = $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->post(route('admin.categories.store'), [
+                'name' => 'Camisetas',
+                'slug' => 'camisetas',
+                'parent_id' => $parent->id,
+                'description' => 'Subcategoria de camisetas',
+                'is_active' => true,
+            ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('categories', [
+            'contractor_id' => $contractor->id,
+            'name' => 'Camisetas',
+            'slug' => 'camisetas',
+            'parent_id' => $parent->id,
+            'is_active' => true,
+        ]);
+    }
+
     public function test_admin_cannot_update_category_from_another_contractor_context(): void
     {
         $contractorA = $this->createContractor('contratante-a', Contractor::NICHE_COMMERCIAL);
@@ -252,6 +289,59 @@ class CommerceCrudTest extends TestCase
         $this->assertNotSame($firstPath, $secondPath);
         Storage::disk('public')->assertExists($secondPath);
         Storage::disk('public')->assertMissing($firstPath);
+    }
+
+    public function test_admin_cannot_upload_gallery_above_plan_limit_per_product(): void
+    {
+        Storage::fake('public');
+
+        $contractor = $this->createContractor('contratante-galeria-limite', Contractor::NICHE_COMMERCIAL);
+        $contractor->settings = array_replace((array) $contractor->settings, [
+            'storage_limit_gb' => 1,
+        ]);
+        $contractor->save();
+
+        $category = Category::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Eletrônicos',
+            'slug' => 'eletronicos',
+            'description' => null,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $user = $this->createAdminUser([$contractor]);
+
+        $response = $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->from(route('admin.products.index'))
+            ->post(route('admin.products.store'), [
+                'name' => 'Fone Premium',
+                'sku' => 'FON-900',
+                'category_id' => $category->id,
+                'description' => 'Produto com galeria acima do limite do plano',
+                'sale_price' => 199.90,
+                'stock_quantity' => 5,
+                'unit' => 'un',
+                'image_url' => '',
+                'gallery_files' => [
+                    UploadedFile::fake()->image('g1.jpg'),
+                    UploadedFile::fake()->image('g2.jpg'),
+                    UploadedFile::fake()->image('g3.jpg'),
+                    UploadedFile::fake()->image('g4.jpg'),
+                ],
+                'is_active' => true,
+            ]);
+
+        $response->assertRedirect(route('admin.products.index'));
+        $response->assertSessionHasErrors(['gallery_files']);
+        $this->assertDatabaseMissing('products', [
+            'contractor_id' => $contractor->id,
+            'sku' => 'FON-900',
+        ]);
     }
 
     public function test_admin_can_update_and_delete_client_for_current_contractor(): void

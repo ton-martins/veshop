@@ -27,6 +27,7 @@ class InventoryMovement extends Model
     protected $fillable = [
         'contractor_id',
         'product_id',
+        'product_variation_id',
         'sale_item_id',
         'user_id',
         'type',
@@ -71,9 +72,13 @@ class InventoryMovement extends Model
         return $this->belongsTo(SaleItem::class);
     }
 
+    public function productVariation(): BelongsTo
+    {
+        return $this->belongsTo(ProductVariation::class);
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 }
-

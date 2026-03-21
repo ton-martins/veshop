@@ -7,6 +7,7 @@ use App\Models\Client;
 use App\Models\Contractor;
 use App\Models\InventoryMovement;
 use App\Models\Product;
+use App\Models\ProductVariation;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SalePayment;
@@ -44,8 +45,9 @@ class OrderController extends Controller
         $ordersQuery = (clone $baseQuery)
             ->with([
                 'client:id,name,email,phone',
-                'items:id,sale_id,product_id,description,sku,quantity,unit_price,discount_amount,total_amount',
+                'items:id,sale_id,product_id,product_variation_id,description,sku,quantity,unit_price,discount_amount,total_amount,metadata',
                 'items.product:id,image_url',
+                'items.productVariation:id,name',
                 'payments:id,sale_id,payment_method_id,status,amount',
                 'payments.paymentMethod:id,name',
             ])
@@ -119,6 +121,13 @@ class OrderController extends Controller
         $products = Product::query()
             ->where('contractor_id', $contractor->id)
             ->where('is_active', true)
+            ->with([
+                'variations' => static fn ($query) => $query
+                    ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('id')
+                    ->select(['id', 'product_id', 'name', 'sku', 'sale_price', 'stock_quantity', 'attributes']),
+            ])
             ->orderBy('name')
             ->limit(800)
             ->get(['id', 'name', 'sku', 'sale_price', 'stock_quantity', 'image_url'])
@@ -129,6 +138,17 @@ class OrderController extends Controller
                 'sale_price' => (float) $product->sale_price,
                 'stock_quantity' => (int) $product->stock_quantity,
                 'image_url' => $product->image_url ? (string) $product->image_url : null,
+                'variations' => $product->variations
+                    ->map(static fn (ProductVariation $variation): array => [
+                        'id' => (int) $variation->id,
+                        'name' => (string) $variation->name,
+                        'sku' => $variation->sku ? (string) $variation->sku : null,
+                        'sale_price' => (float) $variation->sale_price,
+                        'stock_quantity' => (int) $variation->stock_quantity,
+                        'attributes' => is_array($variation->attributes) ? $variation->attributes : [],
+                    ])
+                    ->values()
+                    ->all(),
             ])
             ->values()
             ->all();
@@ -166,6 +186,7 @@ class OrderController extends Controller
             'notes' => ['nullable', 'string', 'max:2000'],
             'items' => ['required', 'array', 'min:1', 'max:80'],
             'items.*.product_id' => ['required', 'integer'],
+            'items.*.variation_id' => ['nullable', 'integer'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
             'items.*.discount_amount' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
         ]);
@@ -193,6 +214,9 @@ class OrderController extends Controller
             ->map(static function (array $row): array {
                 return [
                     'product_id' => (int) ($row['product_id'] ?? 0),
+                    'variation_id' => isset($row['variation_id']) && $row['variation_id'] !== ''
+                        ? (int) $row['variation_id']
+                        : null,
                     'quantity' => (int) ($row['quantity'] ?? 0),
                     'discount_amount' => round((float) ($row['discount_amount'] ?? 0), 2),
                 ];
@@ -267,19 +291,57 @@ class OrderController extends Controller
             $shouldAdjustStock = $stockReduced && ! $stockRestored;
 
             $groupedRequestedItems = $this->groupRequestedItems($requestedItems);
-            $oldQtyByProduct = $lockedSale->items
-                ->groupBy(static fn (SaleItem $item): int => (int) $item->product_id)
+            $oldLineMeta = $lockedSale->items
+                ->groupBy(fn (SaleItem $item): string => $this->resolveItemLineKey(
+                    (int) $item->product_id,
+                    $item->product_variation_id ? (int) $item->product_variation_id : null
+                ))
+                ->map(static function (Collection $rows): array {
+                    /** @var SaleItem|null $first */
+                    $first = $rows->first();
+
+                    return [
+                        'product_id' => $first ? (int) $first->product_id : 0,
+                        'variation_id' => $first && $first->product_variation_id
+                            ? (int) $first->product_variation_id
+                            : null,
+                    ];
+                });
+            $oldQtyByLine = $lockedSale->items
+                ->groupBy(fn (SaleItem $item): string => $this->resolveItemLineKey(
+                    (int) $item->product_id,
+                    $item->product_variation_id ? (int) $item->product_variation_id : null
+                ))
                 ->map(static fn (Collection $rows): int => (int) $rows->sum(static fn (SaleItem $item): int => (int) $item->quantity));
 
-            $allProductIds = $oldQtyByProduct->keys()
-                ->merge($groupedRequestedItems->keys())
+            $allProductIds = $oldLineMeta
+                ->pluck('product_id')
+                ->merge($groupedRequestedItems->pluck('product_id'))
                 ->map(static fn (mixed $value): int => (int) $value)
+                ->filter(static fn (int $id): bool => $id > 0)
+                ->unique()
+                ->values();
+
+            $requestedVariationIds = $groupedRequestedItems
+                ->pluck('variation_id')
+                ->map(static fn (mixed $value): int => (int) $value)
+                ->filter(static fn (int $id): bool => $id > 0)
+                ->unique()
+                ->values();
+            $allVariationIds = $oldLineMeta
+                ->pluck('variation_id')
+                ->merge($requestedVariationIds)
+                ->map(static fn (mixed $value): int => (int) $value)
+                ->filter(static fn (int $id): bool => $id > 0)
                 ->unique()
                 ->values();
 
             $products = Product::query()
                 ->where('contractor_id', $contractor->id)
                 ->whereIn('id', $allProductIds->all())
+                ->with([
+                    'variations:id,product_id,is_active',
+                ])
                 ->lockForUpdate()
                 ->get()
                 ->keyBy('id');
@@ -290,12 +352,31 @@ class OrderController extends Controller
                 ]);
             }
 
+            $variationsById = collect();
+            if ($allVariationIds->isNotEmpty()) {
+                $variationsById = ProductVariation::withTrashed()
+                    ->where('contractor_id', $contractor->id)
+                    ->whereIn('id', $allVariationIds->all())
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
+
+                if ($requestedVariationIds->isNotEmpty() && $variationsById->only($requestedVariationIds->all())->count() !== $requestedVariationIds->count()) {
+                    throw ValidationException::withMessages([
+                        'items' => 'Uma ou mais variações não são válidas para o contratante ativo.',
+                    ]);
+                }
+            }
+
             $preparedLines = [];
             $subtotal = 0.0;
             $lineDiscountTotal = 0.0;
 
-            foreach ($groupedRequestedItems as $productId => $row) {
-                $safeProductId = (int) $productId;
+            foreach ($groupedRequestedItems as $lineKey => $row) {
+                $safeProductId = (int) ($row['product_id'] ?? 0);
+                $safeVariationId = isset($row['variation_id']) && (int) $row['variation_id'] > 0
+                    ? (int) $row['variation_id']
+                    : null;
                 $quantity = (int) ($row['quantity'] ?? 0);
                 $requestedLineDiscount = round((float) ($row['discount_amount'] ?? 0), 2);
 
@@ -313,33 +394,87 @@ class OrderController extends Controller
                     ]);
                 }
 
-                $oldQuantity = (int) ($oldQtyByProduct->get($safeProductId) ?? 0);
-                $delta = $quantity - $oldQuantity;
-
-                if ($shouldAdjustStock && $delta > 0 && $delta > (int) $product->stock_quantity) {
-                    throw ValidationException::withMessages([
-                        'items' => "Estoque insuficiente para o produto {$product->name}.",
-                    ]);
-                }
-
-                if (! $shouldAdjustStock && $quantity > (int) $product->stock_quantity) {
-                    throw ValidationException::withMessages([
-                        'items' => "Estoque insuficiente para o produto {$product->name}.",
-                    ]);
-                }
-
+                $variation = null;
                 $unitPrice = round((float) $product->sale_price, 2);
+                $description = (string) $product->name;
+                $sku = $product->sku ? (string) $product->sku : null;
+
+                if ($safeVariationId !== null) {
+                    /** @var ProductVariation|null $variation */
+                    $variation = $variationsById->get($safeVariationId);
+                    if (! $variation || (int) $variation->product_id !== $safeProductId) {
+                        throw ValidationException::withMessages([
+                            'items' => "Variação inválida para o produto {$product->name}.",
+                        ]);
+                    }
+
+                    if (! (bool) $variation->is_active && ! $oldQtyByLine->has((string) $lineKey)) {
+                        throw ValidationException::withMessages([
+                            'items' => "A variação {$variation->name} está inativa para o produto {$product->name}.",
+                        ]);
+                    }
+
+                    $oldQuantity = (int) ($oldQtyByLine->get((string) $lineKey) ?? 0);
+                    $delta = $quantity - $oldQuantity;
+                    $availableStock = (int) $variation->stock_quantity;
+
+                    if ($shouldAdjustStock && $delta > 0 && $delta > $availableStock) {
+                        throw ValidationException::withMessages([
+                            'items' => "Estoque insuficiente para a variação {$variation->name}.",
+                        ]);
+                    }
+
+                    if (! $shouldAdjustStock && $quantity > $availableStock) {
+                        throw ValidationException::withMessages([
+                            'items' => "Estoque insuficiente para a variação {$variation->name}.",
+                        ]);
+                    }
+
+                    $unitPrice = round((float) $variation->sale_price, 2);
+                    $description = trim($product->name.' - '.$variation->name);
+                    $sku = $variation->sku ? (string) $variation->sku : $sku;
+                } else {
+                    $hasActiveVariations = $product->variations
+                        ->contains(static fn (ProductVariation $productVariation): bool => (bool) $productVariation->is_active);
+
+                    if ($hasActiveVariations && ! $oldQtyByLine->has((string) $lineKey)) {
+                        throw ValidationException::withMessages([
+                            'items' => "Selecione uma variação para o produto {$product->name}.",
+                        ]);
+                    }
+
+                    $oldQuantity = (int) ($oldQtyByLine->get((string) $lineKey) ?? 0);
+                    $delta = $quantity - $oldQuantity;
+                    $availableStock = (int) $product->stock_quantity;
+
+                    if ($shouldAdjustStock && $delta > 0 && $delta > $availableStock) {
+                        throw ValidationException::withMessages([
+                            'items' => "Estoque insuficiente para o produto {$product->name}.",
+                        ]);
+                    }
+
+                    if (! $shouldAdjustStock && $quantity > $availableStock) {
+                        throw ValidationException::withMessages([
+                            'items' => "Estoque insuficiente para o produto {$product->name}.",
+                        ]);
+                    }
+                }
+
                 $lineSubtotal = round($unitPrice * $quantity, 2);
                 $lineDiscount = min(max($requestedLineDiscount, 0.0), $lineSubtotal);
                 $lineTotal = round($lineSubtotal - $lineDiscount, 2);
 
-                $preparedLines[$safeProductId] = [
+                $preparedLines[(string) $lineKey] = [
+                    'line_key' => (string) $lineKey,
                     'product' => $product,
+                    'variation' => $variation,
                     'quantity' => $quantity,
                     'unit_price' => $unitPrice,
                     'line_subtotal' => $lineSubtotal,
                     'discount_amount' => $lineDiscount,
                     'line_total' => $lineTotal,
+                    'description' => $description,
+                    'sku' => $sku,
                 ];
 
                 $subtotal += $lineSubtotal;
@@ -360,13 +495,16 @@ class OrderController extends Controller
             }
 
             $afterItems = collect($preparedLines)
-                ->map(static fn (array $line, int $productId): array => [
-                    'product_id' => $productId,
+                ->sortBy('line_key')
+                ->values()
+                ->map(static fn (array $line): array => [
+                    'product_id' => (int) $line['product']->id,
+                    'variation_id' => isset($line['variation']) && $line['variation'] instanceof ProductVariation
+                        ? (int) $line['variation']->id
+                        : null,
                     'quantity' => (int) $line['quantity'],
                     'discount_amount' => round((float) $line['discount_amount'], 2),
                 ])
-                ->sortBy('product_id')
-                ->values()
                 ->all();
 
             $itemsChanged = serialize($beforeItems) !== serialize($afterItems);
@@ -412,78 +550,145 @@ class OrderController extends Controller
                 return;
             }
 
-            $newSaleItemsByProduct = [];
+            $newSaleItemsByLineKey = [];
             if ($itemsChanged) {
                 $lockedSale->items()->delete();
 
-                foreach ($preparedLines as $productId => $line) {
+                foreach ($preparedLines as $lineKey => $line) {
                     /** @var Product $product */
                     $product = $line['product'];
+                    /** @var ProductVariation|null $variation */
+                    $variation = $line['variation'];
 
-                    $newSaleItemsByProduct[$productId] = SaleItem::query()->create([
+                    $newSaleItemsByLineKey[(string) $lineKey] = SaleItem::query()->create([
                         'contractor_id' => $contractor->id,
                         'sale_id' => $lockedSale->id,
                         'product_id' => (int) $product->id,
-                        'description' => (string) $product->name,
-                        'sku' => $product->sku ? (string) $product->sku : null,
+                        'product_variation_id' => $variation?->id,
+                        'description' => (string) ($line['description'] ?? $product->name),
+                        'sku' => trim((string) ($line['sku'] ?? $product->sku)) !== ''
+                            ? trim((string) ($line['sku'] ?? $product->sku))
+                            : null,
                         'quantity' => (int) $line['quantity'],
                         'unit_price' => (float) $line['unit_price'],
                         'discount_amount' => (float) $line['discount_amount'],
                         'total_amount' => (float) $line['line_total'],
+                        'metadata' => $variation ? [
+                            'variation_id' => (int) $variation->id,
+                            'variation_name' => (string) $variation->name,
+                            'variation_sku' => $variation->sku ? (string) $variation->sku : null,
+                            'variation_attributes' => is_array($variation->attributes) ? $variation->attributes : [],
+                        ] : null,
                     ]);
                 }
 
                 if ($shouldAdjustStock) {
-                    foreach ($allProductIds as $productIdValue) {
-                        $productId = (int) $productIdValue;
+                    $allLineMeta = collect($preparedLines)
+                        ->mapWithKeys(static fn (array $line, string $lineKey): array => [
+                            (string) $lineKey => [
+                                'product_id' => (int) $line['product']->id,
+                                'variation_id' => isset($line['variation']) && $line['variation'] instanceof ProductVariation
+                                    ? (int) $line['variation']->id
+                                    : null,
+                            ],
+                        ])
+                        ->merge($oldLineMeta);
+
+                    $allLineKeys = $oldQtyByLine->keys()
+                        ->merge(array_keys($preparedLines))
+                        ->map(static fn (mixed $key): string => (string) $key)
+                        ->unique()
+                        ->values();
+
+                    foreach ($allLineKeys as $lineKeyValue) {
+                        $lineKey = (string) $lineKeyValue;
+                        $lineMeta = $allLineMeta->get($lineKey);
+                        if (! is_array($lineMeta)) {
+                            continue;
+                        }
+
+                        $productId = (int) ($lineMeta['product_id'] ?? 0);
+                        $variationId = isset($lineMeta['variation_id']) && (int) $lineMeta['variation_id'] > 0
+                            ? (int) $lineMeta['variation_id']
+                            : null;
+
                         /** @var Product|null $product */
                         $product = $products->get($productId);
                         if (! $product) {
                             continue;
                         }
 
-                        $oldQuantity = (int) ($oldQtyByProduct->get($productId) ?? 0);
-                        $newQuantity = (int) (($preparedLines[$productId]['quantity'] ?? null) ?? 0);
+                        /** @var ProductVariation|null $variation */
+                        $variation = $variationId !== null
+                            ? $variationsById->get($variationId)
+                            : null;
+
+                        $oldQuantity = (int) ($oldQtyByLine->get($lineKey) ?? 0);
+                        $newQuantity = (int) (($preparedLines[$lineKey]['quantity'] ?? null) ?? 0);
                         $delta = $newQuantity - $oldQuantity;
 
                         if ($delta === 0) {
                             continue;
                         }
 
-                        $balanceBefore = (int) $product->stock_quantity;
                         $movementQuantity = abs($delta);
                         $movementType = $delta > 0
                             ? InventoryMovement::TYPE_OUT
                             : InventoryMovement::TYPE_RETURN;
 
-                        $balanceAfter = $delta > 0
-                            ? max(0, $balanceBefore - $movementQuantity)
-                            : $balanceBefore + $movementQuantity;
+                        $movementBalanceBefore = (int) $product->stock_quantity;
+                        $movementBalanceAfter = $delta > 0
+                            ? max(0, $movementBalanceBefore - $movementQuantity)
+                            : $movementBalanceBefore + $movementQuantity;
+                        $movementUnitCost = (float) $product->cost_price;
 
-                        $product->stock_quantity = $balanceAfter;
+                        if ($variation) {
+                            $variationBalanceBefore = (int) $variation->stock_quantity;
+                            $variationBalanceAfter = $delta > 0
+                                ? max(0, $variationBalanceBefore - $movementQuantity)
+                                : $variationBalanceBefore + $movementQuantity;
+
+                            $variation->stock_quantity = $variationBalanceAfter;
+                            $variation->save();
+
+                            $movementBalanceBefore = $variationBalanceBefore;
+                            $movementBalanceAfter = $variationBalanceAfter;
+                            $movementUnitCost = (float) ($variation->cost_price ?? $product->cost_price);
+                        }
+
+                        $productBalanceBefore = (int) $product->stock_quantity;
+                        $productBalanceAfter = $delta > 0
+                            ? max(0, $productBalanceBefore - $movementQuantity)
+                            : $productBalanceBefore + $movementQuantity;
+                        $product->stock_quantity = $productBalanceAfter;
                         $product->save();
 
-                        $saleItemId = isset($newSaleItemsByProduct[$productId])
-                            ? (int) $newSaleItemsByProduct[$productId]->id
+                        $saleItemId = isset($newSaleItemsByLineKey[$lineKey])
+                            ? (int) $newSaleItemsByLineKey[$lineKey]->id
                             : null;
 
                         InventoryMovement::query()->create([
                             'contractor_id' => $contractor->id,
                             'product_id' => $productId,
+                            'product_variation_id' => $variation?->id,
                             'sale_item_id' => $saleItemId,
                             'user_id' => $request->user()?->id,
                             'type' => $movementType,
                             'quantity' => $movementQuantity,
-                            'balance_before' => $balanceBefore,
-                            'balance_after' => $balanceAfter,
-                            'unit_cost' => $product->cost_price,
-                            'reason' => "Ajuste de edição do pedido {$lockedSale->code}",
+                            'balance_before' => $movementBalanceBefore,
+                            'balance_after' => $movementBalanceAfter,
+                            'unit_cost' => $movementUnitCost,
+                            'reason' => $variation
+                                ? "Ajuste de edição do pedido {$lockedSale->code} - variação {$variation->name}"
+                                : "Ajuste de edição do pedido {$lockedSale->code}",
                             'reference_type' => Sale::class,
                             'reference_id' => $lockedSale->id,
                             'occurred_at' => now(),
                             'metadata' => [
                                 'old_quantity' => $oldQuantity,
                                 'new_quantity' => $newQuantity,
+                                'product_balance_before' => $productBalanceBefore,
+                                'product_balance_after' => $productBalanceAfter,
                             ],
                         ]);
                     }
@@ -646,28 +851,77 @@ class OrderController extends Controller
                 ]);
             }
 
-            /** @var Collection<int, int> $quantitiesByProduct */
-            $quantitiesByProduct = $lockedSale->items
-                ->groupBy(static fn ($item): int => (int) $item->product_id)
-                ->map(static fn (Collection $items): int => $items->sum(static fn ($item): int => (int) $item->quantity));
+            $productIds = $lockedSale->items
+                ->pluck('product_id')
+                ->map(static fn (mixed $value): int => (int) $value)
+                ->filter(static fn (int $value): bool => $value > 0)
+                ->unique()
+                ->values();
+            $variationIds = $lockedSale->items
+                ->pluck('product_variation_id')
+                ->map(static fn (mixed $value): int => (int) $value)
+                ->filter(static fn (int $value): bool => $value > 0)
+                ->unique()
+                ->values();
 
             $products = Product::query()
                 ->where('contractor_id', $contractor->id)
-                ->whereIn('id', $quantitiesByProduct->keys()->all())
+                ->whereIn('id', $productIds->all())
                 ->lockForUpdate()
                 ->get()
                 ->keyBy('id');
 
-            foreach ($quantitiesByProduct as $productId => $quantity) {
+            if ($products->count() !== $productIds->count()) {
+                throw ValidationException::withMessages([
+                    'order' => 'Não foi possível confirmar: item sem produto válido.',
+                ]);
+            }
+
+            $variationsById = collect();
+            if ($variationIds->isNotEmpty()) {
+                $variationsById = ProductVariation::withTrashed()
+                    ->where('contractor_id', $contractor->id)
+                    ->whereIn('id', $variationIds->all())
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
+
+                if ($variationsById->count() !== $variationIds->count()) {
+                    throw ValidationException::withMessages([
+                        'order' => 'Não foi possível confirmar: variação inválida em um dos itens.',
+                    ]);
+                }
+            }
+
+            foreach ($lockedSale->items as $item) {
                 /** @var Product|null $product */
-                $product = $products->get((int) $productId);
+                $product = $products->get((int) $item->product_id);
                 if (! $product) {
                     throw ValidationException::withMessages([
                         'order' => 'Não foi possível confirmar: item sem produto válido.',
                     ]);
                 }
 
-                if ((int) $product->stock_quantity < (int) $quantity) {
+                $variationId = $item->product_variation_id ? (int) $item->product_variation_id : null;
+                if ($variationId !== null) {
+                    /** @var ProductVariation|null $variation */
+                    $variation = $variationsById->get($variationId);
+                    if (! $variation || (int) $variation->product_id !== (int) $product->id) {
+                        throw ValidationException::withMessages([
+                            'order' => "Variação inválida para o produto {$product->name}.",
+                        ]);
+                    }
+
+                    if ((int) $variation->stock_quantity < (int) $item->quantity) {
+                        throw ValidationException::withMessages([
+                            'order' => "Estoque insuficiente para a variação {$variation->name}.",
+                        ]);
+                    }
+
+                    continue;
+                }
+
+                if ((int) $product->stock_quantity < (int) $item->quantity) {
                     throw ValidationException::withMessages([
                         'order' => "Estoque insuficiente para o produto {$product->name}.",
                     ]);
@@ -681,26 +935,54 @@ class OrderController extends Controller
                     continue;
                 }
 
-                $balanceBefore = (int) $product->stock_quantity;
-                $balanceAfter = max(0, $balanceBefore - (int) $item->quantity);
+                $variationId = $item->product_variation_id ? (int) $item->product_variation_id : null;
+                /** @var ProductVariation|null $variation */
+                $variation = $variationId !== null
+                    ? $variationsById->get($variationId)
+                    : null;
 
-                $product->stock_quantity = $balanceAfter;
+                $quantity = (int) $item->quantity;
+                $movementBalanceBefore = (int) $product->stock_quantity;
+                $movementBalanceAfter = max(0, $movementBalanceBefore - $quantity);
+                $movementUnitCost = (float) $product->cost_price;
+
+                if ($variation) {
+                    $variationBalanceBefore = (int) $variation->stock_quantity;
+                    $variationBalanceAfter = max(0, $variationBalanceBefore - $quantity);
+                    $variation->stock_quantity = $variationBalanceAfter;
+                    $variation->save();
+
+                    $movementBalanceBefore = $variationBalanceBefore;
+                    $movementBalanceAfter = $variationBalanceAfter;
+                    $movementUnitCost = (float) ($variation->cost_price ?? $product->cost_price);
+                }
+
+                $productBalanceBefore = (int) $product->stock_quantity;
+                $productBalanceAfter = max(0, $productBalanceBefore - $quantity);
+                $product->stock_quantity = $productBalanceAfter;
                 $product->save();
 
                 InventoryMovement::query()->create([
                     'contractor_id' => $contractor->id,
                     'product_id' => $product->id,
+                    'product_variation_id' => $variation?->id,
                     'sale_item_id' => $item->id,
                     'user_id' => $request->user()?->id,
                     'type' => InventoryMovement::TYPE_OUT,
-                    'quantity' => (int) $item->quantity,
-                    'balance_before' => $balanceBefore,
-                    'balance_after' => $balanceAfter,
-                    'unit_cost' => $product->cost_price,
-                    'reason' => "Confirmação do pedido {$lockedSale->code}",
+                    'quantity' => $quantity,
+                    'balance_before' => $movementBalanceBefore,
+                    'balance_after' => $movementBalanceAfter,
+                    'unit_cost' => $movementUnitCost,
+                    'reason' => $variation
+                        ? "Confirmação do pedido {$lockedSale->code} - variação {$variation->name}"
+                        : "Confirmação do pedido {$lockedSale->code}",
                     'reference_type' => Sale::class,
                     'reference_id' => $lockedSale->id,
                     'occurred_at' => now(),
+                    'metadata' => [
+                        'product_balance_before' => $productBalanceBefore,
+                        'product_balance_after' => $productBalanceAfter,
+                    ],
                 ]);
             }
 
@@ -850,17 +1132,35 @@ class OrderController extends Controller
             $stockRestored = (bool) ($metadata['stock_restored'] ?? false);
 
             if ($stockReduced && ! $stockRestored) {
-                /** @var Collection<int, int> $quantitiesByProduct */
-                $quantitiesByProduct = $lockedSale->items
-                    ->groupBy(static fn ($item): int => (int) $item->product_id)
-                    ->map(static fn (Collection $items): int => $items->sum(static fn ($item): int => (int) $item->quantity));
+                $productIds = $lockedSale->items
+                    ->pluck('product_id')
+                    ->map(static fn (mixed $value): int => (int) $value)
+                    ->filter(static fn (int $value): bool => $value > 0)
+                    ->unique()
+                    ->values();
+                $variationIds = $lockedSale->items
+                    ->pluck('product_variation_id')
+                    ->map(static fn (mixed $value): int => (int) $value)
+                    ->filter(static fn (int $value): bool => $value > 0)
+                    ->unique()
+                    ->values();
 
                 $products = Product::query()
                     ->where('contractor_id', $contractor->id)
-                    ->whereIn('id', $quantitiesByProduct->keys()->all())
+                    ->whereIn('id', $productIds->all())
                     ->lockForUpdate()
                     ->get()
                     ->keyBy('id');
+
+                $variationsById = collect();
+                if ($variationIds->isNotEmpty()) {
+                    $variationsById = ProductVariation::withTrashed()
+                        ->where('contractor_id', $contractor->id)
+                        ->whereIn('id', $variationIds->all())
+                        ->lockForUpdate()
+                        ->get()
+                        ->keyBy('id');
+                }
 
                 foreach ($lockedSale->items as $item) {
                     /** @var Product|null $product */
@@ -869,26 +1169,54 @@ class OrderController extends Controller
                         continue;
                     }
 
-                    $balanceBefore = (int) $product->stock_quantity;
-                    $balanceAfter = $balanceBefore + (int) $item->quantity;
+                    $variationId = $item->product_variation_id ? (int) $item->product_variation_id : null;
+                    /** @var ProductVariation|null $variation */
+                    $variation = $variationId !== null
+                        ? $variationsById->get($variationId)
+                        : null;
 
-                    $product->stock_quantity = $balanceAfter;
+                    $quantity = (int) $item->quantity;
+                    $movementBalanceBefore = (int) $product->stock_quantity;
+                    $movementBalanceAfter = $movementBalanceBefore + $quantity;
+                    $movementUnitCost = (float) $product->cost_price;
+
+                    if ($variation) {
+                        $variationBalanceBefore = (int) $variation->stock_quantity;
+                        $variationBalanceAfter = $variationBalanceBefore + $quantity;
+                        $variation->stock_quantity = $variationBalanceAfter;
+                        $variation->save();
+
+                        $movementBalanceBefore = $variationBalanceBefore;
+                        $movementBalanceAfter = $variationBalanceAfter;
+                        $movementUnitCost = (float) ($variation->cost_price ?? $product->cost_price);
+                    }
+
+                    $productBalanceBefore = (int) $product->stock_quantity;
+                    $productBalanceAfter = $productBalanceBefore + $quantity;
+                    $product->stock_quantity = $productBalanceAfter;
                     $product->save();
 
                     InventoryMovement::query()->create([
                         'contractor_id' => $contractor->id,
                         'product_id' => $product->id,
+                        'product_variation_id' => $variation?->id,
                         'sale_item_id' => $item->id,
                         'user_id' => $request->user()?->id,
                         'type' => InventoryMovement::TYPE_RETURN,
-                        'quantity' => (int) $item->quantity,
-                        'balance_before' => $balanceBefore,
-                        'balance_after' => $balanceAfter,
-                        'unit_cost' => $product->cost_price,
-                        'reason' => "Cancelamento do pedido {$lockedSale->code}",
+                        'quantity' => $quantity,
+                        'balance_before' => $movementBalanceBefore,
+                        'balance_after' => $movementBalanceAfter,
+                        'unit_cost' => $movementUnitCost,
+                        'reason' => $variation
+                            ? "Cancelamento do pedido {$lockedSale->code} - variação {$variation->name}"
+                            : "Cancelamento do pedido {$lockedSale->code}",
                         'reference_type' => Sale::class,
                         'reference_id' => $lockedSale->id,
                         'occurred_at' => now(),
+                        'metadata' => [
+                            'product_balance_before' => $productBalanceBefore,
+                            'product_balance_after' => $productBalanceAfter,
+                        ],
                     ]);
                 }
 
@@ -976,8 +1304,9 @@ class OrderController extends Controller
             ->whereIn('source', self::ORDER_SOURCES)
             ->with([
                 'client:id,name,email,phone',
-                'items:id,sale_id,product_id,description,sku,quantity,unit_price,discount_amount,total_amount',
+                'items:id,sale_id,product_id,product_variation_id,description,sku,quantity,unit_price,discount_amount,total_amount,metadata',
                 'items.product:id,image_url',
+                'items.productVariation:id,name,cost_price',
                 'payments:id,sale_id,payment_method_id,status,amount',
                 'payments.paymentMethod:id,name,code',
             ])
@@ -1067,6 +1396,9 @@ class OrderController extends Controller
             'items' => $sale->items
                 ->map(static fn (SaleItem $item): array => [
                     'product_id' => $item->product_id ? (int) $item->product_id : null,
+                    'variation_id' => $item->product_variation_id ? (int) $item->product_variation_id : null,
+                    'variation_name' => (string) (data_get($item->metadata, 'variation_name')
+                        ?: ($item->productVariation?->name ?? '')),
                     'description' => (string) $item->description,
                     'sku' => $item->sku !== null ? (string) $item->sku : null,
                     'image_url' => $item->product?->image_url !== null ? (string) $item->product->image_url : null,
@@ -1121,35 +1453,71 @@ class OrderController extends Controller
 
     /**
      * @param Collection<int, SaleItem> $items
-     * @return list<array{product_id:int,quantity:int,discount_amount:float}>
+     * @return list<array{product_id:int,variation_id:int|null,quantity:int,discount_amount:float}>
      */
     private function normalizeExistingItems(Collection $items): array
     {
         return $items
-            ->groupBy(static fn (SaleItem $item): int => (int) $item->product_id)
-            ->map(static fn (Collection $rows, int|string $productId): array => [
-                'product_id' => (int) $productId,
-                'quantity' => (int) $rows->sum(static fn (SaleItem $item): int => (int) $item->quantity),
-                'discount_amount' => round((float) $rows->sum(static fn (SaleItem $item): float => (float) $item->discount_amount), 2),
-            ])
-            ->sortBy('product_id')
+            ->groupBy(fn (SaleItem $item): string => $this->resolveItemLineKey(
+                (int) $item->product_id,
+                $item->product_variation_id ? (int) $item->product_variation_id : null
+            ))
+            ->map(static function (Collection $rows): array {
+                /** @var SaleItem|null $first */
+                $first = $rows->first();
+
+                return [
+                    'product_id' => $first ? (int) $first->product_id : 0,
+                    'variation_id' => $first && $first->product_variation_id
+                        ? (int) $first->product_variation_id
+                        : null,
+                    'quantity' => (int) $rows->sum(static fn (SaleItem $item): int => (int) $item->quantity),
+                    'discount_amount' => round((float) $rows->sum(static fn (SaleItem $item): float => (float) $item->discount_amount), 2),
+                ];
+            })
+            ->sortBy(fn (array $line): string => $this->resolveItemLineKey(
+                (int) $line['product_id'],
+                isset($line['variation_id']) && (int) $line['variation_id'] > 0
+                    ? (int) $line['variation_id']
+                    : null
+            ))
             ->values()
             ->all();
     }
 
     /**
-     * @param Collection<int, array{product_id:int,quantity:int,discount_amount:float}> $requestedItems
-     * @return Collection<int, array{product_id:int,quantity:int,discount_amount:float}>
+     * @param Collection<int, array{product_id:int,variation_id:int|null,quantity:int,discount_amount:float}> $requestedItems
+     * @return Collection<string, array{product_id:int,variation_id:int|null,quantity:int,discount_amount:float}>
      */
     private function groupRequestedItems(Collection $requestedItems): Collection
     {
         return $requestedItems
-            ->groupBy(static fn (array $row): int => (int) $row['product_id'])
-            ->map(static fn (Collection $rows, int|string $productId): array => [
-                'product_id' => (int) $productId,
-                'quantity' => (int) $rows->sum(static fn (array $row): int => (int) $row['quantity']),
-                'discount_amount' => round((float) $rows->sum(static fn (array $row): float => (float) ($row['discount_amount'] ?? 0)), 2),
-            ]);
+            ->groupBy(fn (array $row): string => $this->resolveItemLineKey(
+                (int) ($row['product_id'] ?? 0),
+                isset($row['variation_id']) && (int) $row['variation_id'] > 0
+                    ? (int) $row['variation_id']
+                    : null
+            ))
+            ->map(static function (Collection $rows): array {
+                $first = $rows->first();
+
+                return [
+                    'product_id' => (int) ($first['product_id'] ?? 0),
+                    'variation_id' => isset($first['variation_id']) && (int) $first['variation_id'] > 0
+                        ? (int) $first['variation_id']
+                        : null,
+                    'quantity' => (int) $rows->sum(static fn (array $row): int => (int) ($row['quantity'] ?? 0)),
+                    'discount_amount' => round((float) $rows->sum(static fn (array $row): float => (float) ($row['discount_amount'] ?? 0)), 2),
+                ];
+            });
+    }
+
+    private function resolveItemLineKey(int $productId, ?int $variationId = null): string
+    {
+        $safeProductId = max(0, $productId);
+        $safeVariationId = $variationId !== null && $variationId > 0 ? $variationId : 0;
+
+        return "{$safeProductId}|{$safeVariationId}";
     }
 
     private function redistributePayments(Sale $sale, float $targetTotal): bool

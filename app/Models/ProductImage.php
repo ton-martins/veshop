@@ -5,10 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class Category extends Model
+class ProductImage extends Model
 {
     use HasFactory, SoftDeletes;
 
@@ -17,12 +16,11 @@ class Category extends Model
      */
     protected $fillable = [
         'contractor_id',
-        'parent_id',
-        'name',
-        'slug',
-        'description',
-        'is_active',
+        'product_id',
+        'image_path',
+        'image_url',
         'sort_order',
+        'alt_text',
     ];
 
     /**
@@ -31,7 +29,6 @@ class Category extends Model
     protected function casts(): array
     {
         return [
-            'is_active' => 'boolean',
             'sort_order' => 'integer',
         ];
     }
@@ -41,20 +38,9 @@ class Category extends Model
         return $this->belongsTo(Contractor::class);
     }
 
-    public function products(): HasMany
+    public function product(): BelongsTo
     {
-        return $this->hasMany(Product::class);
-    }
-
-    public function parent(): BelongsTo
-    {
-        return $this->belongsTo(Category::class, 'parent_id');
-    }
-
-    public function children(): HasMany
-    {
-        return $this->hasMany(Category::class, 'parent_id')
-            ->orderBy('sort_order')
-            ->orderBy('name');
+        return $this->belongsTo(Product::class);
     }
 }
+

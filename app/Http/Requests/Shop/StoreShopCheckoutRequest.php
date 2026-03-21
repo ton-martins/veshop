@@ -18,6 +18,9 @@ class StoreShopCheckoutRequest extends FormRequest
             ->map(static function (array $row): array {
                 return [
                     'product_id' => isset($row['product_id']) ? (int) $row['product_id'] : null,
+                    'variation_id' => isset($row['variation_id']) && $row['variation_id'] !== ''
+                        ? (int) $row['variation_id']
+                        : null,
                     'quantity' => isset($row['quantity']) ? (int) $row['quantity'] : null,
                 ];
             })
@@ -65,6 +68,7 @@ class StoreShopCheckoutRequest extends FormRequest
             'shipping_state' => ['nullable', 'string', 'size:2', 'required_if:delivery_mode,delivery'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.variation_id' => ['nullable', 'integer', 'exists:product_variations,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
         ];
     }

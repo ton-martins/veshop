@@ -64,8 +64,8 @@ const { brandName, systemIconUrl } = useBranding();
                 <div class="col-lg-2 col-md-4 col-12">
                     <h5 class="text-light fs-5">Institucional:</h5>
                     <ul class="list-unstyled mt-4">
-                        <li><a href="#!" class="text-white-50">Termos de uso</a></li>
-                        <li><a href="#!" class="text-white-50">Política de privacidade</a></li>
+                        <li><a href="/termos-de-uso" class="text-white-50">Termos de uso</a></li>
+                        <li><a href="/politica-de-privacidade" class="text-white-50">Política de privacidade</a></li>
                         <li><a href="#!" class="text-white-50">Base de conhecimento</a></li>
                         <li><a href="#!" class="text-white-50">Atualizações</a></li>
                         <li><a href="#!" class="text-white-50">Central de ajuda</a></li>

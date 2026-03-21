@@ -6,6 +6,7 @@ use App\Models\Contractor;
 use App\Models\InventoryMovement;
 use App\Models\PaymentMethod;
 use App\Models\Product;
+use App\Models\ProductVariation;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SalePayment;
@@ -166,6 +167,151 @@ class OrderFlowTest extends TestCase
             'contractor_id' => $contractor->id,
             'product_id' => $product->id,
             'type' => 'return',
+            'quantity' => 2,
+        ]);
+    }
+
+    public function test_admin_can_confirm_and_cancel_order_with_product_variation(): void
+    {
+        $contractor = $this->createContractor('pedidos-variacao');
+        $user = $this->createAdminUser([$contractor]);
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Tênis Running',
+            'sku' => 'RUN-001',
+            'sale_price' => 220.00,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $variation = ProductVariation::query()->create([
+            'contractor_id' => $contractor->id,
+            'product_id' => $product->id,
+            'name' => 'Preto - 42',
+            'sku' => 'RUN-001-PR-42',
+            'sale_price' => 230.00,
+            'stock_quantity' => 5,
+            'is_active' => true,
+            'sort_order' => 0,
+            'attributes' => [
+                'cor' => 'Preto',
+                'tamanho' => '42',
+            ],
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => null,
+            'code' => PaymentMethod::CODE_PIX,
+            'name' => 'Pix',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $sale = Sale::query()->create([
+            'contractor_id' => $contractor->id,
+            'code' => 'PED-20260320-001',
+            'source' => Sale::SOURCE_CATALOG,
+            'status' => Sale::STATUS_PENDING_CONFIRMATION,
+            'subtotal_amount' => 460,
+            'discount_amount' => 0,
+            'surcharge_amount' => 0,
+            'total_amount' => 460,
+            'paid_amount' => 0,
+            'change_amount' => 0,
+        ]);
+
+        SaleItem::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'product_id' => $product->id,
+            'product_variation_id' => $variation->id,
+            'description' => 'Tênis Running - Preto - 42',
+            'sku' => $variation->sku,
+            'quantity' => 2,
+            'unit_price' => 230,
+            'discount_amount' => 0,
+            'total_amount' => 460,
+            'metadata' => [
+                'variation_id' => $variation->id,
+                'variation_name' => $variation->name,
+            ],
+        ]);
+
+        SalePayment::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'payment_method_id' => $paymentMethod->id,
+            'payment_gateway_id' => null,
+            'status' => SalePayment::STATUS_PENDING,
+            'amount' => 460,
+            'installments' => null,
+            'paid_at' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->post(route('admin.orders.confirm', $sale->id))
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('sales', [
+            'id' => $sale->id,
+            'status' => Sale::STATUS_AWAITING_PAYMENT,
+        ]);
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'stock_quantity' => 8,
+        ]);
+        $this->assertDatabaseHas('product_variations', [
+            'id' => $variation->id,
+            'stock_quantity' => 3,
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'contractor_id' => $contractor->id,
+            'product_id' => $product->id,
+            'product_variation_id' => $variation->id,
+            'type' => InventoryMovement::TYPE_OUT,
+            'quantity' => 2,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->post(route('admin.orders.cancel', $sale->id), [
+                'reason' => 'Cancelamento de teste com variação',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('sales', [
+            'id' => $sale->id,
+            'status' => Sale::STATUS_CANCELLED,
+        ]);
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'stock_quantity' => 10,
+        ]);
+        $this->assertDatabaseHas('product_variations', [
+            'id' => $variation->id,
+            'stock_quantity' => 5,
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'contractor_id' => $contractor->id,
+            'product_id' => $product->id,
+            'product_variation_id' => $variation->id,
+            'type' => InventoryMovement::TYPE_RETURN,
             'quantity' => 2,
         ]);
     }
@@ -393,6 +539,135 @@ class OrderFlowTest extends TestCase
         $sale->refresh();
         $this->assertSame('Cliente Atualizado', (string) data_get($sale->metadata, 'customer_name'));
         $this->assertSame('cliente@exemplo.com', (string) data_get($sale->metadata, 'customer_contact'));
+    }
+
+    public function test_admin_can_edit_order_with_product_variation_and_adjust_stock(): void
+    {
+        $contractor = $this->createContractor('pedidos-edicao-variacao');
+        $user = $this->createAdminUser([$contractor]);
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Mochila Premium',
+            'sku' => 'MOC-PREMIUM',
+            'sale_price' => 180,
+            'stock_quantity' => 8,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $variation = ProductVariation::query()->create([
+            'contractor_id' => $contractor->id,
+            'product_id' => $product->id,
+            'name' => 'Preta - 20L',
+            'sku' => 'MOC-PREMIUM-PR-20',
+            'sale_price' => 190,
+            'stock_quantity' => 3,
+            'is_active' => true,
+            'sort_order' => 0,
+            'attributes' => [
+                'cor' => 'Preta',
+                'capacidade' => '20L',
+            ],
+        ]);
+
+        $sale = Sale::query()->create([
+            'contractor_id' => $contractor->id,
+            'code' => 'PED-20260320-002',
+            'source' => Sale::SOURCE_CATALOG,
+            'status' => Sale::STATUS_PENDING_CONFIRMATION,
+            'subtotal_amount' => 380,
+            'discount_amount' => 0,
+            'surcharge_amount' => 4,
+            'total_amount' => 384,
+            'paid_amount' => 0,
+            'change_amount' => 0,
+            'shipping_mode' => Sale::SHIPPING_MODE_PICKUP,
+            'shipping_amount' => 0,
+            'metadata' => [
+                'stock_reduced' => true,
+                'stock_restored' => false,
+                'charges' => [
+                    'subtotal_amount' => 380,
+                    'discount_amount' => 0,
+                    'shipping_amount' => 0,
+                    'payment_fee_amount' => 4,
+                    'payment_fee_fixed' => 4,
+                    'payment_fee_percent' => 0,
+                    'base_amount_before_fee' => 380,
+                    'surcharge_amount' => 4,
+                    'total_amount' => 384,
+                ],
+            ],
+        ]);
+
+        SaleItem::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'product_id' => $product->id,
+            'product_variation_id' => $variation->id,
+            'description' => 'Mochila Premium - Preta - 20L',
+            'sku' => $variation->sku,
+            'quantity' => 2,
+            'unit_price' => 190,
+            'discount_amount' => 0,
+            'total_amount' => 380,
+            'metadata' => [
+                'variation_id' => $variation->id,
+                'variation_name' => $variation->name,
+            ],
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->put(route('admin.orders.update', $sale->id), [
+                'discount_amount' => 0,
+                'shipping_mode' => Sale::SHIPPING_MODE_PICKUP,
+                'shipping_amount' => 0,
+                'items' => [
+                    [
+                        'product_id' => $product->id,
+                        'variation_id' => $variation->id,
+                        'quantity' => 1,
+                        'discount_amount' => 10,
+                    ],
+                ],
+            ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('sales', [
+            'id' => $sale->id,
+            'subtotal_amount' => '190.00',
+            'discount_amount' => '10.00',
+            'surcharge_amount' => '4.00',
+            'total_amount' => '184.00',
+        ]);
+        $this->assertDatabaseHas('sale_items', [
+            'sale_id' => $sale->id,
+            'product_id' => $product->id,
+            'product_variation_id' => $variation->id,
+            'quantity' => 1,
+            'discount_amount' => '10.00',
+            'total_amount' => '180.00',
+        ]);
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'stock_quantity' => 9,
+        ]);
+        $this->assertDatabaseHas('product_variations', [
+            'id' => $variation->id,
+            'stock_quantity' => 4,
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'contractor_id' => $contractor->id,
+            'product_id' => $product->id,
+            'product_variation_id' => $variation->id,
+            'type' => InventoryMovement::TYPE_RETURN,
+            'quantity' => 1,
+        ]);
     }
 
     public function test_admin_cannot_edit_cancelled_order(): void

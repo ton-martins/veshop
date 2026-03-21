@@ -81,7 +81,7 @@ const financeUiStyles = computed(() => ({
     '--finance-toggle-color-soft': withAlpha(secondaryColor.value, 0.16),
 }));
 
-const allowedTabs = new Set(['payables', 'receivables', 'payments']);
+const allowedTabs = new Set(['payables', 'receivables']);
 const activeTab = ref(allowedTabs.has(props.initialTab) ? props.initialTab : 'payables');
 
 watch(
@@ -152,11 +152,6 @@ const tabs = [
         key: 'receivables',
         label: 'Contas a receber',
         icon: Banknote,
-    },
-    {
-        key: 'payments',
-        label: 'Pagamentos',
-        icon: CreditCard,
     },
 ];
 
@@ -349,6 +344,14 @@ const providerLabelByValue = computed(() => {
 });
 
 const providerLabel = (provider) => providerLabelByValue.value.get(String(provider)) ?? String(provider ?? '-');
+
+const paymentMethodOptions = computed(() => [
+    { value: '', label: 'Selecione uma forma' },
+    ...methods.value.map((method) => ({
+        value: method.id,
+        label: method.name,
+    })),
+]);
 
 const gatewaySelectOptions = computed(() => [
     { value: '', label: 'Sem gateway' },
@@ -1914,7 +1917,6 @@ const pdfIframeKey = (file) => `${String(file?.public_url ?? '')}-${pdfZoom.valu
     }
 }
 </style>
-
 
 
 

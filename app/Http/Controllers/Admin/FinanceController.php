@@ -18,7 +18,7 @@ class FinanceController extends Controller
     /**
      * @var list<string>
      */
-    private const TABS = ['payables', 'receivables', 'payments'];
+    private const TABS = ['payables', 'receivables'];
 
     /**
      * @var list<string>
@@ -37,39 +37,32 @@ class FinanceController extends Controller
             $status = '';
         }
 
-        $financeEntries = [
-            'data' => [],
-            'links' => [],
-        ];
+        $entryType = $tab === 'receivables'
+            ? FinancialEntry::TYPE_RECEIVABLE
+            : FinancialEntry::TYPE_PAYABLE;
 
-        if ($tab !== 'payments') {
-            $entryType = $tab === 'receivables'
-                ? FinancialEntry::TYPE_RECEIVABLE
-                : FinancialEntry::TYPE_PAYABLE;
+        $entriesQuery = FinancialEntry::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('type', $entryType)
+            ->with('paymentMethod:id,name')
+            ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [FinancialEntry::STATUS_PENDING])
+            ->orderBy('due_date')
+            ->orderByDesc('id');
 
-            $entriesQuery = FinancialEntry::query()
-                ->where('contractor_id', $contractor->id)
-                ->where('type', $entryType)
-                ->with('paymentMethod:id,name')
-                ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [FinancialEntry::STATUS_PENDING])
-                ->orderBy('due_date')
-                ->orderByDesc('id');
-
-            if ($search !== '') {
-                $entriesQuery->where(function (Builder $query) use ($search): void {
-                    $query->where('counterparty_name', 'like', "%{$search}%")
-                        ->orWhere('reference', 'like', "%{$search}%")
-                        ->orWhere('notes', 'like', "%{$search}%");
-                });
-            }
-
-            $this->applyStatusFilter($entriesQuery, $status);
-
-            $financeEntries = $entriesQuery
-                ->paginate(20)
-                ->withQueryString()
-                ->through(fn (FinancialEntry $entry): array => $this->toFinancialEntryPayload($entry));
+        if ($search !== '') {
+            $entriesQuery->where(function (Builder $query) use ($search): void {
+                $query->where('counterparty_name', 'like', "%{$search}%")
+                    ->orWhere('reference', 'like', "%{$search}%")
+                    ->orWhere('notes', 'like', "%{$search}%");
+            });
         }
+
+        $this->applyStatusFilter($entriesQuery, $status);
+
+        $financeEntries = $entriesQuery
+            ->paginate(20)
+            ->withQueryString()
+            ->through(fn (FinancialEntry $entry): array => $this->toFinancialEntryPayload($entry));
 
         return Inertia::render('Admin/Finance/Index', [
             'initialTab' => $tab,
@@ -88,6 +81,16 @@ class FinanceController extends Controller
                 'payables' => $this->buildStatsForType($contractor->id, FinancialEntry::TYPE_PAYABLE),
                 'receivables' => $this->buildStatsForType($contractor->id, FinancialEntry::TYPE_RECEIVABLE),
             ],
+            'paymentConfig' => $this->resolvePaymentConfig($contractor),
+        ]);
+    }
+
+    public function payments(Request $request): Response
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        return Inertia::render('Admin/Finance/Payments', [
             'paymentConfig' => $this->resolvePaymentConfig($contractor),
         ]);
     }

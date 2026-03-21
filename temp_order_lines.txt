@@ -1,0 +1,1271 @@
+   1: <?php
+   2: 
+   3: namespace App\Http\Controllers\Admin;
+   4: 
+   5: use App\Http\Controllers\Controller;
+   6: use App\Models\Client;
+   7: use App\Models\Contractor;
+   8: use App\Models\InventoryMovement;
+   9: use App\Models\Product;
+  10: use App\Models\ProductVariation;
+  11: use App\Models\Sale;
+  12: use App\Models\SaleItem;
+  13: use App\Models\SalePayment;
+  14: use App\Models\SecurityAuditLog;
+  15: use App\Services\SecurityAuditLogger;
+  16: use Illuminate\Http\RedirectResponse;
+  17: use Illuminate\Http\Request;
+  18: use Illuminate\Support\Collection;
+  19: use Illuminate\Support\Facades\DB;
+  20: use Illuminate\Validation\Rule;
+  21: use Illuminate\Validation\ValidationException;
+  22: use Inertia\Inertia;
+  23: use Inertia\Response;
+  24: 
+  25: class OrderController extends Controller
+  26: {
+  27:     /**
+  28:      * @var list<string>
+  29:      */
+  30:     private const ORDER_SOURCES = [Sale::SOURCE_CATALOG, Sale::SOURCE_ORDER];
+  31: 
+  32:     public function index(Request $request): Response
+  33:     {
+  34:         $contractor = $this->resolveCurrentContractor($request);
+  35:         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+  36: 
+  37:         $search = trim((string) $request->string('search')->toString());
+  38:         $status = trim((string) $request->string('status')->toString());
+  39:         $pipelineFilter = trim((string) $request->string('pipeline')->toString());
+  40: 
+  41:         $baseQuery = Sale::query()
+  42:             ->where('contractor_id', $contractor->id)
+  43:             ->whereIn('source', self::ORDER_SOURCES);
+  44: 
+  45:         $ordersQuery = (clone $baseQuery)
+  46:             ->with([
+  47:                 'client:id,name,email,phone',
+  48:                 'items:id,sale_id,product_id,description,sku,quantity,unit_price,discount_amount,total_amount',
+  49:                 'items.product:id,image_url',
+  50:                 'payments:id,sale_id,payment_method_id,status,amount',
+  51:                 'payments.paymentMethod:id,name',
+  52:             ])
+  53:             ->orderByDesc('created_at')
+  54:             ->orderByDesc('id');
+  55: 
+  56:         if ($search !== '') {
+  57:             $ordersQuery->where(function ($query) use ($search): void {
+  58:                 $query->where('code', 'like', "%{$search}%")
+  59:                     ->orWhereHas('client', function ($clientQuery) use ($search): void {
+  60:                         $clientQuery->where('name', 'like', "%{$search}%")
+  61:                             ->orWhere('email', 'like', "%{$search}%")
+  62:                             ->orWhere('phone', 'like', "%{$search}%");
+  63:                     });
+  64:             });
+  65:         }
+  66: 
+  67:         if ($status !== '') {
+  68:             $ordersQuery->where('status', $status);
+  69:         }
+  70: 
+  71:         $pipelineStatuses = $this->resolvePipelineStatuses($pipelineFilter);
+  72:         if ($pipelineStatuses !== []) {
+  73:             $ordersQuery->whereIn('status', $pipelineStatuses);
+  74:         }
+  75: 
+  76:         $orders = $ordersQuery
+  77:             ->paginate(20)
+  78:             ->withQueryString()
+  79:             ->through(fn (Sale $sale): array => $this->toOrderPayload($sale));
+  80: 
+  81:         $totals = [
+  82:             'all' => (clone $baseQuery)->count(),
+  83:             'pending_confirmation' => (clone $baseQuery)
+  84:                 ->whereIn('status', [Sale::STATUS_NEW, Sale::STATUS_PENDING_CONFIRMATION])
+  85:                 ->count(),
+  86:             'awaiting_payment' => (clone $baseQuery)
+  87:                 ->whereIn('status', [Sale::STATUS_CONFIRMED, Sale::STATUS_AWAITING_PAYMENT])
+  88:                 ->count(),
+  89:             'paid_today' => (clone $baseQuery)
+  90:                 ->where('status', Sale::STATUS_PAID)
+  91:                 ->whereDate('completed_at', today())
+  92:                 ->count(),
+  93:             'cancelled' => (clone $baseQuery)
+  94:                 ->whereIn('status', [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED])
+  95:                 ->count(),
+  96:         ];
+  97: 
+  98:         $pipeline = [
+  99:             ['key' => 'pending_confirmation', 'label' => 'Aguardando confirmação', 'qty' => (int) $totals['pending_confirmation'], 'tone' => 'bg-blue-100 text-blue-700'],
+ 100:             ['key' => 'awaiting_payment', 'label' => 'Aguardando pagamento', 'qty' => (int) $totals['awaiting_payment'], 'tone' => 'bg-amber-100 text-amber-700'],
+ 101:             ['key' => 'paid', 'label' => 'Pagos hoje', 'qty' => (int) $totals['paid_today'], 'tone' => 'bg-emerald-100 text-emerald-700'],
+ 102:             ['key' => 'cancelled', 'label' => 'Rejeitados/cancelados', 'qty' => (int) $totals['cancelled'], 'tone' => 'bg-rose-100 text-rose-700'],
+ 103:         ];
+ 104: 
+ 105:         $clients = Client::query()
+ 106:             ->where('contractor_id', $contractor->id)
+ 107:             ->where('is_active', true)
+ 108:             ->orderBy('name')
+ 109:             ->limit(500)
+ 110:             ->get(['id', 'name', 'email', 'phone'])
+ 111:             ->map(static fn (Client $client): array => [
+ 112:                 'id' => (int) $client->id,
+ 113:                 'name' => (string) $client->name,
+ 114:                 'email' => $client->email ? (string) $client->email : null,
+ 115:                 'phone' => $client->phone ? (string) $client->phone : null,
+ 116:             ])
+ 117:             ->values()
+ 118:             ->all();
+ 119: 
+ 120:         $products = Product::query()
+ 121:             ->where('contractor_id', $contractor->id)
+ 122:             ->where('is_active', true)
+ 123:             ->with([
+ 124:                 'variations' => static fn ($query) => $query
+ 125:                     ->where('is_active', true)
+ 126:                     ->orderBy('sort_order')
+ 127:                     ->orderBy('id')
+ 128:                     ->select(['id', 'product_id', 'name', 'sku', 'sale_price', 'stock_quantity', 'attributes']),
+ 129:             ])
+ 130:             ->orderBy('name')
+ 131:             ->limit(800)
+ 132:             ->get(['id', 'name', 'sku', 'sale_price', 'stock_quantity', 'image_url'])
+ 133:             ->map(static fn (Product $product): array => [
+ 134:                 'id' => (int) $product->id,
+ 135:                 'name' => (string) $product->name,
+ 136:                 'sku' => $product->sku ? (string) $product->sku : null,
+ 137:                 'sale_price' => (float) $product->sale_price,
+ 138:                 'stock_quantity' => (int) $product->stock_quantity,
+ 139:                 'image_url' => $product->image_url ? (string) $product->image_url : null,
+ 140:                 'variations' => $product->variations
+ 141:                     ->map(static fn (ProductVariation $variation): array => [
+ 142:                         'id' => (int) $variation->id,
+ 143:                         'name' => (string) $variation->name,
+ 144:                         'sku' => $variation->sku ? (string) $variation->sku : null,
+ 145:                         'sale_price' => (float) $variation->sale_price,
+ 146:                         'stock_quantity' => (int) $variation->stock_quantity,
+ 147:                         'attributes' => is_array($variation->attributes) ? $variation->attributes : [],
+ 148:                     ])
+ 149:                     ->values()
+ 150:                     ->all(),
+ 151:             ])
+ 152:             ->values()
+ 153:             ->all();
+ 154: 
+ 155:         return Inertia::render('Admin/Orders/Index', [
+ 156:             'orders' => $orders,
+ 157:             'orderStats' => $totals,
+ 158:             'pipeline' => $pipeline,
+ 159:             'statusOptions' => $this->resolveStatusOptions(),
+ 160:             'clients' => $clients,
+ 161:             'products' => $products,
+ 162:             'filters' => [
+ 163:                 'search' => $search,
+ 164:                 'status' => $status,
+ 165:                 'pipeline' => in_array($pipelineFilter, ['pending_confirmation', 'awaiting_payment', 'paid', 'cancelled'], true)
+ 166:                     ? $pipelineFilter
+ 167:                     : 'all',
+ 168:             ],
+ 169:         ]);
+ 170:     }
+ 171: 
+ 172:     public function update(Request $request, Sale $sale): RedirectResponse
+ 173:     {
+ 174:         $contractor = $this->resolveCurrentContractor($request);
+ 175:         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+ 176: 
+ 177:         $validated = $request->validate([
+ 178:             'client_id' => ['nullable', 'integer'],
+ 179:             'customer_name' => ['nullable', 'string', 'max:120'],
+ 180:             'customer_contact' => ['nullable', 'string', 'max:160'],
+ 181:             'discount_amount' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
+ 182:             'shipping_mode' => ['nullable', Rule::in([Sale::SHIPPING_MODE_PICKUP, Sale::SHIPPING_MODE_DELIVERY])],
+ 183:             'shipping_amount' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
+ 184:             'shipping_estimate_days' => ['nullable', 'integer', 'min:0', 'max:365'],
+ 185:             'notes' => ['nullable', 'string', 'max:2000'],
+ 186:             'items' => ['required', 'array', 'min:1', 'max:80'],
+ 187:             'items.*.product_id' => ['required', 'integer'],
+ 188:             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
+ 189:             'items.*.discount_amount' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
+ 190:         ]);
+ 191: 
+ 192:         $clientId = isset($validated['client_id']) && $validated['client_id'] !== ''
+ 193:             ? (int) $validated['client_id']
+ 194:             : null;
+ 195: 
+ 196:         $selectedClient = null;
+ 197:         if ($clientId !== null) {
+ 198:             $selectedClient = Client::query()
+ 199:                 ->where('contractor_id', $contractor->id)
+ 200:                 ->where('id', $clientId)
+ 201:                 ->where('is_active', true)
+ 202:                 ->first();
+ 203: 
+ 204:             if (! $selectedClient) {
+ 205:                 throw ValidationException::withMessages([
+ 206:                     'client_id' => 'Cliente inválido para o contratante ativo.',
+ 207:                 ]);
+ 208:             }
+ 209:         }
+ 210: 
+ 211:         $requestedItems = collect($validated['items'])
+ 212:             ->map(static function (array $row): array {
+ 213:                 return [
+ 214:                     'product_id' => (int) ($row['product_id'] ?? 0),
+ 215:                     'quantity' => (int) ($row['quantity'] ?? 0),
+ 216:                     'discount_amount' => round((float) ($row['discount_amount'] ?? 0), 2),
+ 217:                 ];
+ 218:             })
+ 219:             ->filter(static fn (array $row): bool => $row['product_id'] > 0 && $row['quantity'] > 0)
+ 220:             ->values();
+ 221: 
+ 222:         if ($requestedItems->isEmpty()) {
+ 223:             throw ValidationException::withMessages([
+ 224:                 'items' => 'Adicione ao menos um produto no pedido.',
+ 225:             ]);
+ 226:         }
+ 227: 
+ 228:         $updatedSaleId = null;
+ 229:         $updatedSaleCode = null;
+ 230:         $changedFields = [];
+ 231:         $oldTotalForLog = null;
+ 232:         $newTotalForLog = null;
+ 233: 
+ 234:         DB::transaction(function () use (
+ 235:             $contractor,
+ 236:             $sale,
+ 237:             $validated,
+ 238:             $requestedItems,
+ 239:             $clientId,
+ 240:             $selectedClient,
+ 241:             $request,
+ 242:             &$updatedSaleId,
+ 243:             &$updatedSaleCode,
+ 244:             &$changedFields,
+ 245:             &$oldTotalForLog,
+ 246:             &$newTotalForLog
+ 247:         ): void {
+ 248:             $lockedSale = $this->lockOrderForContractor($contractor, $sale->id);
+ 249: 
+ 250:             if (! $this->canEditOrder($lockedSale)) {
+ 251:                 throw ValidationException::withMessages([
+ 252:                     'order' => 'Este pedido não pode ser editado no status atual.',
+ 253:                 ]);
+ 254:             }
+ 255: 
+ 256:             $metadata = is_array($lockedSale->metadata) ? $lockedSale->metadata : [];
+ 257:             $beforeSurchargeComponents = $this->resolveOrderSurchargeComponents($lockedSale, $metadata);
+ 258:             $beforeItems = $this->normalizeExistingItems($lockedSale->items);
+ 259:             $beforeSubtotal = round((float) $lockedSale->subtotal_amount, 2);
+ 260:             $beforeTotal = round((float) $lockedSale->total_amount, 2);
+ 261:             $beforeDiscount = round((float) $lockedSale->discount_amount, 2);
+ 262:             $beforeSurcharge = round((float) $lockedSale->surcharge_amount, 2);
+ 263:             $beforeClientId = $lockedSale->client_id ? (int) $lockedSale->client_id : null;
+ 264:             $beforeShippingMode = (string) ($lockedSale->shipping_mode ?? '');
+ 265:             $beforeShippingAmount = round((float) ($lockedSale->shipping_amount ?? 0), 2);
+ 266:             $beforeShippingEstimateDays = $lockedSale->shipping_estimate_days !== null ? (int) $lockedSale->shipping_estimate_days : null;
+ 267:             $beforeNotes = trim((string) ($lockedSale->notes ?? ''));
+ 268: 
+ 269:             $before = [
+ 270:                 'customer_name' => trim((string) ($metadata['customer_name'] ?? ($lockedSale->client?->name ?? ''))),
+ 271:                 'customer_contact' => trim((string) ($metadata['customer_contact'] ?? ($lockedSale->client?->phone ?? ($lockedSale->client?->email ?? '')))),
+ 272:             ];
+ 273: 
+ 274:             $nextShippingAmount = array_key_exists('shipping_amount', $validated)
+ 275:                 ? round((float) ($validated['shipping_amount'] ?? 0), 2)
+ 276:                 : $beforeShippingAmount;
+ 277:             $nextShippingMode = array_key_exists('shipping_mode', $validated)
+ 278:                 ? (string) ($validated['shipping_mode'] ?? '')
+ 279:                 : $beforeShippingMode;
+ 280:             $nextShippingEstimateDays = array_key_exists('shipping_estimate_days', $validated)
+ 281:                 ? ($validated['shipping_estimate_days'] !== null ? (int) $validated['shipping_estimate_days'] : null)
+ 282:                 : $beforeShippingEstimateDays;
+ 283: 
+ 284:             $stockReduced = (bool) ($metadata['stock_reduced'] ?? false);
+ 285:             $stockRestored = (bool) ($metadata['stock_restored'] ?? false);
+ 286:             $shouldAdjustStock = $stockReduced && ! $stockRestored;
+ 287: 
+ 288:             $groupedRequestedItems = $this->groupRequestedItems($requestedItems);
+ 289:             $oldQtyByProduct = $lockedSale->items
+ 290:                 ->groupBy(static fn (SaleItem $item): int => (int) $item->product_id)
+ 291:                 ->map(static fn (Collection $rows): int => (int) $rows->sum(static fn (SaleItem $item): int => (int) $item->quantity));
+ 292: 
+ 293:             $allProductIds = $oldQtyByProduct->keys()
+ 294:                 ->merge($groupedRequestedItems->keys())
+ 295:                 ->map(static fn (mixed $value): int => (int) $value)
+ 296:                 ->unique()
+ 297:                 ->values();
+ 298: 
+ 299:             $products = Product::query()
+ 300:                 ->where('contractor_id', $contractor->id)
+ 301:                 ->whereIn('id', $allProductIds->all())
+ 302:                 ->lockForUpdate()
+ 303:                 ->get()
+ 304:                 ->keyBy('id');
+ 305: 
+ 306:             if ($products->count() !== $allProductIds->count()) {
+ 307:                 throw ValidationException::withMessages([
+ 308:                     'items' => 'Um ou mais produtos são inválidos para o contratante ativo.',
+ 309:                 ]);
+ 310:             }
+ 311: 
+ 312:             $preparedLines = [];
+ 313:             $subtotal = 0.0;
+ 314:             $lineDiscountTotal = 0.0;
+ 315: 
+ 316:             foreach ($groupedRequestedItems as $productId => $row) {
+ 317:                 $safeProductId = (int) $productId;
+ 318:                 $quantity = (int) ($row['quantity'] ?? 0);
+ 319:                 $requestedLineDiscount = round((float) ($row['discount_amount'] ?? 0), 2);
+ 320: 
+ 321:                 /** @var Product|null $product */
+ 322:                 $product = $products->get($safeProductId);
+ 323:                 if (! $product) {
+ 324:                     throw ValidationException::withMessages([
+ 325:                         'items' => 'Produto inválido na edição do pedido.',
+ 326:                     ]);
+ 327:                 }
+ 328: 
+ 329:                 if ($quantity <= 0) {
+ 330:                     throw ValidationException::withMessages([
+ 331:                         'items' => "Quantidade inválida para o produto {$product->name}.",
+ 332:                     ]);
+ 333:                 }
+ 334: 
+ 335:                 $oldQuantity = (int) ($oldQtyByProduct->get($safeProductId) ?? 0);
+ 336:                 $delta = $quantity - $oldQuantity;
+ 337: 
+ 338:                 if ($shouldAdjustStock && $delta > 0 && $delta > (int) $product->stock_quantity) {
+ 339:                     throw ValidationException::withMessages([
+ 340:                         'items' => "Estoque insuficiente para o produto {$product->name}.",
+ 341:                     ]);
+ 342:                 }
+ 343: 
+ 344:                 if (! $shouldAdjustStock && $quantity > (int) $product->stock_quantity) {
+ 345:                     throw ValidationException::withMessages([
+ 346:                         'items' => "Estoque insuficiente para o produto {$product->name}.",
+ 347:                     ]);
+ 348:                 }
+ 349: 
+ 350:                 $unitPrice = round((float) $product->sale_price, 2);
+ 351:                 $lineSubtotal = round($unitPrice * $quantity, 2);
+ 352:                 $lineDiscount = min(max($requestedLineDiscount, 0.0), $lineSubtotal);
+ 353:                 $lineTotal = round($lineSubtotal - $lineDiscount, 2);
+ 354: 
+ 355:                 $preparedLines[$safeProductId] = [
+ 356:                     'product' => $product,
+ 357:                     'quantity' => $quantity,
+ 358:                     'unit_price' => $unitPrice,
+ 359:                     'line_subtotal' => $lineSubtotal,
+ 360:                     'discount_amount' => $lineDiscount,
+ 361:                     'line_total' => $lineTotal,
+ 362:                 ];
+ 363: 
+ 364:                 $subtotal += $lineSubtotal;
+ 365:                 $lineDiscountTotal += $lineDiscount;
+ 366:             }
+ 367: 
+ 368:             $globalDiscount = round((float) ($validated['discount_amount'] ?? 0), 2);
+ 369:             $discountTotal = round($lineDiscountTotal + $globalDiscount, 2);
+ 370:             $preservedNonShippingSurcharge = round((float) ($beforeSurchargeComponents['non_shipping_surcharge'] ?? 0), 2);
+ 371:             $paymentFeeAmount = round((float) ($beforeSurchargeComponents['payment_fee_amount'] ?? 0), 2);
+ 372:             $surcharge = round($nextShippingAmount + $preservedNonShippingSurcharge, 2);
+ 373:             $total = round($subtotal - $discountTotal + $surcharge, 2);
+ 374: 
+ 375:             if ($total <= 0) {
+ 376:                 throw ValidationException::withMessages([
+ 377:                     'discount_amount' => 'O valor total do pedido precisa ser maior que zero.',
+ 378:                 ]);
+ 379:             }
+ 380: 
+ 381:             $afterItems = collect($preparedLines)
+ 382:                 ->map(static fn (array $line, int $productId): array => [
+ 383:                     'product_id' => $productId,
+ 384:                     'quantity' => (int) $line['quantity'],
+ 385:                     'discount_amount' => round((float) $line['discount_amount'], 2),
+ 386:                 ])
+ 387:                 ->sortBy('product_id')
+ 388:                 ->values()
+ 389:                 ->all();
+ 390: 
+ 391:             $itemsChanged = serialize($beforeItems) !== serialize($afterItems);
+ 392: 
+ 393:             $nextCustomerName = trim((string) ($validated['customer_name'] ?? ''));
+ 394:             if ($nextCustomerName === '' && $selectedClient) {
+ 395:                 $nextCustomerName = trim((string) $selectedClient->name);
+ 396:             }
+ 397: 
+ 398:             $nextCustomerContact = trim((string) ($validated['customer_contact'] ?? ''));
+ 399:             if ($nextCustomerContact === '' && $selectedClient) {
+ 400:                 $nextCustomerContact = trim((string) ($selectedClient->phone ?? $selectedClient->email ?? ''));
+ 401:             }
+ 402: 
+ 403:             $nextNotes = trim((string) ($validated['notes'] ?? ''));
+ 404: 
+ 405:             $hasFinancialChange = (
+ 406:                 abs($beforeSubtotal - $subtotal) > 0.0001
+ 407:                 || abs($beforeTotal - $total) > 0.0001
+ 408:                 || abs($beforeDiscount - $discountTotal) > 0.0001
+ 409:                 || abs($beforeSurcharge - $surcharge) > 0.0001
+ 410:             );
+ 411: 
+ 412:             $hasShippingChange = (
+ 413:                 $beforeShippingMode !== $nextShippingMode
+ 414:                 || abs($beforeShippingAmount - $nextShippingAmount) > 0.0001
+ 415:                 || $beforeShippingEstimateDays !== $nextShippingEstimateDays
+ 416:             );
+ 417: 
+ 418:             $hasClientOrMetaChange = (
+ 419:                 $beforeClientId !== $clientId
+ 420:                 || $before['customer_name'] !== $nextCustomerName
+ 421:                 || $before['customer_contact'] !== $nextCustomerContact
+ 422:                 || $beforeNotes !== $nextNotes
+ 423:             );
+ 424: 
+ 425:             if (! $itemsChanged && ! $hasFinancialChange && ! $hasShippingChange && ! $hasClientOrMetaChange) {
+ 426:                 $updatedSaleId = (int) $lockedSale->id;
+ 427:                 $updatedSaleCode = (string) $lockedSale->code;
+ 428:                 $oldTotalForLog = $beforeTotal;
+ 429:                 $newTotalForLog = $beforeTotal;
+ 430: 
+ 431:                 return;
+ 432:             }
+ 433: 
+ 434:             $newSaleItemsByProduct = [];
+ 435:             if ($itemsChanged) {
+ 436:                 $lockedSale->items()->delete();
+ 437: 
+ 438:                 foreach ($preparedLines as $productId => $line) {
+ 439:                     /** @var Product $product */
+ 440:                     $product = $line['product'];
+ 441: 
+ 442:                     $newSaleItemsByProduct[$productId] = SaleItem::query()->create([
+ 443:                         'contractor_id' => $contractor->id,
+ 444:                         'sale_id' => $lockedSale->id,
+ 445:                         'product_id' => (int) $product->id,
+ 446:                         'description' => (string) $product->name,
+ 447:                         'sku' => $product->sku ? (string) $product->sku : null,
+ 448:                         'quantity' => (int) $line['quantity'],
+ 449:                         'unit_price' => (float) $line['unit_price'],
+ 450:                         'discount_amount' => (float) $line['discount_amount'],
+ 451:                         'total_amount' => (float) $line['line_total'],
+ 452:                     ]);
+ 453:                 }
+ 454: 
+ 455:                 if ($shouldAdjustStock) {
+ 456:                     foreach ($allProductIds as $productIdValue) {
+ 457:                         $productId = (int) $productIdValue;
+ 458:                         /** @var Product|null $product */
+ 459:                         $product = $products->get($productId);
+ 460:                         if (! $product) {
+ 461:                             continue;
+ 462:                         }
+ 463: 
+ 464:                         $oldQuantity = (int) ($oldQtyByProduct->get($productId) ?? 0);
+ 465:                         $newQuantity = (int) (($preparedLines[$productId]['quantity'] ?? null) ?? 0);
+ 466:                         $delta = $newQuantity - $oldQuantity;
+ 467: 
+ 468:                         if ($delta === 0) {
+ 469:                             continue;
+ 470:                         }
+ 471: 
+ 472:                         $balanceBefore = (int) $product->stock_quantity;
+ 473:                         $movementQuantity = abs($delta);
+ 474:                         $movementType = $delta > 0
+ 475:                             ? InventoryMovement::TYPE_OUT
+ 476:                             : InventoryMovement::TYPE_RETURN;
+ 477: 
+ 478:                         $balanceAfter = $delta > 0
+ 479:                             ? max(0, $balanceBefore - $movementQuantity)
+ 480:                             : $balanceBefore + $movementQuantity;
+ 481: 
+ 482:                         $product->stock_quantity = $balanceAfter;
+ 483:                         $product->save();
+ 484: 
+ 485:                         $saleItemId = isset($newSaleItemsByProduct[$productId])
+ 486:                             ? (int) $newSaleItemsByProduct[$productId]->id
+ 487:                             : null;
+ 488: 
+ 489:                         InventoryMovement::query()->create([
+ 490:                             'contractor_id' => $contractor->id,
+ 491:                             'product_id' => $productId,
+ 492:                             'sale_item_id' => $saleItemId,
+ 493:                             'user_id' => $request->user()?->id,
+ 494:                             'type' => $movementType,
+ 495:                             'quantity' => $movementQuantity,
+ 496:                             'balance_before' => $balanceBefore,
+ 497:                             'balance_after' => $balanceAfter,
+ 498:                             'unit_cost' => $product->cost_price,
+ 499:                             'reason' => "Ajuste de edição do pedido {$lockedSale->code}",
+ 500:                             'reference_type' => Sale::class,
+ 501:                             'reference_id' => $lockedSale->id,
+ 502:                             'occurred_at' => now(),
+ 503:                             'metadata' => [
+ 504:                                 'old_quantity' => $oldQuantity,
+ 505:                                 'new_quantity' => $newQuantity,
+ 506:                             ],
+ 507:                         ]);
+ 508:                     }
+ 509:                 }
+ 510:             }
+ 511: 
+ 512:             $paymentsAdjusted = false;
+ 513:             if (abs($beforeTotal - $total) > 0.0001) {
+ 514:                 $paymentsAdjusted = $this->redistributePayments($lockedSale, $total);
+ 515:             }
+ 516: 
+ 517:             if ($nextCustomerName === '') {
+ 518:                 unset($metadata['customer_name']);
+ 519:             } else {
+ 520:                 $metadata['customer_name'] = $nextCustomerName;
+ 521:             }
+ 522: 
+ 523:             if ($nextCustomerContact === '') {
+ 524:                 unset($metadata['customer_contact']);
+ 525:             } else {
+ 526:                 $metadata['customer_contact'] = $nextCustomerContact;
+ 527:             }
+ 528: 
+ 529:             $charges = is_array($metadata['charges'] ?? null) ? $metadata['charges'] : [];
+ 530:             $paymentMethodSnapshot = is_array($metadata['payment_method_snapshot'] ?? null)
+ 531:                 ? $metadata['payment_method_snapshot']
+ 532:                 : [];
+ 533: 
+ 534:             $paymentFeeFixed = round(max(0, (float) ($charges['payment_fee_fixed'] ?? ($paymentMethodSnapshot['fee_fixed'] ?? 0))), 2);
+ 535:             $paymentFeePercent = round(max(0, (float) ($charges['payment_fee_percent'] ?? ($paymentMethodSnapshot['fee_percent'] ?? 0))), 2);
+ 536:             $baseAmountBeforeFee = round(max(0, $subtotal - $discountTotal + $nextShippingAmount), 2);
+ 537: 
+ 538:             $metadata['charges'] = [
+ 539:                 ...$charges,
+ 540:                 'subtotal_amount' => round($subtotal, 2),
+ 541:                 'discount_amount' => round($discountTotal, 2),
+ 542:                 'shipping_amount' => round($nextShippingAmount, 2),
+ 543:                 'payment_fee_amount' => round($paymentFeeAmount, 2),
+ 544:                 'payment_fee_fixed' => $paymentFeeFixed,
+ 545:                 'payment_fee_percent' => $paymentFeePercent,
+ 546:                 'base_amount_before_fee' => $baseAmountBeforeFee,
+ 547:                 'surcharge_amount' => round($surcharge, 2),
+ 548:                 'total_amount' => round($total, 2),
+ 549:             ];
+ 550: 
+ 551:             $lockedSale->fill([
+ 552:                 'client_id' => $clientId,
+ 553:                 'shipping_mode' => $nextShippingMode !== '' ? $nextShippingMode : null,
+ 554:                 'shipping_amount' => $nextShippingAmount,
+ 555:                 'shipping_estimate_days' => $nextShippingEstimateDays,
+ 556:                 'subtotal_amount' => round($subtotal, 2),
+ 557:                 'discount_amount' => round($discountTotal, 2),
+ 558:                 'surcharge_amount' => round($surcharge, 2),
+ 559:                 'total_amount' => round($total, 2),
+ 560:                 'paid_amount' => in_array((string) $lockedSale->status, [Sale::STATUS_PAID, Sale::STATUS_COMPLETED], true)
+ 561:                     ? round($total, 2)
+ 562:                     : min(round((float) $lockedSale->paid_amount, 2), round($total, 2)),
+ 563:                 'notes' => $nextNotes !== '' ? $nextNotes : null,
+ 564:                 'metadata' => $metadata,
+ 565:             ])->save();
+ 566: 
+ 567:             if ($beforeClientId !== $clientId) {
+ 568:                 $changedFields[] = 'client_id';
+ 569:             }
+ 570:             if ($before['customer_name'] !== $nextCustomerName) {
+ 571:                 $changedFields[] = 'customer_name';
+ 572:             }
+ 573:             if ($before['customer_contact'] !== $nextCustomerContact) {
+ 574:                 $changedFields[] = 'customer_contact';
+ 575:             }
+ 576:             if ($beforeShippingMode !== $nextShippingMode) {
+ 577:                 $changedFields[] = 'shipping_mode';
+ 578:             }
+ 579:             if (abs($beforeShippingAmount - $nextShippingAmount) > 0.0001) {
+ 580:                 $changedFields[] = 'shipping_amount';
+ 581:             }
+ 582:             if ($beforeShippingEstimateDays !== $nextShippingEstimateDays) {
+ 583:                 $changedFields[] = 'shipping_estimate_days';
+ 584:             }
+ 585:             if ($beforeNotes !== $nextNotes) {
+ 586:                 $changedFields[] = 'notes';
+ 587:             }
+ 588:             if ($itemsChanged) {
+ 589:                 $changedFields[] = 'items';
+ 590:                 if ($shouldAdjustStock) {
+ 591:                     $changedFields[] = 'stock';
+ 592:                 }
+ 593:             }
+ 594:             if (abs($beforeSubtotal - $subtotal) > 0.0001) {
+ 595:                 $changedFields[] = 'subtotal_amount';
+ 596:             }
+ 597:             if (abs($beforeDiscount - $discountTotal) > 0.0001) {
+ 598:                 $changedFields[] = 'discount_amount';
+ 599:             }
+ 600:             if (abs($beforeSurcharge - $surcharge) > 0.0001) {
+ 601:                 $changedFields[] = 'surcharge_amount';
+ 602:             }
+ 603:             if (abs($beforeTotal - $total) > 0.0001) {
+ 604:                 $changedFields[] = 'total_amount';
+ 605:                 $changedFields[] = 'paid_amount';
+ 606:             }
+ 607:             if ($paymentsAdjusted) {
+ 608:                 $changedFields[] = 'payments';
+ 609:             }
+ 610: 
+ 611:             $changedFields = array_values(array_unique($changedFields));
+ 612:             $updatedSaleId = (int) $lockedSale->id;
+ 613:             $updatedSaleCode = (string) $lockedSale->code;
+ 614:             $oldTotalForLog = $beforeTotal;
+ 615:             $newTotalForLog = $total;
+ 616:         });
+ 617: 
+ 618:         if ($changedFields !== [] && $updatedSaleId) {
+ 619:             app(SecurityAuditLogger::class)->log(
+ 620:                 $request,
+ 621:                 'order.updated.admin',
+ 622:                 SecurityAuditLog::SEVERITY_INFO,
+ 623:                 $contractor->id,
+ 624:                 [
+ 625:                     'sale_id' => $updatedSaleId,
+ 626:                     'sale_code' => $updatedSaleCode,
+ 627:                     'changed_fields' => $changedFields,
+ 628:                     'old_total' => $oldTotalForLog,
+ 629:                     'new_total' => $newTotalForLog,
+ 630:                 ],
+ 631:             );
+ 632:         }
+ 633: 
+ 634:         return back()->with(
+ 635:             'status',
+ 636:             $changedFields !== []
+ 637:                 ? 'Pedido atualizado com sucesso.'
+ 638:                 : 'Nenhuma alteração foi aplicada no pedido.'
+ 639:         );
+ 640:     }
+ 641: 
+ 642:     public function confirm(Request $request, Sale $sale): RedirectResponse
+ 643:     {
+ 644:         $contractor = $this->resolveCurrentContractor($request);
+ 645:         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+ 646: 
+ 647:         $validated = $request->validate([
+ 648:             'notes' => ['nullable', 'string', 'max:2000'],
+ 649:         ]);
+ 650: 
+ 651:         $updatedSaleId = null;
+ 652: 
+ 653:         DB::transaction(function () use ($contractor, $sale, $validated, $request, &$updatedSaleId): void {
+ 654:             $lockedSale = $this->lockOrderForContractor($contractor, $sale->id);
+ 655: 
+ 656:             if (! in_array($lockedSale->status, [Sale::STATUS_NEW, Sale::STATUS_PENDING_CONFIRMATION], true)) {
+ 657:                 throw ValidationException::withMessages([
+ 658:                     'order' => 'Este pedido não pode ser confirmado no status atual.',
+ 659:                 ]);
+ 660:             }
+ 661: 
+ 662:             if ($lockedSale->items->isEmpty()) {
+ 663:                 throw ValidationException::withMessages([
+ 664:                     'order' => 'Este pedido não possui itens para confirmação.',
+ 665:                 ]);
+ 666:             }
+ 667: 
+ 668:             /** @var Collection<int, int> $quantitiesByProduct */
+ 669:             $quantitiesByProduct = $lockedSale->items
+ 670:                 ->groupBy(static fn ($item): int => (int) $item->product_id)
+ 671:                 ->map(static fn (Collection $items): int => $items->sum(static fn ($item): int => (int) $item->quantity));
+ 672: 
+ 673:             $products = Product::query()
+ 674:                 ->where('contractor_id', $contractor->id)
+ 675:                 ->whereIn('id', $quantitiesByProduct->keys()->all())
+ 676:                 ->lockForUpdate()
+ 677:                 ->get()
+ 678:                 ->keyBy('id');
+ 679: 
+ 680:             foreach ($quantitiesByProduct as $productId => $quantity) {
+ 681:                 /** @var Product|null $product */
+ 682:                 $product = $products->get((int) $productId);
+ 683:                 if (! $product) {
+ 684:                     throw ValidationException::withMessages([
+ 685:                         'order' => 'Não foi possível confirmar: item sem produto válido.',
+ 686:                     ]);
+ 687:                 }
+ 688: 
+ 689:                 if ((int) $product->stock_quantity < (int) $quantity) {
+ 690:                     throw ValidationException::withMessages([
+ 691:                         'order' => "Estoque insuficiente para o produto {$product->name}.",
+ 692:                     ]);
+ 693:                 }
+ 694:             }
+ 695: 
+ 696:             foreach ($lockedSale->items as $item) {
+ 697:                 /** @var Product|null $product */
+ 698:                 $product = $products->get((int) $item->product_id);
+ 699:                 if (! $product) {
+ 700:                     continue;
+ 701:                 }
+ 702: 
+ 703:                 $balanceBefore = (int) $product->stock_quantity;
+ 704:                 $balanceAfter = max(0, $balanceBefore - (int) $item->quantity);
+ 705: 
+ 706:                 $product->stock_quantity = $balanceAfter;
+ 707:                 $product->save();
+ 708: 
+ 709:                 InventoryMovement::query()->create([
+ 710:                     'contractor_id' => $contractor->id,
+ 711:                     'product_id' => $product->id,
+ 712:                     'sale_item_id' => $item->id,
+ 713:                     'user_id' => $request->user()?->id,
+ 714:                     'type' => InventoryMovement::TYPE_OUT,
+ 715:                     'quantity' => (int) $item->quantity,
+ 716:                     'balance_before' => $balanceBefore,
+ 717:                     'balance_after' => $balanceAfter,
+ 718:                     'unit_cost' => $product->cost_price,
+ 719:                     'reason' => "Confirmação do pedido {$lockedSale->code}",
+ 720:                     'reference_type' => Sale::class,
+ 721:                     'reference_id' => $lockedSale->id,
+ 722:                     'occurred_at' => now(),
+ 723:                 ]);
+ 724:             }
+ 725: 
+ 726:             $hasPendingPayment = $lockedSale->payments
+ 727:                 ->contains(static fn (SalePayment $payment): bool => in_array($payment->status, [SalePayment::STATUS_PENDING, SalePayment::STATUS_AUTHORIZED], true));
+ 728: 
+ 729:             $status = $hasPendingPayment
+ 730:                 ? Sale::STATUS_AWAITING_PAYMENT
+ 731:                 : Sale::STATUS_CONFIRMED;
+ 732: 
+ 733:             $metadata = is_array($lockedSale->metadata) ? $lockedSale->metadata : [];
+ 734:             $metadata['stock_reduced'] = true;
+ 735:             $metadata['stock_reduced_at'] = now()->toIso8601String();
+ 736:             $metadata['confirmed_at'] = now()->toIso8601String();
+ 737: 
+ 738:             $lockedSale->fill([
+ 739:                 'status' => $status,
+ 740:                 'notes' => $this->appendNote($lockedSale->notes, $validated['notes'] ?? null),
+ 741:                 'metadata' => $metadata,
+ 742:             ])->save();
+ 743: 
+ 744:             $updatedSaleId = (int) $lockedSale->id;
+ 745:         });
+ 746: 
+ 747:         $this->notifyOrderStatusChanged($updatedSaleId);
+ 748: 
+ 749:         return back()->with('status', 'Pedido confirmado com sucesso.');
+ 750:     }
+ 751: 
+ 752:     public function reject(Request $request, Sale $sale): RedirectResponse
+ 753:     {
+ 754:         $contractor = $this->resolveCurrentContractor($request);
+ 755:         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+ 756: 
+ 757:         $validated = $request->validate([
+ 758:             'reason' => ['required', 'string', 'max:500'],
+ 759:         ]);
+ 760: 
+ 761:         $updatedSaleId = null;
+ 762: 
+ 763:         DB::transaction(function () use ($contractor, $sale, $validated, &$updatedSaleId): void {
+ 764:             $lockedSale = $this->lockOrderForContractor($contractor, $sale->id);
+ 765: 
+ 766:             if (! in_array($lockedSale->status, [Sale::STATUS_NEW, Sale::STATUS_PENDING_CONFIRMATION], true)) {
+ 767:                 throw ValidationException::withMessages([
+ 768:                     'order' => 'Este pedido não pode ser rejeitado no status atual.',
+ 769:                 ]);
+ 770:             }
+ 771: 
+ 772:             $metadata = is_array($lockedSale->metadata) ? $lockedSale->metadata : [];
+ 773:             $metadata['rejected_at'] = now()->toIso8601String();
+ 774:             $metadata['rejection_reason'] = $validated['reason'];
+ 775: 
+ 776:             $lockedSale->fill([
+ 777:                 'status' => Sale::STATUS_REJECTED,
+ 778:                 'notes' => $this->appendNote($lockedSale->notes, "Motivo da rejeição: {$validated['reason']}"),
+ 779:                 'metadata' => $metadata,
+ 780:                 'cancelled_at' => now(),
+ 781:             ])->save();
+ 782: 
+ 783:             SalePayment::query()
+ 784:                 ->where('contractor_id', $contractor->id)
+ 785:                 ->where('sale_id', $lockedSale->id)
+ 786:                 ->whereIn('status', [SalePayment::STATUS_PENDING, SalePayment::STATUS_AUTHORIZED])
+ 787:                 ->update([
+ 788:                     'status' => SalePayment::STATUS_CANCELLED,
+ 789:                 ]);
+ 790: 
+ 791:             $updatedSaleId = (int) $lockedSale->id;
+ 792:         });
+ 793: 
+ 794:         $this->notifyOrderStatusChanged($updatedSaleId);
+ 795: 
+ 796:         return back()->with('status', 'Pedido rejeitado com sucesso.');
+ 797:     }
+ 798: 
+ 799:     public function markAsPaid(Request $request, Sale $sale): RedirectResponse
+ 800:     {
+ 801:         $contractor = $this->resolveCurrentContractor($request);
+ 802:         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+ 803: 
+ 804:         $validated = $request->validate([
+ 805:             'notes' => ['nullable', 'string', 'max:2000'],
+ 806:         ]);
+ 807: 
+ 808:         $updatedSaleId = null;
+ 809: 
+ 810:         DB::transaction(function () use ($contractor, $sale, $validated, &$updatedSaleId): void {
+ 811:             $lockedSale = $this->lockOrderForContractor($contractor, $sale->id);
+ 812: 
+ 813:             if (! in_array($lockedSale->status, [Sale::STATUS_CONFIRMED, Sale::STATUS_AWAITING_PAYMENT], true)) {
+ 814:                 throw ValidationException::withMessages([
+ 815:                     'order' => 'Este pedido não pode ser marcado como pago no status atual.',
+ 816:                 ]);
+ 817:             }
+ 818: 
+ 819:             $payment = SalePayment::query()
+ 820:                 ->where('contractor_id', $contractor->id)
+ 821:                 ->where('sale_id', $lockedSale->id)
+ 822:                 ->orderByDesc('id')
+ 823:                 ->first();
+ 824: 
+ 825:             if ($payment) {
+ 826:                 $payment->fill([
+ 827:                     'status' => SalePayment::STATUS_PAID,
+ 828:                     'paid_at' => now(),
+ 829:                 ])->save();
+ 830:             }
+ 831: 
+ 832:             $lockedSale->fill([
+ 833:                 'status' => Sale::STATUS_PAID,
+ 834:                 'paid_amount' => (float) $lockedSale->total_amount,
+ 835:                 'completed_at' => now(),
+ 836:                 'notes' => $this->appendNote($lockedSale->notes, $validated['notes'] ?? null),
+ 837:             ])->save();
+ 838: 
+ 839:             $updatedSaleId = (int) $lockedSale->id;
+ 840:         });
+ 841: 
+ 842:         $this->notifyOrderStatusChanged($updatedSaleId);
+ 843: 
+ 844:         return back()->with('status', 'Pedido marcado como pago.');
+ 845:     }
+ 846: 
+ 847:     public function cancel(Request $request, Sale $sale): RedirectResponse
+ 848:     {
+ 849:         $contractor = $this->resolveCurrentContractor($request);
+ 850:         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+ 851: 
+ 852:         $validated = $request->validate([
+ 853:             'reason' => ['nullable', 'string', 'max:500'],
+ 854:         ]);
+ 855: 
+ 856:         $updatedSaleId = null;
+ 857: 
+ 858:         DB::transaction(function () use ($contractor, $sale, $validated, $request, &$updatedSaleId): void {
+ 859:             $lockedSale = $this->lockOrderForContractor($contractor, $sale->id);
+ 860: 
+ 861:             if (in_array($lockedSale->status, [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED], true)) {
+ 862:                 throw ValidationException::withMessages([
+ 863:                     'order' => 'Este pedido já está cancelado.',
+ 864:                 ]);
+ 865:             }
+ 866: 
+ 867:             $metadata = is_array($lockedSale->metadata) ? $lockedSale->metadata : [];
+ 868:             $stockReduced = (bool) ($metadata['stock_reduced'] ?? false);
+ 869:             $stockRestored = (bool) ($metadata['stock_restored'] ?? false);
+ 870: 
+ 871:             if ($stockReduced && ! $stockRestored) {
+ 872:                 /** @var Collection<int, int> $quantitiesByProduct */
+ 873:                 $quantitiesByProduct = $lockedSale->items
+ 874:                     ->groupBy(static fn ($item): int => (int) $item->product_id)
+ 875:                     ->map(static fn (Collection $items): int => $items->sum(static fn ($item): int => (int) $item->quantity));
+ 876: 
+ 877:                 $products = Product::query()
+ 878:                     ->where('contractor_id', $contractor->id)
+ 879:                     ->whereIn('id', $quantitiesByProduct->keys()->all())
+ 880:                     ->lockForUpdate()
+ 881:                     ->get()
+ 882:                     ->keyBy('id');
+ 883: 
+ 884:                 foreach ($lockedSale->items as $item) {
+ 885:                     /** @var Product|null $product */
+ 886:                     $product = $products->get((int) $item->product_id);
+ 887:                     if (! $product) {
+ 888:                         continue;
+ 889:                     }
+ 890: 
+ 891:                     $balanceBefore = (int) $product->stock_quantity;
+ 892:                     $balanceAfter = $balanceBefore + (int) $item->quantity;
+ 893: 
+ 894:                     $product->stock_quantity = $balanceAfter;
+ 895:                     $product->save();
+ 896: 
+ 897:                     InventoryMovement::query()->create([
+ 898:                         'contractor_id' => $contractor->id,
+ 899:                         'product_id' => $product->id,
+ 900:                         'sale_item_id' => $item->id,
+ 901:                         'user_id' => $request->user()?->id,
+ 902:                         'type' => InventoryMovement::TYPE_RETURN,
+ 903:                         'quantity' => (int) $item->quantity,
+ 904:                         'balance_before' => $balanceBefore,
+ 905:                         'balance_after' => $balanceAfter,
+ 906:                         'unit_cost' => $product->cost_price,
+ 907:                         'reason' => "Cancelamento do pedido {$lockedSale->code}",
+ 908:                         'reference_type' => Sale::class,
+ 909:                         'reference_id' => $lockedSale->id,
+ 910:                         'occurred_at' => now(),
+ 911:                     ]);
+ 912:                 }
+ 913: 
+ 914:                 $metadata['stock_restored'] = true;
+ 915:                 $metadata['stock_restored_at'] = now()->toIso8601String();
+ 916:             }
+ 917: 
+ 918:             $metadata['cancelled_at'] = now()->toIso8601String();
+ 919:             if (! empty($validated['reason'])) {
+ 920:                 $metadata['cancellation_reason'] = $validated['reason'];
+ 921:             }
+ 922: 
+ 923:             $lockedSale->fill([
+ 924:                 'status' => Sale::STATUS_CANCELLED,
+ 925:                 'cancelled_at' => now(),
+ 926:                 'notes' => $this->appendNote(
+ 927:                     $lockedSale->notes,
+ 928:                     ! empty($validated['reason']) ? "Motivo do cancelamento: {$validated['reason']}" : null
+ 929:                 ),
+ 930:                 'metadata' => $metadata,
+ 931:             ])->save();
+ 932: 
+ 933:             $payments = SalePayment::query()
+ 934:                 ->where('contractor_id', $contractor->id)
+ 935:                 ->where('sale_id', $lockedSale->id)
+ 936:                 ->get();
+ 937: 
+ 938:             foreach ($payments as $payment) {
+ 939:                 if ($payment->status === SalePayment::STATUS_PAID) {
+ 940:                     $payment->fill([
+ 941:                         'status' => SalePayment::STATUS_REFUNDED,
+ 942:                     ])->save();
+ 943: 
+ 944:                     continue;
+ 945:                 }
+ 946: 
+ 947:                 $payment->fill([
+ 948:                     'status' => SalePayment::STATUS_CANCELLED,
+ 949:                 ])->save();
+ 950:             }
+ 951: 
+ 952:             $updatedSaleId = (int) $lockedSale->id;
+ 953:         });
+ 954: 
+ 955:         $this->notifyOrderStatusChanged($updatedSaleId);
+ 956: 
+ 957:         return back()->with('status', 'Pedido cancelado com sucesso.');
+ 958:     }
+ 959: 
+ 960:     private function resolveCurrentContractor(Request $request): ?Contractor
+ 961:     {
+ 962:         $user = $request->user();
+ 963:         if (! $user) {
+ 964:             return null;
+ 965:         }
+ 966: 
+ 967:         $user->loadMissing('contractors');
+ 968:         $availableContractors = $user->contractors->values();
+ 969: 
+ 970:         if ($availableContractors->isEmpty()) {
+ 971:             return null;
+ 972:         }
+ 973: 
+ 974:         $sessionContractorId = (int) $request->session()->get('current_contractor_id', 0);
+ 975:         if ($sessionContractorId > 0) {
+ 976:             $selected = $availableContractors->firstWhere('id', $sessionContractorId);
+ 977:             if ($selected) {
+ 978:                 return $selected;
+ 979:             }
+ 980:         }
+ 981: 
+ 982:         $fallback = $availableContractors->first();
+ 983:         if ($fallback) {
+ 984:             $request->session()->put('current_contractor_id', $fallback->id);
+ 985:         }
+ 986: 
+ 987:         return $fallback;
+ 988:     }
+ 989: 
+ 990:     private function lockOrderForContractor(Contractor $contractor, int $saleId): Sale
+ 991:     {
+ 992:         $sale = Sale::query()
+ 993:             ->where('contractor_id', $contractor->id)
+ 994:             ->where('id', $saleId)
+ 995:             ->whereIn('source', self::ORDER_SOURCES)
+ 996:             ->with([
+ 997:                 'client:id,name,email,phone',
+ 998:                 'items:id,sale_id,product_id,description,sku,quantity,unit_price,discount_amount,total_amount',
+ 999:                 'items.product:id,image_url',
+1000:                 'payments:id,sale_id,payment_method_id,status,amount',
+1001:                 'payments.paymentMethod:id,name,code',
+1002:             ])
+1003:             ->lockForUpdate()
+1004:             ->first();
+1005: 
+1006:         if (! $sale) {
+1007:             abort(404);
+1008:         }
+1009: 
+1010:         return $sale;
+1011:     }
+1012: 
+1013:     /**
+1014:      * @return array<int, array{value: string, label: string}>
+1015:      */
+1016:     private function resolveStatusOptions(): array
+1017:     {
+1018:         return [
+1019:             ['value' => '', 'label' => 'Todos os status'],
+1020:             ['value' => Sale::STATUS_PENDING_CONFIRMATION, 'label' => 'Aguardando confirmação'],
+1021:             ['value' => Sale::STATUS_NEW, 'label' => 'Novo'],
+1022:             ['value' => Sale::STATUS_CONFIRMED, 'label' => 'Confirmado'],
+1023:             ['value' => Sale::STATUS_AWAITING_PAYMENT, 'label' => 'Aguardando pagamento'],
+1024:             ['value' => Sale::STATUS_PAID, 'label' => 'Pago'],
+1025:             ['value' => Sale::STATUS_REJECTED, 'label' => 'Rejeitado'],
+1026:             ['value' => Sale::STATUS_CANCELLED, 'label' => 'Cancelado'],
+1027:         ];
+1028:     }
+1029: 
+1030:     /**
+1031:      * @return list<string>
+1032:      */
+1033:     private function resolvePipelineStatuses(string $pipeline): array
+1034:     {
+1035:         return match ($pipeline) {
+1036:             'pending_confirmation' => [Sale::STATUS_PENDING_CONFIRMATION, Sale::STATUS_NEW],
+1037:             'awaiting_payment' => [Sale::STATUS_AWAITING_PAYMENT, Sale::STATUS_CONFIRMED],
+1038:             'paid' => [Sale::STATUS_PAID],
+1039:             'cancelled' => [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED],
+1040:             default => [],
+1041:         };
+1042:     }
+1043: 
+1044:     /**
+1045:      * @return array<string, mixed>
+1046:      */
+1047:     private function toOrderPayload(Sale $sale): array
+1048:     {
+1049:         $metadata = is_array($sale->metadata) ? $sale->metadata : [];
+1050:         $status = $this->resolveStatusMeta((string) $sale->status);
+1051:         $paymentLabel = $sale->payments
+1052:             ->map(static fn (SalePayment $payment): ?string => $payment->paymentMethod?->name)
+1053:             ->filter()
+1054:             ->unique()
+1055:             ->values()
+1056:             ->implode(' + ');
+1057: 
+1058:         $customerName = trim((string) (($metadata['customer_name'] ?? null) ?? ($sale->client?->name ?? '')));
+1059:         if ($customerName === '') {
+1060:             $customerName = 'Consumidor final';
+1061:         }
+1062: 
+1063:         $customerContact = trim((string) (($metadata['customer_contact'] ?? null) ?? ($sale->client?->phone ?? '')));
+1064:         if ($customerContact === '') {
+1065:             $customerContact = trim((string) ($sale->client?->email ?? ($metadata['customer_email'] ?? ($metadata['customer_phone'] ?? ''))));
+1066:         }
+1067: 
+1068:         $itemDiscountTotal = round((float) $sale->items->sum(static fn (SaleItem $item): float => (float) $item->discount_amount), 2);
+1069:         $globalDiscountAmount = max(0.0, round((float) $sale->discount_amount - $itemDiscountTotal, 2));
+1070:         $surchargeComponents = $this->resolveOrderSurchargeComponents($sale, $metadata);
+1071: 
+1072:         return [
+1073:             'id' => (int) $sale->id,
+1074:             'code' => (string) $sale->code,
+1075:             'client_id' => $sale->client_id ? (int) $sale->client_id : null,
+1076:             'customer' => $customerName,
+1077:             'customer_contact' => $customerContact,
+1078:             'channel' => 'Loja virtual',
+1079:             'subtotal_amount' => (float) $sale->subtotal_amount,
+1080:             'discount_amount' => (float) $sale->discount_amount,
+1081:             'global_discount_amount' => $globalDiscountAmount,
+1082:             'non_shipping_surcharge_amount' => (float) $surchargeComponents['non_shipping_surcharge'],
+1083:             'payment_fee_amount' => (float) $surchargeComponents['payment_fee_amount'],
+1084:             'total_amount' => (float) $sale->total_amount,
+1085:             'total_items' => (int) $sale->items->sum(static fn ($item): int => (int) $item->quantity),
+1086:             'items' => $sale->items
+1087:                 ->map(static fn (SaleItem $item): array => [
+1088:                     'product_id' => $item->product_id ? (int) $item->product_id : null,
+1089:                     'variation_id' => $item->product_variation_id ? (int) $item->product_variation_id : null,
+1090:                     'variation_name' => (string) data_get($item->metadata, 'variation_name', ''),
+1091:                     'description' => (string) $item->description,
+1092:                     'sku' => $item->sku !== null ? (string) $item->sku : null,
+1093:                     'image_url' => $item->product?->image_url !== null ? (string) $item->product->image_url : null,
+1094:                     'quantity' => (int) $item->quantity,
+1095:                     'unit_price' => (float) $item->unit_price,
+1096:                     'discount_amount' => (float) $item->discount_amount,
+1097:                     'total_amount' => (float) $item->total_amount,
+1098:                 ])
+1099:                 ->values()
+1100:                 ->all(),
+1101:             'status' => $status,
+1102:             'payment_label' => $paymentLabel !== '' ? $paymentLabel : 'Não informado',
+1103:             'created_at' => optional($sale->created_at)->format('d/m/Y H:i'),
+1104:             'shipping_mode' => $sale->shipping_mode !== null ? (string) $sale->shipping_mode : null,
+1105:             'shipping_amount' => (float) $sale->shipping_amount,
+1106:             'shipping_estimate_days' => $sale->shipping_estimate_days !== null ? (int) $sale->shipping_estimate_days : null,
+1107:             'notes' => $sale->notes !== null ? (string) $sale->notes : null,
+1108:             'can_confirm' => in_array($sale->status, [Sale::STATUS_NEW, Sale::STATUS_PENDING_CONFIRMATION], true),
+1109:             'can_reject' => in_array($sale->status, [Sale::STATUS_NEW, Sale::STATUS_PENDING_CONFIRMATION], true),
+1110:             'can_mark_paid' => in_array($sale->status, [Sale::STATUS_CONFIRMED, Sale::STATUS_AWAITING_PAYMENT], true),
+1111:             'can_cancel' => ! in_array($sale->status, [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED], true),
+1112:             'can_edit' => $this->canEditOrder($sale),
+1113:         ];
+1114:     }
+1115: 
+1116:     /**
+1117:      * @return array{value: string, label: string, tone: string}
+1118:      */
+1119:     private function resolveStatusMeta(string $status): array
+1120:     {
+1121:         return match ($status) {
+1122:             Sale::STATUS_NEW => ['value' => $status, 'label' => 'Novo', 'tone' => 'bg-blue-100 text-blue-700'],
+1123:             Sale::STATUS_PENDING_CONFIRMATION => ['value' => $status, 'label' => 'Aguardando confirmação', 'tone' => 'bg-blue-100 text-blue-700'],
+1124:             Sale::STATUS_CONFIRMED => ['value' => $status, 'label' => 'Confirmado', 'tone' => 'bg-amber-100 text-amber-700'],
+1125:             Sale::STATUS_AWAITING_PAYMENT => ['value' => $status, 'label' => 'Aguardando pagamento', 'tone' => 'bg-amber-100 text-amber-700'],
+1126:             Sale::STATUS_PAID => ['value' => $status, 'label' => 'Pago', 'tone' => 'bg-emerald-100 text-emerald-700'],
+1127:             Sale::STATUS_REJECTED => ['value' => $status, 'label' => 'Rejeitado', 'tone' => 'bg-rose-100 text-rose-700'],
+1128:             Sale::STATUS_CANCELLED => ['value' => $status, 'label' => 'Cancelado', 'tone' => 'bg-rose-100 text-rose-700'],
+1129:             default => ['value' => $status, 'label' => ucfirst($status), 'tone' => 'bg-slate-100 text-slate-700'],
+1130:         };
+1131:     }
+1132: 
+1133:     private function canEditOrder(Sale $sale): bool
+1134:     {
+1135:         return ! in_array($sale->status, [
+1136:             Sale::STATUS_CANCELLED,
+1137:             Sale::STATUS_REJECTED,
+1138:             Sale::STATUS_COMPLETED,
+1139:             Sale::STATUS_REFUNDED,
+1140:         ], true);
+1141:     }
+1142: 
+1143:     /**
+1144:      * @param Collection<int, SaleItem> $items
+1145:      * @return list<array{product_id:int,quantity:int,discount_amount:float}>
+1146:      */
+1147:     private function normalizeExistingItems(Collection $items): array
+1148:     {
+1149:         return $items
+1150:             ->groupBy(static fn (SaleItem $item): int => (int) $item->product_id)
+1151:             ->map(static fn (Collection $rows, int|string $productId): array => [
+1152:                 'product_id' => (int) $productId,
+1153:                 'quantity' => (int) $rows->sum(static fn (SaleItem $item): int => (int) $item->quantity),
+1154:                 'discount_amount' => round((float) $rows->sum(static fn (SaleItem $item): float => (float) $item->discount_amount), 2),
+1155:             ])
+1156:             ->sortBy('product_id')
+1157:             ->values()
+1158:             ->all();
+1159:     }
+1160: 
+1161:     /**
+1162:      * @param Collection<int, array{product_id:int,quantity:int,discount_amount:float}> $requestedItems
+1163:      * @return Collection<int, array{product_id:int,quantity:int,discount_amount:float}>
+1164:      */
+1165:     private function groupRequestedItems(Collection $requestedItems): Collection
+1166:     {
+1167:         return $requestedItems
+1168:             ->groupBy(static fn (array $row): int => (int) $row['product_id'])
+1169:             ->map(static fn (Collection $rows, int|string $productId): array => [
+1170:                 'product_id' => (int) $productId,
+1171:                 'quantity' => (int) $rows->sum(static fn (array $row): int => (int) $row['quantity']),
+1172:                 'discount_amount' => round((float) $rows->sum(static fn (array $row): float => (float) ($row['discount_amount'] ?? 0)), 2),
+1173:             ]);
+1174:     }
+1175: 
+1176:     private function redistributePayments(Sale $sale, float $targetTotal): bool
+1177:     {
+1178:         $payments = $sale->payments->values();
+1179:         if ($payments->isEmpty()) {
+1180:             return false;
+1181:         }
+1182: 
+1183:         $targetTotal = round($targetTotal, 2);
+1184:         $currentTotal = round((float) $payments->sum(static fn (SalePayment $payment): float => (float) $payment->amount), 2);
+1185: 
+1186:         if (abs($currentTotal - $targetTotal) <= 0.0001) {
+1187:             return false;
+1188:         }
+1189: 
+1190:         if ($payments->count() === 1) {
+1191:             /** @var SalePayment $single */
+1192:             $single = $payments->first();
+1193:             $single->amount = $targetTotal;
+1194:             $single->save();
+1195: 
+1196:             return true;
+1197:         }
+1198: 
+1199:         $remaining = $targetTotal;
+1200:         $lastIndex = $payments->count() - 1;
+1201: 
+1202:         foreach ($payments as $index => $payment) {
+1203:             $amount = 0.0;
+1204: 
+1205:             if ($index === $lastIndex) {
+1206:                 $amount = round($remaining, 2);
+1207:             } elseif ($currentTotal > 0) {
+1208:                 $ratio = (float) $payment->amount / $currentTotal;
+1209:                 $amount = round($targetTotal * $ratio, 2);
+1210:                 $remaining = round($remaining - $amount, 2);
+1211:             }
+1212: 
+1213:             $payment->amount = $amount;
+1214:             $payment->save();
+1215:         }
+1216: 
+1217:         return true;
+1218:     }
+1219: 
+1220:     /**
+1221:      * @param array<string, mixed> $metadata
+1222:      * @return array{shipping_amount:float,payment_fee_amount:float,non_shipping_surcharge:float}
+1223:      */
+1224:     private function resolveOrderSurchargeComponents(Sale $sale, array $metadata): array
+1225:     {
+1226:         $shippingAmount = round(max(0, (float) $sale->shipping_amount), 2);
+1227:         $surchargeAmount = round(max(0, (float) $sale->surcharge_amount), 2);
+1228:         $derivedNonShipping = round(max(0, $surchargeAmount - $shippingAmount), 2);
+1229: 
+1230:         $charges = is_array($metadata['charges'] ?? null) ? $metadata['charges'] : [];
+1231:         $paymentFeeFromCharges = round(max(0, (float) ($charges['payment_fee_amount'] ?? 0)), 2);
+1232:         $paymentFeeAmount = $paymentFeeFromCharges > 0 ? $paymentFeeFromCharges : $derivedNonShipping;
+1233: 
+1234:         return [
+1235:             'shipping_amount' => $shippingAmount,
+1236:             'payment_fee_amount' => $paymentFeeAmount,
+1237:             'non_shipping_surcharge' => max($derivedNonShipping, $paymentFeeAmount),
+1238:         ];
+1239:     }
+1240: 
+1241:     private function appendNote(?string $base, ?string $extra): ?string
+1242:     {
+1243:         $current = trim((string) ($base ?? ''));
+1244:         $addition = trim((string) ($extra ?? ''));
+1245: 
+1246:         if ($addition === '') {
+1247:             return $current !== '' ? $current : null;
+1248:         }
+1249: 
+1250:         if ($current === '') {
+1251:             return $addition;
+1252:         }
+1253: 
+1254:         return "{$current}\n\n{$addition}";
+1255:     }
+1256: 
+1257:     private function notifyOrderStatusChanged(?int $saleId): void
+1258:     {
+1259:         if (! $saleId) {
+1260:             return;
+1261:         }
+1262: 
+1263:         $sale = Sale::query()->find($saleId);
+1264:         if (! $sale) {
+1265:             return;
+1266:         }
+1267: 
+1268:         app(\App\Services\OrderNotificationService::class)->notifyOrderStatusChanged($sale);
+1269:     }
+1270: }
+1271: 

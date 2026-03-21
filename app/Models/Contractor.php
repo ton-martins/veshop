@@ -97,6 +97,16 @@ class Contractor extends Model
         return $this->hasMany(Product::class);
     }
 
+    public function productImages(): HasMany
+    {
+        return $this->hasMany(ProductImage::class);
+    }
+
+    public function productVariations(): HasMany
+    {
+        return $this->hasMany(ProductVariation::class);
+    }
+
     public function clients(): HasMany
     {
         return $this->hasMany(Client::class);
@@ -209,7 +219,10 @@ class Contractor extends Model
     public function activePlanName(): string
     {
         if ($this->relationLoaded('plan') && $this->plan) {
-            return $this->plan->name;
+            $planName = trim((string) ($this->plan->name ?? ''));
+            if ($planName !== '') {
+                return $planName;
+            }
         }
 
         $settings = is_array($this->settings) ? $this->settings : [];

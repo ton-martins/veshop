@@ -15,6 +15,7 @@ use App\Models\Contractor;
 use App\Models\InventoryMovement;
 use App\Models\PaymentMethod;
 use App\Models\Product;
+use App\Models\ProductVariation;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SalePayment;
@@ -70,7 +71,14 @@ class PdvController extends Controller
             ->where('contractor_id', $contractor->id)
             ->where('is_active', true)
             ->where('stock_quantity', '>', 0)
-            ->with('category:id,name')
+            ->with([
+                'category:id,name',
+                'variations' => static fn ($query) => $query
+                    ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('id')
+                    ->select(['id', 'product_id', 'name', 'sku', 'sale_price', 'stock_quantity', 'attributes']),
+            ])
             ->orderByDesc('is_pdv_featured')
             ->orderBy('pdv_featured_order')
             ->orderBy('name')
@@ -87,19 +95,44 @@ class PdvController extends Controller
                 'is_pdv_featured',
                 'pdv_featured_order',
             ])
-            ->map(static fn (Product $product): array => [
-                'id' => $product->id,
-                'name' => $product->name,
-                'sku' => $product->sku,
-                'sale_price' => (float) $product->sale_price,
-                'stock_quantity' => (int) $product->stock_quantity,
-                'unit' => $product->unit,
-                'image_url' => $product->image_url,
-                'category_id' => $product->category_id ? (int) $product->category_id : null,
-                'category_name' => $product->category?->name ?? 'Sem categoria',
-                'is_pdv_featured' => (bool) $product->is_pdv_featured,
-                'pdv_featured_order' => $product->pdv_featured_order ? (int) $product->pdv_featured_order : null,
-            ])
+            ->map(static function (Product $product): array {
+                $activeVariations = $product->variations
+                    ->filter(static fn (ProductVariation $variation): bool => (int) $variation->stock_quantity > 0)
+                    ->values();
+
+                $hasVariations = $activeVariations->isNotEmpty();
+                $stockQuantity = $hasVariations
+                    ? (int) $activeVariations->sum(static fn (ProductVariation $variation): int => (int) $variation->stock_quantity)
+                    : (int) $product->stock_quantity;
+                $displayPrice = $hasVariations
+                    ? (float) $activeVariations->min(static fn (ProductVariation $variation): float => (float) $variation->sale_price)
+                    : (float) $product->sale_price;
+
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'sku' => $product->sku,
+                    'sale_price' => $displayPrice,
+                    'stock_quantity' => $stockQuantity,
+                    'unit' => $product->unit,
+                    'image_url' => $product->image_url,
+                    'category_id' => $product->category_id ? (int) $product->category_id : null,
+                    'category_name' => $product->category?->name ?? 'Sem categoria',
+                    'is_pdv_featured' => (bool) $product->is_pdv_featured,
+                    'pdv_featured_order' => $product->pdv_featured_order ? (int) $product->pdv_featured_order : null,
+                    'has_variations' => $hasVariations,
+                    'variations' => $activeVariations
+                        ->map(static fn (ProductVariation $variation): array => [
+                            'id' => (int) $variation->id,
+                            'name' => (string) $variation->name,
+                            'sku' => $variation->sku ? (string) $variation->sku : null,
+                            'sale_price' => (float) $variation->sale_price,
+                            'stock_quantity' => (int) $variation->stock_quantity,
+                            'attributes' => is_array($variation->attributes) ? $variation->attributes : [],
+                        ])
+                        ->all(),
+                ];
+            })
             ->values()
             ->all();
 
@@ -364,18 +397,60 @@ class PdvController extends Controller
             ]);
         }
 
-        /** @var Collection<int, int> $quantitiesByProduct */
-        $quantitiesByProduct = $rawItems
-            ->groupBy(static fn (array $row): int => (int) $row['product_id'])
-            ->map(static fn (Collection $rows): int => $rows->sum(static fn (array $row): int => (int) $row['quantity']));
+        /** @var Collection<int, array{product_id:int,variation_id:int|null,quantity:int}> $groupedItems */
+        $groupedItems = $rawItems
+            ->map(static function (array $row): array {
+                return [
+                    'product_id' => (int) ($row['product_id'] ?? 0),
+                    'variation_id' => isset($row['variation_id']) && $row['variation_id'] !== ''
+                        ? (int) $row['variation_id']
+                        : null,
+                    'quantity' => (int) ($row['quantity'] ?? 0),
+                ];
+            })
+            ->filter(static fn (array $row): bool => $row['product_id'] > 0 && $row['quantity'] > 0)
+            ->groupBy(static fn (array $row): string => "{$row['product_id']}|".((int) ($row['variation_id'] ?? 0)))
+            ->map(static function (Collection $rows): array {
+                $first = $rows->first();
 
-        DB::transaction(function () use ($contractor, $cashSession, $clientId, $paymentMethod, $installments, $data, $quantitiesByProduct, $request): void {
-            $productIds = $quantitiesByProduct->keys()->map(static fn (mixed $id): int => (int) $id)->values();
+                return [
+                    'product_id' => (int) ($first['product_id'] ?? 0),
+                    'variation_id' => isset($first['variation_id']) && (int) $first['variation_id'] > 0
+                        ? (int) $first['variation_id']
+                        : null,
+                    'quantity' => (int) $rows->sum(static fn (array $item): int => (int) ($item['quantity'] ?? 0)),
+                ];
+            })
+            ->values();
+
+        if ($groupedItems->isEmpty()) {
+            throw ValidationException::withMessages([
+                'items' => 'Adicione ao menos um item válido ao carrinho.',
+            ]);
+        }
+
+        DB::transaction(function () use ($contractor, $cashSession, $clientId, $paymentMethod, $installments, $data, $groupedItems, $request): void {
+            $productIds = $groupedItems
+                ->pluck('product_id')
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->filter(static fn (int $id): bool => $id > 0)
+                ->unique()
+                ->values();
+
+            $variationIds = $groupedItems
+                ->pluck('variation_id')
+                ->filter(static fn (mixed $id): bool => (int) $id > 0)
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->unique()
+                ->values();
 
             $products = Product::query()
                 ->where('contractor_id', $contractor->id)
                 ->where('is_active', true)
                 ->whereIn('id', $productIds->all())
+                ->with([
+                    'variations:id,product_id,name,sku,sale_price,cost_price,stock_quantity,is_active,attributes',
+                ])
                 ->lockForUpdate()
                 ->get()
                 ->keyBy('id');
@@ -386,12 +461,31 @@ class PdvController extends Controller
                 ]);
             }
 
+            $variationsById = collect();
+            if ($variationIds->isNotEmpty()) {
+                $variationsById = ProductVariation::query()
+                    ->where('contractor_id', $contractor->id)
+                    ->whereIn('id', $variationIds->all())
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
+
+                if ($variationsById->count() !== $variationIds->count()) {
+                    throw ValidationException::withMessages([
+                        'items' => 'Uma ou mais variações não são válidas para o contratante ativo.',
+                    ]);
+                }
+            }
+
             $subtotal = 0.0;
             $preparedLines = [];
 
-            foreach ($quantitiesByProduct as $productId => $quantity) {
-                $safeProductId = (int) $productId;
-                $safeQuantity = (int) $quantity;
+            foreach ($groupedItems as $row) {
+                $safeProductId = (int) ($row['product_id'] ?? 0);
+                $safeVariationId = isset($row['variation_id']) && (int) $row['variation_id'] > 0
+                    ? (int) $row['variation_id']
+                    : null;
+                $safeQuantity = (int) ($row['quantity'] ?? 0);
                 /** @var Product $product */
                 $product = $products->get($safeProductId);
 
@@ -407,19 +501,62 @@ class PdvController extends Controller
                     ]);
                 }
 
-                $currentStock = (int) $product->stock_quantity;
-                if ($safeQuantity > $currentStock) {
-                    throw ValidationException::withMessages([
-                        'items' => "Estoque insuficiente para o produto {$product->name}.",
-                    ]);
+                $variation = null;
+                $unitPrice = (float) $product->sale_price;
+                $description = (string) $product->name;
+                $sku = $product->sku;
+
+                if ($safeVariationId !== null) {
+                    /** @var ProductVariation|null $variation */
+                    $variation = $variationsById->get($safeVariationId);
+                    if (! $variation || (int) $variation->product_id !== (int) $product->id) {
+                        throw ValidationException::withMessages([
+                            'items' => "Variação inválida para o produto {$product->name}.",
+                        ]);
+                    }
+
+                    if (! (bool) $variation->is_active) {
+                        throw ValidationException::withMessages([
+                            'items' => "A variação selecionada para {$product->name} está inativa.",
+                        ]);
+                    }
+
+                    $currentVariationStock = (int) $variation->stock_quantity;
+                    if ($safeQuantity > $currentVariationStock) {
+                        throw ValidationException::withMessages([
+                            'items' => "Estoque insuficiente para a variação {$variation->name}.",
+                        ]);
+                    }
+
+                    $unitPrice = (float) $variation->sale_price;
+                    $description = trim($product->name.' - '.$variation->name);
+                    $sku = $variation->sku ?: $product->sku;
+                } else {
+                    $hasActiveVariations = $product->variations
+                        ->contains(static fn (ProductVariation $productVariation): bool => (bool) $productVariation->is_active);
+
+                    if ($hasActiveVariations) {
+                        throw ValidationException::withMessages([
+                            'items' => "Selecione uma variação para o produto {$product->name}.",
+                        ]);
+                    }
+
+                    $currentStock = (int) $product->stock_quantity;
+                    if ($safeQuantity > $currentStock) {
+                        throw ValidationException::withMessages([
+                            'items' => "Estoque insuficiente para o produto {$product->name}.",
+                        ]);
+                    }
                 }
 
-                $unitPrice = (float) $product->sale_price;
                 $lineTotal = round($unitPrice * $safeQuantity, 2);
                 $subtotal += $lineTotal;
 
                 $preparedLines[] = [
                     'product' => $product,
+                    'variation' => $variation,
+                    'description' => $description,
+                    'sku' => $sku,
                     'quantity' => $safeQuantity,
                     'unit_price' => $unitPrice,
                     'line_total' => $lineTotal,
@@ -476,37 +613,60 @@ class PdvController extends Controller
             foreach ($preparedLines as $line) {
                 /** @var Product $product */
                 $product = $line['product'];
+                /** @var ProductVariation|null $variation */
+                $variation = $line['variation'];
                 $quantity = (int) $line['quantity'];
 
                 $saleItem = SaleItem::query()->create([
                     'contractor_id' => $contractor->id,
                     'sale_id' => $sale->id,
                     'product_id' => $product->id,
-                    'description' => $product->name,
-                    'sku' => $product->sku,
+                    'product_variation_id' => $variation?->id,
+                    'description' => (string) ($line['description'] ?? $product->name),
+                    'sku' => trim((string) ($line['sku'] ?? $product->sku)) !== ''
+                        ? trim((string) ($line['sku'] ?? $product->sku))
+                        : null,
                     'quantity' => $quantity,
                     'unit_price' => $line['unit_price'],
                     'discount_amount' => 0,
                     'total_amount' => $line['line_total'],
+                    'metadata' => $variation ? [
+                        'variation_id' => (int) $variation->id,
+                        'variation_name' => (string) $variation->name,
+                        'variation_sku' => $variation->sku ? (string) $variation->sku : null,
+                        'variation_attributes' => is_array($variation->attributes) ? $variation->attributes : [],
+                    ] : null,
                 ]);
 
-                $balanceBefore = (int) $product->stock_quantity;
-                $balanceAfter = max(0, $balanceBefore - $quantity);
+                $movementBalanceBefore = (int) $product->stock_quantity;
+                $movementBalanceAfter = max(0, $movementBalanceBefore - $quantity);
 
-                $product->stock_quantity = $balanceAfter;
+                if ($variation) {
+                    $movementBalanceBefore = (int) $variation->stock_quantity;
+                    $movementBalanceAfter = max(0, $movementBalanceBefore - $quantity);
+                    $variation->stock_quantity = $movementBalanceAfter;
+                    $variation->save();
+                }
+
+                $productBalanceBefore = (int) $product->stock_quantity;
+                $productBalanceAfter = max(0, $productBalanceBefore - $quantity);
+                $product->stock_quantity = $productBalanceAfter;
                 $product->save();
 
                 InventoryMovement::query()->create([
                     'contractor_id' => $contractor->id,
                     'product_id' => $product->id,
+                    'product_variation_id' => $variation?->id,
                     'sale_item_id' => $saleItem->id,
                     'user_id' => $request->user()?->id,
                     'type' => InventoryMovement::TYPE_OUT,
                     'quantity' => $quantity,
-                    'balance_before' => $balanceBefore,
-                    'balance_after' => $balanceAfter,
-                    'unit_cost' => $product->cost_price,
-                    'reason' => "Venda PDV {$sale->code}",
+                    'balance_before' => $movementBalanceBefore,
+                    'balance_after' => $movementBalanceAfter,
+                    'unit_cost' => $variation?->cost_price ?? $product->cost_price,
+                    'reason' => $variation
+                        ? "Venda PDV {$sale->code} - variação {$variation->name}"
+                        : "Venda PDV {$sale->code}",
                     'reference_type' => Sale::class,
                     'reference_id' => $sale->id,
                     'occurred_at' => now(),

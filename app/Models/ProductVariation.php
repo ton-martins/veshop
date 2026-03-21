@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class SaleItem extends Model
+class ProductVariation extends Model
 {
     use HasFactory, SoftDeletes;
 
@@ -17,16 +17,15 @@ class SaleItem extends Model
      */
     protected $fillable = [
         'contractor_id',
-        'sale_id',
         'product_id',
-        'product_variation_id',
-        'description',
+        'name',
         'sku',
-        'quantity',
-        'unit_price',
-        'discount_amount',
-        'total_amount',
-        'metadata',
+        'attributes',
+        'cost_price',
+        'sale_price',
+        'stock_quantity',
+        'is_active',
+        'sort_order',
     ];
 
     /**
@@ -35,11 +34,12 @@ class SaleItem extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'integer',
-            'unit_price' => 'decimal:2',
-            'discount_amount' => 'decimal:2',
-            'total_amount' => 'decimal:2',
-            'metadata' => 'array',
+            'attributes' => 'array',
+            'cost_price' => 'decimal:2',
+            'sale_price' => 'decimal:2',
+            'stock_quantity' => 'integer',
+            'is_active' => 'boolean',
+            'sort_order' => 'integer',
         ];
     }
 
@@ -48,19 +48,14 @@ class SaleItem extends Model
         return $this->belongsTo(Contractor::class);
     }
 
-    public function sale(): BelongsTo
-    {
-        return $this->belongsTo(Sale::class);
-    }
-
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
     }
 
-    public function productVariation(): BelongsTo
+    public function saleItems(): HasMany
     {
-        return $this->belongsTo(ProductVariation::class);
+        return $this->hasMany(SaleItem::class);
     }
 
     public function inventoryMovements(): HasMany
@@ -68,3 +63,4 @@ class SaleItem extends Model
         return $this->hasMany(InventoryMovement::class);
     }
 }
+

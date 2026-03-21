@@ -21,6 +21,7 @@ class UpdateCategoryRequest extends FormRequest
     {
         $this->merge([
             'slug' => trim((string) $this->input('slug', '')),
+            'parent_id' => $this->normalizeNullableInteger($this->input('parent_id')),
             'is_active' => $this->boolean('is_active', true),
         ]);
     }
@@ -35,9 +36,20 @@ class UpdateCategoryRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:160'],
             'slug' => ['nullable', 'string', 'max:180'],
+            'parent_id' => ['nullable', 'integer', 'exists:categories,id'],
             'description' => ['nullable', 'string', 'max:500'],
             'is_active' => ['required', 'boolean'],
         ];
     }
-}
 
+    private function normalizeNullableInteger(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $parsed = (int) $value;
+
+        return $parsed > 0 ? $parsed : null;
+    }
+}

@@ -4,8 +4,10 @@ namespace Tests\Feature\Admin;
 
 use App\Models\Contractor;
 use App\Models\Client;
+use App\Models\InventoryMovement;
 use App\Models\PaymentMethod;
 use App\Models\Product;
+use App\Models\ProductVariation;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SalePayment;
@@ -149,6 +151,111 @@ class PdvFlowTest extends TestCase
             'contractor_id' => $contractor->id,
             'product_id' => $product->id,
             'type' => 'out',
+            'quantity' => 2,
+        ]);
+    }
+
+    public function test_admin_can_finalize_pdv_sale_with_product_variation(): void
+    {
+        $contractor = $this->createContractor('pdv-sale-variation');
+        $user = $this->createAdminUser([$contractor]);
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Camiseta Oversized',
+            'sku' => 'CAM-OVR',
+            'sale_price' => 70.00,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $variation = ProductVariation::query()->create([
+            'contractor_id' => $contractor->id,
+            'product_id' => $product->id,
+            'name' => 'Preta - G',
+            'sku' => 'CAM-OVR-PR-G',
+            'sale_price' => 75.00,
+            'stock_quantity' => 4,
+            'is_active' => true,
+            'sort_order' => 0,
+            'attributes' => [
+                'cor' => 'Preta',
+                'tamanho' => 'G',
+            ],
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => null,
+            'code' => PaymentMethod::CODE_CASH,
+            'name' => 'Dinheiro',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->post(route('admin.pdv.cash.open'), [
+                'opening_balance' => 100,
+            ])
+            ->assertRedirect();
+
+        $response = $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->post(route('admin.pdv.sales.store'), [
+                'client_id' => null,
+                'payment_method_id' => $paymentMethod->id,
+                'discount_amount' => 0,
+                'surcharge_amount' => 0,
+                'items' => [
+                    ['product_id' => $product->id, 'variation_id' => $variation->id, 'quantity' => 2],
+                ],
+            ]);
+
+        $response->assertRedirect();
+
+        $sale = Sale::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('source', Sale::SOURCE_PDV)
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertDatabaseHas('sale_items', [
+            'sale_id' => $sale->id,
+            'product_id' => $product->id,
+            'product_variation_id' => $variation->id,
+            'quantity' => 2,
+            'unit_price' => '75.00',
+            'total_amount' => '150.00',
+        ]);
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'stock_quantity' => 8,
+        ]);
+        $this->assertDatabaseHas('product_variations', [
+            'id' => $variation->id,
+            'stock_quantity' => 2,
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'contractor_id' => $contractor->id,
+            'product_id' => $product->id,
+            'product_variation_id' => $variation->id,
+            'type' => InventoryMovement::TYPE_OUT,
             'quantity' => 2,
         ]);
     }
@@ -568,6 +675,153 @@ class PdvFlowTest extends TestCase
         $sale->refresh();
         $this->assertSame('Cliente PDV Atualizado', (string) data_get($sale->metadata, 'customer_name'));
         $this->assertSame('cliente.pdv@exemplo.com', (string) data_get($sale->metadata, 'customer_contact'));
+    }
+
+    public function test_admin_can_edit_pdv_sale_with_product_variation_and_adjust_stock(): void
+    {
+        $contractor = $this->createContractor('pdv-edicao-variacao');
+        $user = $this->createAdminUser([$contractor]);
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Tênis Casual',
+            'sku' => 'TEN-CASUAL',
+            'sale_price' => 140,
+            'stock_quantity' => 8,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $variation = ProductVariation::query()->create([
+            'contractor_id' => $contractor->id,
+            'product_id' => $product->id,
+            'name' => 'Branco - 40',
+            'sku' => 'TEN-CASUAL-BR-40',
+            'sale_price' => 150,
+            'stock_quantity' => 3,
+            'is_active' => true,
+            'sort_order' => 0,
+            'attributes' => [
+                'cor' => 'Branco',
+                'tamanho' => '40',
+            ],
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => null,
+            'code' => PaymentMethod::CODE_PIX,
+            'name' => 'Pix',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $sale = Sale::query()->create([
+            'contractor_id' => $contractor->id,
+            'code' => 'VDA-20260320-001',
+            'source' => Sale::SOURCE_PDV,
+            'status' => Sale::STATUS_COMPLETED,
+            'subtotal_amount' => 300,
+            'discount_amount' => 0,
+            'surcharge_amount' => 0,
+            'total_amount' => 300,
+            'paid_amount' => 300,
+            'change_amount' => 0,
+            'metadata' => [
+                'customer_name' => 'Cliente Variação',
+            ],
+        ]);
+
+        SaleItem::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'product_id' => $product->id,
+            'product_variation_id' => $variation->id,
+            'description' => 'Tênis Casual - Branco - 40',
+            'sku' => $variation->sku,
+            'quantity' => 2,
+            'unit_price' => 150,
+            'discount_amount' => 0,
+            'total_amount' => 300,
+            'metadata' => [
+                'variation_id' => $variation->id,
+                'variation_name' => $variation->name,
+            ],
+        ]);
+
+        SalePayment::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'payment_method_id' => $paymentMethod->id,
+            'payment_gateway_id' => null,
+            'status' => SalePayment::STATUS_PAID,
+            'amount' => 300,
+            'installments' => null,
+            'paid_at' => now(),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->put(route('admin.sales.update', $sale->id), [
+                'customer_name' => 'Cliente Variação Ajustado',
+                'discount_amount' => 0,
+                'surcharge_amount' => 0,
+                'items' => [
+                    [
+                        'product_id' => $product->id,
+                        'variation_id' => $variation->id,
+                        'quantity' => 1,
+                        'discount_amount' => 5,
+                    ],
+                ],
+            ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('sales', [
+            'id' => $sale->id,
+            'subtotal_amount' => '150.00',
+            'discount_amount' => '5.00',
+            'total_amount' => '145.00',
+            'paid_amount' => '145.00',
+        ]);
+        $this->assertDatabaseHas('sale_items', [
+            'sale_id' => $sale->id,
+            'product_id' => $product->id,
+            'product_variation_id' => $variation->id,
+            'quantity' => 1,
+            'discount_amount' => '5.00',
+            'total_amount' => '145.00',
+        ]);
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'stock_quantity' => 9,
+        ]);
+        $this->assertDatabaseHas('product_variations', [
+            'id' => $variation->id,
+            'stock_quantity' => 4,
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'contractor_id' => $contractor->id,
+            'product_id' => $product->id,
+            'product_variation_id' => $variation->id,
+            'type' => InventoryMovement::TYPE_RETURN,
+            'quantity' => 1,
+        ]);
+        $this->assertDatabaseHas('security_audit_logs', [
+            'contractor_id' => $contractor->id,
+            'user_id' => $user->id,
+            'event' => 'sale.updated.admin',
+            'severity' => SecurityAuditLog::SEVERITY_INFO,
+        ]);
     }
 
     public function test_admin_cannot_edit_cancelled_pdv_sale(): void

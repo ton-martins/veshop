@@ -12,6 +12,7 @@ import { Layers3, Tags, Box, AlertTriangle, Plus, Search, Filter, Pencil, Trash2
 
 const props = defineProps({
     categories: { type: Object, default: () => ({ data: [], links: [] }) },
+    parentOptions: { type: Array, default: () => [] },
     filters: { type: Object, default: () => ({ search: '', status: '' }) },
     stats: {
         type: Object,
@@ -100,6 +101,7 @@ const categoryToDelete = ref(null);
 const categoryForm = useForm({
     name: '',
     slug: '',
+    parent_id: '',
     description: '',
     is_active: true,
 });
@@ -119,6 +121,7 @@ const openEdit = (category) => {
     editingCategory.value = category;
     categoryForm.name = category.name ?? '';
     categoryForm.slug = category.slug ?? '';
+    categoryForm.parent_id = category.parent_id ?? '';
     categoryForm.description = category.description ?? '';
     categoryForm.is_active = Boolean(category.is_active);
     categoryForm.clearErrors();
@@ -129,6 +132,16 @@ const closeModal = () => {
     showModal.value = false;
     editingCategory.value = null;
 };
+
+const parentCategoryOptions = computed(() => [
+    { value: '', label: 'Categoria principal' },
+    ...(Array.isArray(props.parentOptions) ? props.parentOptions : [])
+        .filter((category) => Number(category.id) !== Number(editingCategory.value?.id ?? 0))
+        .map((category) => ({
+            value: category.id,
+            label: category.name,
+        })),
+]);
 
 const submitCategory = () => {
     if (isEditing.value) {
@@ -253,6 +266,7 @@ const removeCategory = () => {
                         <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                             <tr>
                                 <th class="px-4 py-3">Categoria</th>
+                                <th class="px-4 py-3">Hierarquia</th>
                                 <th class="px-4 py-3">Slug</th>
                                 <th class="px-4 py-3">Produtos</th>
                                 <th class="px-4 py-3">Status</th>
@@ -261,7 +275,7 @@ const removeCategory = () => {
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
                             <tr v-if="rows.length === 0">
-                                <td colspan="5" class="px-4 py-10 text-center text-sm text-slate-500">
+                                <td colspan="6" class="px-4 py-10 text-center text-sm text-slate-500">
                                     Nenhuma categoria encontrada.
                                 </td>
                             </tr>
@@ -269,6 +283,20 @@ const removeCategory = () => {
                                 <td class="px-4 py-3">
                                     <p class="font-semibold text-slate-900">{{ category.name }}</p>
                                     <p v-if="category.description" class="text-xs text-slate-500">{{ category.description }}</p>
+                                </td>
+                                <td class="px-4 py-3 text-xs text-slate-600">
+                                    <div v-if="category.parent_name" class="space-y-1">
+                                        <p class="font-semibold text-slate-700">Subcategoria</p>
+                                        <span class="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-1 font-semibold">
+                                            Vinculada a {{ category.parent_name }}
+                                        </span>
+                                    </div>
+                                    <div v-else class="space-y-1">
+                                        <p class="font-semibold text-slate-700">Categoria principal</p>
+                                        <span class="inline-flex rounded-full border border-slate-200 bg-white px-2 py-1 font-semibold">
+                                            Nível principal do catálogo
+                                        </span>
+                                    </div>
                                 </td>
                                 <td class="px-4 py-3 text-slate-600">{{ category.slug }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ category.products_count }}</td>
@@ -338,6 +366,19 @@ const removeCategory = () => {
                             placeholder="confeitaria"
                         >
                         <p v-if="categoryForm.errors.slug" class="mt-1 text-xs text-rose-600">{{ categoryForm.errors.slug }}</p>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Categoria vinculada (opcional)</label>
+                        <UiSelect
+                            v-model="categoryForm.parent_id"
+                            :options="parentCategoryOptions"
+                            button-class="mt-1 w-full text-sm"
+                        />
+                        <p class="mt-1 text-[11px] text-slate-500">
+                            Selecione uma categoria principal para cadastrar como subcategoria.
+                        </p>
+                        <p v-if="categoryForm.errors.parent_id" class="mt-1 text-xs text-rose-600">{{ categoryForm.errors.parent_id }}</p>
                     </div>
 
                     <div>

@@ -10,13 +10,17 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class StorefrontController extends Controller
 {
+    /**
+     * @var list<string>
+     */
+    private const TABS = ['vitrine', 'frete'];
+
     public function edit(Request $request): Response
     {
         $contractor = $this->resolveCurrentContractor($request);
@@ -24,6 +28,8 @@ class StorefrontController extends Controller
 
         $settings = is_array($contractor->settings) ? $contractor->settings : [];
         $storefront = StorefrontSettings::normalize($contractor, $settings['shop_storefront'] ?? []);
+        $tab = $this->resolveTab($request);
+        $shopShipping = is_array($settings['shop_shipping'] ?? null) ? $settings['shop_shipping'] : [];
 
         $products = Product::query()
             ->where('contractor_id', $contractor->id)
@@ -47,6 +53,7 @@ class StorefrontController extends Controller
             ->all();
 
         return Inertia::render('Admin/Storefront/Index', [
+            'initialTab' => $tab,
             'contractor' => [
                 'id' => (int) $contractor->id,
                 'name' => (string) $contractor->name,
@@ -55,6 +62,13 @@ class StorefrontController extends Controller
                 'primary_color' => (string) ($contractor->brand_primary_color ?: '#073341'),
             ],
             'storefront' => $storefront,
+            'shopShipping' => [
+                'pickup_enabled' => (bool) ($shopShipping['pickup_enabled'] ?? true),
+                'delivery_enabled' => (bool) ($shopShipping['delivery_enabled'] ?? true),
+                'fixed_fee' => (float) ($shopShipping['fixed_fee'] ?? 0),
+                'free_over' => (float) ($shopShipping['free_over'] ?? 0),
+                'estimated_days' => (int) ($shopShipping['estimated_days'] ?? 2),
+            ],
             'products' => $products,
             'templates' => [
                 [
@@ -82,8 +96,17 @@ class StorefrontController extends Controller
         $contractor = $this->resolveCurrentContractor($request);
         abort_unless($contractor, 404, 'Contratante ativo nao encontrado.');
 
+        $section = strtolower(trim((string) $request->input('section', 'storefront')));
+        if ($section === 'shipping') {
+            return $this->updateShippingSection($request, $contractor);
+        }
+
+        return $this->updateStorefrontSection($request, $contractor);
+    }
+
+    private function updateStorefrontSection(Request $request, Contractor $contractor): RedirectResponse
+    {
         $validated = $request->validate([
-            'template' => ['required', 'string', Rule::in(StorefrontSettings::templates())],
             'hero_enabled' => ['required', 'boolean'],
             'hero_title' => ['nullable', 'string', 'max:120'],
             'hero_subtitle' => ['nullable', 'string', 'max:220'],
@@ -145,7 +168,7 @@ class StorefrontController extends Controller
         $processedBanners = $this->resolveSubmittedBanners($request, $validated, $contractor, $previousStorefront);
 
         $settings['shop_storefront'] = StorefrontSettings::normalize($contractor, [
-            'template' => $validated['template'],
+            'template' => $previousStorefront['template'] ?? StorefrontSettings::defaultTemplate($contractor),
             'blocks' => [
                 'hero' => (bool) $validated['hero_enabled'],
                 'banners' => (bool) $validated['banners_enabled'],
@@ -188,7 +211,36 @@ class StorefrontController extends Controller
         $contractor->settings = $settings;
         $contractor->save();
 
-        return back()->with('status', 'Loja virtual atualizada com sucesso.');
+        return back()->with('status', 'Configurações da vitrine atualizadas com sucesso.');
+    }
+
+    private function updateShippingSection(Request $request, Contractor $contractor): RedirectResponse
+    {
+        $validated = $request->validate([
+            'shipping_pickup_enabled' => ['required', 'boolean'],
+            'shipping_delivery_enabled' => ['required', 'boolean'],
+            'shipping_fixed_fee' => ['required', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_free_over' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_estimated_days' => ['nullable', 'integer', 'min:1', 'max:60'],
+        ]);
+
+        $settings = is_array($contractor->settings) ? $contractor->settings : [];
+        $settings['shop_shipping'] = [
+            'pickup_enabled' => (bool) $validated['shipping_pickup_enabled'],
+            'delivery_enabled' => (bool) $validated['shipping_delivery_enabled'],
+            'fixed_fee' => round((float) $validated['shipping_fixed_fee'], 2),
+            'free_over' => isset($validated['shipping_free_over'])
+                ? round((float) $validated['shipping_free_over'], 2)
+                : 0,
+            'estimated_days' => isset($validated['shipping_estimated_days'])
+                ? (int) $validated['shipping_estimated_days']
+                : 2,
+        ];
+
+        $contractor->settings = $settings;
+        $contractor->save();
+
+        return back()->with('status', 'Configurações de frete atualizadas com sucesso.');
     }
 
     /**
@@ -312,6 +364,15 @@ class StorefrontController extends Controller
         if (Storage::disk('public')->exists($normalized)) {
             Storage::disk('public')->delete($normalized);
         }
+    }
+
+    private function resolveTab(Request $request): string
+    {
+        $tab = trim((string) $request->string('tab')->toString());
+
+        return in_array($tab, self::TABS, true)
+            ? $tab
+            : 'vitrine';
     }
 
     private function resolveCurrentContractor(Request $request): ?Contractor

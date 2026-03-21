@@ -18,6 +18,9 @@ class StorePdvSaleRequest extends FormRequest
             ->map(static function (array $row): array {
                 return [
                     'product_id' => isset($row['product_id']) ? (int) $row['product_id'] : null,
+                    'variation_id' => isset($row['variation_id']) && $row['variation_id'] !== ''
+                        ? (int) $row['variation_id']
+                        : null,
                     'quantity' => isset($row['quantity']) ? (int) $row['quantity'] : null,
                 ];
             })
@@ -48,7 +51,8 @@ class StorePdvSaleRequest extends FormRequest
             'surcharge_amount' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'notes' => ['nullable', 'string', 'max:4000'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_id' => ['required', 'integer', 'exists:products,id', 'distinct'],
+            'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.variation_id' => ['nullable', 'integer', 'exists:product_variations,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
         ];
     }
@@ -60,4 +64,3 @@ class StorePdvSaleRequest extends FormRequest
         return $safe !== '' ? $safe : null;
     }
 }
-

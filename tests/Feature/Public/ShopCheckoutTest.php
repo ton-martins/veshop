@@ -6,6 +6,7 @@ use App\Models\Contractor;
 use App\Models\PaymentGateway;
 use App\Models\PaymentMethod;
 use App\Models\Product;
+use App\Models\ProductVariation;
 use App\Models\Sale;
 use App\Models\SalePayment;
 use App\Models\ShopCustomer;
@@ -126,6 +127,83 @@ class ShopCheckoutTest extends TestCase
         $this->assertDatabaseHas('products', [
             'id' => $product->id,
             'stock_quantity' => 12,
+        ]);
+    }
+
+    public function test_checkout_with_product_variation_creates_sale_item_with_variation_snapshot(): void
+    {
+        $contractor = $this->createContractor('loja-variacao-checkout');
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Camiseta Dry Fit',
+            'sku' => 'CAM-DRY',
+            'sale_price' => 59.90,
+            'stock_quantity' => 7,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $variation = ProductVariation::query()->create([
+            'contractor_id' => $contractor->id,
+            'product_id' => $product->id,
+            'name' => 'Azul - M',
+            'sku' => 'CAM-DRY-AZ-M',
+            'sale_price' => 64.90,
+            'stock_quantity' => 5,
+            'is_active' => true,
+            'sort_order' => 0,
+            'attributes' => [
+                'cor' => 'Azul',
+                'tamanho' => 'M',
+            ],
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Variação',
+            'email' => 'cliente-variacao@example.com',
+            'phone' => '71999990033',
+            'cep' => '41810-000',
+            'street' => 'Rua das Flores',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), [
+                'customer_name' => 'Cliente Variação',
+                'customer_phone' => '(71) 99999-0033',
+                'customer_email' => 'cliente-variacao@example.com',
+                'items' => [
+                    ['product_id' => $product->id, 'variation_id' => $variation->id, 'quantity' => 2],
+                ],
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+
+        $sale = Sale::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('shop_customer_id', $shopCustomer->id)
+            ->where('source', Sale::SOURCE_CATALOG)
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertSame(129.80, (float) $sale->subtotal_amount);
+
+        $this->assertDatabaseHas('sale_items', [
+            'sale_id' => $sale->id,
+            'product_id' => $product->id,
+            'product_variation_id' => $variation->id,
+            'quantity' => 2,
+            'unit_price' => '64.90',
+            'total_amount' => '129.80',
         ]);
     }
 

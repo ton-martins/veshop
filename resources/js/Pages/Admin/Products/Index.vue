@@ -6,7 +6,6 @@ import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
-import BrandingImageUploader from '@/Components/BrandingImageUploader.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import { Box, Boxes, CircleDollarSign, AlertTriangle, Plus, Search, Filter, ChevronRight, Tags, Pencil, Trash2 } from 'lucide-vue-next';
@@ -18,6 +17,16 @@ const props = defineProps({
     filters: { type: Object, default: () => ({ search: '', status: '', category_id: null }) },
     stats: { type: Object, default: () => ({ products: 0, active: 0, stockout: 0, margin: null }) },
     units: { type: Array, default: () => ['un', 'kg', 'lts'] },
+    storage: {
+        type: Object,
+        default: () => ({
+            usage_bytes: 0,
+            limit_bytes: null,
+            remaining_bytes: null,
+            gallery_limit_per_product: 5,
+            gallery_technical_limit: 5,
+        }),
+    },
 });
 
 const rows = computed(() => props.products?.data ?? []);
@@ -121,6 +130,20 @@ const showModal = ref(false);
 const editingProduct = ref(null);
 const showDeleteModal = ref(false);
 const productToDelete = ref(null);
+const galleryInputRef = ref(null);
+const productWizardSteps = ['Informações', 'Preço e estoque', 'Galeria', 'Variações'];
+const productWizardStep = ref(1);
+
+const createEmptyVariation = () => ({
+    id: null,
+    name: '',
+    sku: '',
+    sale_price: '',
+    cost_price: '',
+    stock_quantity: 0,
+    is_active: true,
+    attributes_text: '',
+});
 
 const productForm = useForm({
     name: '',
@@ -131,10 +154,10 @@ const productForm = useForm({
     sale_price: '',
     stock_quantity: 0,
     unit: props.units?.[0] ?? 'un',
-    image_url: '',
-    image_file: null,
-    remove_image: false,
-    image_preview: '',
+    gallery_files: [],
+    gallery_images: [],
+    remove_gallery_ids: [],
+    variations: [],
     is_active: true,
 });
 const deleteForm = useForm({});
@@ -142,20 +165,25 @@ const deleteForm = useForm({});
 const isEditing = computed(() => Boolean(editingProduct.value?.id));
 
 const openCreate = () => {
+    revokeGalleryPreviewUrls();
     editingProduct.value = null;
+    productWizardStep.value = 1;
     productForm.reset();
     productForm.clearErrors();
     productForm.stock_quantity = 0;
     productForm.unit = props.units?.[0] ?? 'un';
-    productForm.image_file = null;
-    productForm.remove_image = false;
-    productForm.image_preview = '';
+    productForm.gallery_files = [];
+    productForm.gallery_images = [];
+    productForm.remove_gallery_ids = [];
+    productForm.variations = [];
     productForm.is_active = true;
     showModal.value = true;
 };
 
 const openEdit = (product) => {
+    revokeGalleryPreviewUrls();
     editingProduct.value = product;
+    productWizardStep.value = 1;
     productForm.name = product.name ?? '';
     productForm.sku = product.sku ?? '';
     productForm.category_id = product.category_id ?? '';
@@ -164,49 +192,167 @@ const openEdit = (product) => {
     productForm.sale_price = product.sale_price ?? '';
     productForm.stock_quantity = Number.parseInt(product.stock_quantity ?? 0, 10) || 0;
     productForm.unit = product.unit ?? (props.units?.[0] ?? 'un');
-    productForm.image_url = product.image_url ?? '';
-    productForm.image_file = null;
-    productForm.remove_image = false;
-    productForm.image_preview = product.image_url ?? '';
+    productForm.gallery_files = [];
+    productForm.gallery_images = Array.isArray(product.images)
+        ? product.images.map((image) => ({
+            id: image.id ?? null,
+            image_url: image.image_url ?? '',
+            file: null,
+            from_server: Number(image.id ?? 0) > 0,
+        }))
+        : [];
+    productForm.remove_gallery_ids = [];
+    productForm.variations = Array.isArray(product.variations)
+        ? product.variations.map((variation) => ({
+            id: variation.id ?? null,
+            name: variation.name ?? '',
+            sku: variation.sku ?? '',
+            sale_price: variation.sale_price ?? '',
+            cost_price: variation.cost_price ?? '',
+            stock_quantity: Number.parseInt(variation.stock_quantity ?? 0, 10) || 0,
+            is_active: Boolean(variation.is_active ?? true),
+            attributes_text: Object.entries(variation.attributes ?? {})
+                .map(([key, value]) => `${key}:${value}`)
+                .join(', '),
+        }))
+        : [];
     productForm.is_active = Boolean(product.is_active);
     productForm.clearErrors();
     showModal.value = true;
 };
 
 const closeModal = () => {
+    revokeGalleryPreviewUrls();
     showModal.value = false;
     editingProduct.value = null;
+    productWizardStep.value = 1;
 };
 
-const handleProductImageChange = ({ file, preview }) => {
-    productForm.image_file = file ?? null;
-    productForm.image_preview = preview ?? '';
-    productForm.remove_image = false;
+const revokeGalleryPreviewUrls = () => {
+    if (!Array.isArray(productForm.gallery_images)) return;
 
-    if (productForm.image_file) {
-        productForm.image_url = '';
+    productForm.gallery_images.forEach((image) => {
+        if (!image?.from_server && image?.image_url && String(image.image_url).startsWith('blob:')) {
+            URL.revokeObjectURL(image.image_url);
+        }
+    });
+};
+
+const addVariationRow = () => {
+    productForm.variations = [
+        ...(Array.isArray(productForm.variations) ? productForm.variations : []),
+        createEmptyVariation(),
+    ];
+};
+
+const removeVariationRow = (index) => {
+    const rows = Array.isArray(productForm.variations) ? [...productForm.variations] : [];
+    productForm.variations = rows.filter((_, rowIndex) => rowIndex !== index);
+};
+
+const parseVariationAttributes = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return {};
+
+    return raw
+        .split(',')
+        .map((chunk) => chunk.trim())
+        .filter(Boolean)
+        .reduce((acc, chunk) => {
+            const [keyRaw, ...rest] = chunk.split(':');
+            const key = String(keyRaw ?? '').trim();
+            const parsedValue = String(rest.join(':') ?? '').trim();
+            if (!key || !parsedValue) return acc;
+
+            return {
+                ...acc,
+                [key]: parsedValue,
+            };
+        }, {});
+};
+
+const onGalleryFilesChange = (event) => {
+    const files = Array.from(event?.target?.files ?? []);
+    if (!files.length) return;
+
+    const limit = Number(props.storage?.gallery_limit_per_product ?? 5) || 5;
+    const currentImages = Array.isArray(productForm.gallery_images) ? productForm.gallery_images.length : 0;
+    const availableSlots = Math.max(0, limit - currentImages);
+    const acceptedFiles = files.slice(0, availableSlots);
+
+    productForm.gallery_files = [
+        ...(Array.isArray(productForm.gallery_files) ? productForm.gallery_files : []),
+        ...acceptedFiles,
+    ];
+
+    productForm.gallery_images = [
+        ...(Array.isArray(productForm.gallery_images) ? productForm.gallery_images : []),
+        ...acceptedFiles.map((file) => ({
+            id: null,
+            image_url: URL.createObjectURL(file),
+            file,
+            from_server: false,
+        })),
+    ];
+
+    if (galleryInputRef.value) {
+        galleryInputRef.value.value = '';
     }
 };
 
-const removeProductImage = () => {
-    productForm.image_file = null;
-    productForm.image_preview = '';
-    productForm.image_url = '';
-    productForm.remove_image = true;
+const removeGalleryImage = (image, index) => {
+    if (!image) return;
+
+    if (image.from_server && Number(image.id) > 0) {
+        productForm.remove_gallery_ids = Array.from(new Set([
+            ...(Array.isArray(productForm.remove_gallery_ids) ? productForm.remove_gallery_ids : []),
+            Number(image.id),
+        ]));
+    }
+
+    if (!image.from_server && image.file) {
+        productForm.gallery_files = (Array.isArray(productForm.gallery_files) ? productForm.gallery_files : [])
+            .filter((file) => file !== image.file);
+    }
+
+    if (!image.from_server && image.image_url && String(image.image_url).startsWith('blob:')) {
+        URL.revokeObjectURL(image.image_url);
+    }
+
+    productForm.gallery_images = (Array.isArray(productForm.gallery_images) ? productForm.gallery_images : [])
+        .filter((_, rowIndex) => rowIndex !== index);
 };
+
+const normalizeVariationPayload = (rows) => (Array.isArray(rows) ? rows : [])
+    .map((variation, index) => ({
+        id: variation.id || null,
+        name: String(variation.name ?? '').trim(),
+        sku: String(variation.sku ?? '').trim(),
+        sale_price: Number(variation.sale_price ?? 0),
+        cost_price: variation.cost_price === '' || variation.cost_price === null || variation.cost_price === undefined
+            ? null
+            : Number(variation.cost_price),
+        stock_quantity: Math.max(0, Number.parseInt(variation.stock_quantity ?? 0, 10) || 0),
+        is_active: Boolean(variation.is_active ?? true),
+        sort_order: index,
+        attributes: parseVariationAttributes(variation.attributes_text),
+    }))
+    .filter((variation) => variation.name !== '');
 
 const submitProduct = () => {
     if (isEditing.value) {
         productForm.transform((data) => ({
             ...data,
             _method: 'put',
-            image_url: String(data.image_url ?? '').trim(),
-            image_file: data.image_file ?? null,
-            remove_image: Boolean(data.remove_image),
+            remove_gallery_ids: JSON.stringify(Array.isArray(data.remove_gallery_ids) ? data.remove_gallery_ids : []),
+            variations: JSON.stringify(normalizeVariationPayload(data.variations)),
         })).post(route('admin.products.update', editingProduct.value.id), {
             preserveScroll: true,
             forceFormData: true,
             onSuccess: closeModal,
+            onFinish: () => {
+                productForm.transform((data) => data);
+            },
         });
 
         return;
@@ -214,13 +360,15 @@ const submitProduct = () => {
 
     productForm.transform((data) => ({
         ...data,
-        image_url: String(data.image_url ?? '').trim(),
-        image_file: data.image_file ?? null,
-        remove_image: Boolean(data.remove_image),
+        remove_gallery_ids: JSON.stringify(Array.isArray(data.remove_gallery_ids) ? data.remove_gallery_ids : []),
+        variations: JSON.stringify(normalizeVariationPayload(data.variations)),
     })).post(route('admin.products.store'), {
         preserveScroll: true,
         forceFormData: true,
         onSuccess: closeModal,
+        onFinish: () => {
+            productForm.transform((data) => data);
+        },
     });
 };
 
@@ -243,6 +391,19 @@ const removeProduct = () => {
     });
 };
 
+const isFirstProductStep = computed(() => productWizardStep.value <= 1);
+const isLastProductStep = computed(() => productWizardStep.value >= productWizardSteps.length);
+
+const goToPreviousProductStep = () => {
+    if (isFirstProductStep.value) return;
+    productWizardStep.value -= 1;
+};
+
+const goToNextProductStep = () => {
+    if (isLastProductStep.value) return;
+    productWizardStep.value += 1;
+};
+
 const formatMoney = (value) => {
     const parsed = Number(value ?? 0);
     return new Intl.NumberFormat('pt-BR', {
@@ -255,6 +416,17 @@ const formatStock = (quantity, unit) => {
     const safeQuantity = Number.parseInt(String(quantity ?? 0), 10);
     const safeUnit = props.units.includes(unit) ? unit : (props.units?.[0] ?? 'un');
     return `${Number.isFinite(safeQuantity) && safeQuantity >= 0 ? safeQuantity : 0} ${safeUnit}`;
+};
+
+const formatStorage = (bytes) => {
+    const safeBytes = Number(bytes ?? 0);
+    if (!Number.isFinite(safeBytes) || safeBytes <= 0) return '0 MB';
+
+    const gb = safeBytes / (1024 * 1024 * 1024);
+    if (gb >= 1) return `${gb.toFixed(2)} GB`;
+
+    const mb = safeBytes / (1024 * 1024);
+    return `${mb.toFixed(1)} MB`;
 };
 
 const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Produto')}&background=e2e8f0&color=334155&size=64`;
@@ -346,6 +518,21 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
 
                 <div class="mt-4 space-y-4">
                     <section class="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                        <div class="flex flex-col gap-2 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+                            <p>
+                                Storage usado: <span class="font-semibold text-slate-800">{{ formatStorage(props.storage?.usage_bytes) }}</span>
+                                <span v-if="props.storage?.limit_bytes !== null">
+                                    de <span class="font-semibold text-slate-800">{{ formatStorage(props.storage?.limit_bytes) }}</span>
+                                </span>
+                            </p>
+                            <p>
+                                Limite de fotos por produto: <span class="font-semibold text-slate-800">{{ props.storage?.gallery_limit_per_product || 5 }}</span>
+                                (teto técnico {{ props.storage?.gallery_technical_limit || 5 }})
+                            </p>
+                        </div>
+                    </section>
+
+                    <section class="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <h2 class="text-sm font-semibold text-slate-900">Categorias em destaque</h2>
                             <div class="flex flex-wrap items-center gap-2">
@@ -401,7 +588,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                                     <td class="px-4 py-3">
                                         <div class="flex min-w-0 items-center gap-3">
                                             <img
-                                                :src="product.image_url || fallbackImage(product.name)"
+                                                :src="(product.images?.[0]?.image_url || product.image_url) || fallbackImage(product.name)"
                                                 :alt="product.name"
                                                 class="h-10 w-10 rounded-lg border border-slate-200 object-cover"
                                                 loading="lazy"
@@ -489,13 +676,13 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
         <Modal :show="showModal" max-width="5xl" @close="closeModal">
             <WizardModalFrame
                 :title="isEditing ? 'Editar produto' : 'Novo produto'"
-                description="Preencha os dados do produto."
-                :steps="['Dados do produto']"
-                :current-step="1"
+                description="Preencha os dados por etapas para facilitar o cadastro."
+                :steps="productWizardSteps"
+                :current-step="productWizardStep"
                 @close="closeModal"
             >
-                <div class="grid gap-3 md:grid-cols-2">
-                    <div>
+                <div v-if="productWizardStep <= 3" class="grid gap-3 md:grid-cols-2">
+                    <div v-if="productWizardStep === 1">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
                         <input
                             v-model="productForm.name"
@@ -506,7 +693,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         <p v-if="productForm.errors.name" class="mt-1 text-xs text-rose-600">{{ productForm.errors.name }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="productWizardStep === 1">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">SKU</label>
                         <input
                             v-model="productForm.sku"
@@ -517,38 +704,52 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         <p v-if="productForm.errors.sku" class="mt-1 text-xs text-rose-600">{{ productForm.errors.sku }}</p>
                     </div>
 
-                    <div>
-                        <div class="w-full max-w-[220px] md:max-w-[320px]">
-                            <BrandingImageUploader
-                                label="Imagem do produto"
-                                help-text="Envie JPG, PNG ou WEBP."
-                                :initial-preview="productForm.image_preview || productForm.image_url"
-                                :aspect-ratio="1"
-                                :desktop-aspect-ratio="3.2"
-                                @change="handleProductImageChange"
-                            />
-                        </div>
-                        <div class="mt-2 flex flex-wrap gap-2">
-                            <button
-                                type="button"
-                                class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
-                                @click="removeProductImage"
+                    <div v-if="productWizardStep === 3" class="md:col-span-2">
+                        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div class="flex items-center justify-between gap-2">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Galeria de fotos</p>
+                                <span class="text-[11px] font-semibold text-slate-500">
+                                    {{ Array.isArray(productForm.gallery_images) ? productForm.gallery_images.length : 0 }}/{{ props.storage?.gallery_limit_per_product || 5 }}
+                                </span>
+                            </div>
+                            <input
+                                ref="galleryInputRef"
+                                type="file"
+                                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                                multiple
+                                class="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"
+                                @change="onGalleryFilesChange"
                             >
-                                Remover imagem
-                            </button>
+                            <p class="mt-1 text-[11px] text-slate-500">
+                                Envie até {{ props.storage?.gallery_limit_per_product || 5 }} imagens por produto.
+                            </p>
+
+                            <div
+                                v-if="Array.isArray(productForm.gallery_images) && productForm.gallery_images.length"
+                                class="mt-3 grid grid-cols-3 gap-2"
+                            >
+                                <article
+                                    v-for="(image, imageIndex) in productForm.gallery_images"
+                                    :key="`gallery-image-${image.id || imageIndex}`"
+                                    class="relative overflow-hidden rounded-lg border border-slate-200 bg-white"
+                                >
+                                    <img :src="image.image_url" alt="Imagem da galeria" class="h-20 w-full object-cover">
+                                    <button
+                                        type="button"
+                                        class="absolute right-1 top-1 rounded bg-white/95 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 shadow"
+                                        @click="removeGalleryImage(image, imageIndex)"
+                                    >
+                                        Remover
+                                    </button>
+                                </article>
+                            </div>
+
+                            <p v-if="productForm.errors.gallery_files" class="mt-1 text-xs text-rose-600">{{ productForm.errors.gallery_files }}</p>
+                            <p v-if="productForm.errors.storage_quota" class="mt-1 text-xs text-rose-600">{{ productForm.errors.storage_quota }}</p>
                         </div>
-                        <label class="mt-3 block text-xs font-semibold uppercase tracking-wide text-slate-500">URL externa (opcional)</label>
-                        <input
-                            v-model="productForm.image_url"
-                            type="url"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="https://..."
-                        >
-                        <p v-if="productForm.errors.image_url" class="mt-1 text-xs text-rose-600">{{ productForm.errors.image_url }}</p>
-                        <p v-if="productForm.errors.image_file" class="mt-1 text-xs text-rose-600">{{ productForm.errors.image_file }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="productWizardStep === 1">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Categoria</label>
                         <UiSelect
                             v-model="productForm.category_id"
@@ -558,7 +759,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         <p v-if="productForm.errors.category_id" class="mt-1 text-xs text-rose-600">{{ productForm.errors.category_id }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="productWizardStep === 2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Custo</label>
                         <input
                             v-model="productForm.cost_price"
@@ -570,7 +771,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         <p v-if="productForm.errors.cost_price" class="mt-1 text-xs text-rose-600">{{ productForm.errors.cost_price }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="productWizardStep === 2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Preço de venda</label>
                         <input
                             v-model="productForm.sale_price"
@@ -582,7 +783,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         <p v-if="productForm.errors.sale_price" class="mt-1 text-xs text-rose-600">{{ productForm.errors.sale_price }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="productWizardStep === 2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Quantidade</label>
                         <input
                             v-model="productForm.stock_quantity"
@@ -594,7 +795,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         <p v-if="productForm.errors.stock_quantity" class="mt-1 text-xs text-rose-600">{{ productForm.errors.stock_quantity }}</p>
                     </div>
 
-                    <div>
+                    <div v-if="productWizardStep === 2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Unidade</label>
                         <UiSelect
                             v-model="productForm.unit"
@@ -605,7 +806,72 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                     </div>
                 </div>
 
-                <div>
+                <div v-if="productWizardStep === 4" class="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Variações do produto</p>
+                        <button
+                            type="button"
+                            class="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                            @click="addVariationRow"
+                        >
+                            Adicionar variação
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-slate-500">
+                        Cadastre opções como cor, tamanho e modelo. O estoque e preço serão controlados por variação.
+                    </p>
+
+                    <div
+                        v-for="(variation, variationIndex) in productForm.variations"
+                        :key="`variation-row-${variation.id || variationIndex}`"
+                        class="grid gap-2 rounded-lg border border-slate-200 bg-white p-2 md:grid-cols-12"
+                    >
+                        <input
+                            v-model="variation.name"
+                            type="text"
+                            class="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700 md:col-span-3"
+                            placeholder="Nome (ex.: Azul / M)"
+                        >
+                        <input
+                            v-model="variation.sku"
+                            type="text"
+                            class="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700 md:col-span-2"
+                            placeholder="SKU variação"
+                        >
+                        <input
+                            v-model="variation.sale_price"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            class="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700 md:col-span-2"
+                            placeholder="Preço"
+                        >
+                        <input
+                            v-model="variation.stock_quantity"
+                            type="number"
+                            min="0"
+                            step="1"
+                            class="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700 md:col-span-2"
+                            placeholder="Estoque"
+                        >
+                        <input
+                            v-model="variation.attributes_text"
+                            type="text"
+                            class="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700 md:col-span-2"
+                            placeholder="Atributos (Cor:Azul, Tam:M)"
+                        >
+                        <button
+                            type="button"
+                            class="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 md:col-span-1"
+                            @click="removeVariationRow(variationIndex)"
+                        >
+                            X
+                        </button>
+                    </div>
+                    <p v-if="productForm.errors.variations" class="text-xs text-rose-600">{{ productForm.errors.variations }}</p>
+                </div>
+
+                <div v-if="productWizardStep === 1">
                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Descrição</label>
                     <textarea
                         v-model="productForm.description"
@@ -616,7 +882,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                     <p v-if="productForm.errors.description" class="mt-1 text-xs text-rose-600">{{ productForm.errors.description }}</p>
                 </div>
 
-                <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <label v-if="productWizardStep === 1" class="flex items-center gap-2 text-sm font-medium text-slate-700">
                     <input v-model="productForm.is_active" type="checkbox" class="rounded border-slate-300">
                     Produto ativo
                 </label>
@@ -631,6 +897,23 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                             Cancelar
                         </button>
                         <button
+                            v-if="!isFirstProductStep"
+                            type="button"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="goToPreviousProductStep"
+                        >
+                            Voltar
+                        </button>
+                        <button
+                            v-if="!isLastProductStep"
+                            type="button"
+                            class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                            @click="goToNextProductStep"
+                        >
+                            Avançar
+                        </button>
+                        <button
+                            v-if="isLastProductStep"
                             type="button"
                             class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                             :disabled="productForm.processing"

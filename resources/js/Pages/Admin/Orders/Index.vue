@@ -148,13 +148,62 @@ const normalizeMoney = (value) => {
 
 const emptyItemLine = () => ({
     product_id: '',
+    variation_id: '',
     quantity: 1,
     discount_amount: 0,
 });
 
+const resolveProductForLine = (line) => (
+    productLookup.value.get(Number(line?.product_id))
+);
+
+const resolveLineVariation = (line) => {
+    const product = resolveProductForLine(line);
+    if (!product) return null;
+
+    const safeVariationId = Number(line?.variation_id ?? 0);
+    if (safeVariationId <= 0) return null;
+
+    const variations = Array.isArray(product.variations) ? product.variations : [];
+    return variations.find((variation) => Number(variation?.id) === safeVariationId) ?? null;
+};
+
+const lineStockQuantity = (line) => {
+    const variation = resolveLineVariation(line);
+    if (variation) {
+        return Number(variation?.stock_quantity ?? 0);
+    }
+
+    const product = resolveProductForLine(line);
+    return Number(product?.stock_quantity ?? 0);
+};
+
+const productVariationOptions = (productId) => {
+    const product = productLookup.value.get(Number(productId));
+    if (!product) return [];
+
+    const variations = Array.isArray(product.variations) ? product.variations : [];
+    return variations.map((variation) => ({
+        value: Number(variation.id),
+        label: variation?.sku
+            ? `${String(variation.name ?? '')} (${String(variation.sku)})`
+            : String(variation.name ?? ''),
+    }));
+};
+
+const variationSelectOptionsForLine = (line) => {
+    const options = productVariationOptions(line?.product_id);
+    if (!options.length) {
+        return [{ value: '', label: 'Sem variação' }];
+    }
+
+    return [{ value: '', label: 'Selecione variação' }, ...options];
+};
+
 const lineSubtotal = (line) => {
-    const product = productLookup.value.get(Number(line?.product_id));
-    const unitPrice = Number(product?.sale_price ?? 0);
+    const variation = resolveLineVariation(line);
+    const product = resolveProductForLine(line);
+    const unitPrice = Number(variation?.sale_price ?? product?.sale_price ?? 0);
     const quantity = Math.max(0, Number(line?.quantity ?? 0));
     return Math.round(unitPrice * quantity * 100) / 100;
 };
@@ -362,6 +411,7 @@ const openEditModal = (order) => {
             .filter((item) => Number(item?.product_id) > 0)
             .map((item) => ({
                 product_id: Number(item.product_id),
+                variation_id: Number(item?.variation_id ?? 0) > 0 ? Number(item.variation_id) : '',
                 quantity: Math.max(1, Number(item.quantity ?? 1)),
                 discount_amount: normalizeMoney(item.discount_amount ?? 0),
             }))
@@ -411,6 +461,16 @@ const setItemProduct = (index, productId) => {
     nextItems[index] = {
         ...nextItems[index],
         product_id: productId === '' ? '' : Number(productId),
+        variation_id: '',
+    };
+    editForm.items = nextItems;
+};
+
+const setItemVariation = (index, variationId) => {
+    const nextItems = [...editForm.items];
+    nextItems[index] = {
+        ...nextItems[index],
+        variation_id: variationId === '' ? '' : Number(variationId),
     };
     editForm.items = nextItems;
 };
@@ -435,6 +495,7 @@ const submitOrderEdit = () => {
         .filter((line) => Number(line?.product_id) > 0 && Number(line?.quantity ?? 0) > 0)
         .map((line) => ({
             product_id: Number(line.product_id),
+            variation_id: Number(line?.variation_id ?? 0) > 0 ? Number(line.variation_id) : null,
             quantity: Math.max(1, Number(line.quantity ?? 1)),
             discount_amount: normalizeMoney(line.discount_amount ?? 0),
         }));
@@ -931,12 +992,20 @@ const handleOrderDetailsAction = (payload) => {
                                     class="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5"
                                 >
                                     <div class="grid gap-2 md:grid-cols-12">
-                                        <div class="md:col-span-6">
+                                        <div class="md:col-span-4">
                                             <UiSelect
                                                 :model-value="line.product_id"
                                                 :options="productSelectOptions"
                                                 button-class="w-full"
                                                 @update:model-value="(value) => setItemProduct(index, value)"
+                                            />
+                                        </div>
+                                        <div class="md:col-span-3">
+                                            <UiSelect
+                                                :model-value="line.variation_id"
+                                                :options="variationSelectOptionsForLine(line)"
+                                                button-class="w-full"
+                                                @update:model-value="(value) => setItemVariation(index, value)"
                                             />
                                         </div>
                                         <label class="space-y-1 md:col-span-2">
@@ -958,7 +1027,7 @@ const handleOrderDetailsAction = (payload) => {
                                                 class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700"
                                             >
                                         </label>
-                                        <div class="flex items-end justify-end md:col-span-2">
+                                        <div class="flex items-end justify-end md:col-span-1">
                                             <button
                                                 type="button"
                                                 class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
@@ -975,7 +1044,7 @@ const handleOrderDetailsAction = (payload) => {
                                         <p v-if="productLookup.get(Number(line.product_id))">
                                             Estoque atual:
                                             <span class="font-semibold">
-                                                {{ Number(productLookup.get(Number(line.product_id))?.stock_quantity ?? 0) }}
+                                                {{ lineStockQuantity(line) }}
                                             </span>
                                         </p>
                                         <p>Subtotal: <span class="font-semibold">{{ asCurrency(lineSubtotal(line)) }}</span></p>

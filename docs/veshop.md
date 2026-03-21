@@ -1,6 +1,6 @@
 # Veshop - Guia Mestre de Produto e Arquitetura
 
-Versão: v4.1  
+Versão: v4.2  
 Última atualização: 21/03/2026
 
 ## 1. Objetivo
@@ -35,7 +35,7 @@ Este é o documento único de referência do Veshop para:
 - Rotas, policies e consultas devem validar escopo de contratante.
 - Módulos devem respeitar plano e permissões habilitadas.
 
-### 2.3 Seguranca e privacidade
+### 2.3 Segurança e privacidade
 
 - Não expor dados sensíveis no payload inicial (Inertia/Vue).
 - Não logar segredos, tokens, senhas ou dados pessoais desnecessários.
@@ -44,8 +44,8 @@ Este é o documento único de referência do Veshop para:
 
 ### 2.4 Padrão de engenharia
 
-- Codigo limpo e coeso por domínio.
-- Arquitetura modular e escalavel (separar domínio global e domínio específico).
+- Código limpo e coeso por domínio.
+- Arquitetura modular e escalável (separar domínio global e domínio específico).
 - Cobertura mínima por testes de fluxo crítico (feature + regras de autorização).
 - Sem regressão visual grave em desktop e mobile.
 
@@ -54,16 +54,17 @@ Este é o documento único de referência do Veshop para:
 - Painel admin multi-tenant com contexto de contratante.
 - Loja virtual por contratante com catálogo, carrinho e checkout.
 - Pedidos com pipeline no admin.
-- Pagina de vendas (PDV) no padrão de pedidos.
-- Financeiro Fase 1 (CRUD de lancamentos, anexos, filtros e paginação).
+- Página de vendas (PDV) no padrão de pedidos.
+- Financeiro Fase 1 (CRUD de lançamentos, anexos, filtros e paginação).
 - Integração Mercado Pago em MVP (Pix + webhook).
 - Fluxo de e-mail da loja corrigido (verificação e recuperação de senha).
 - Paginação aplicada em módulos principais.
-- Seguranca de escopo reforcada em rotas críticas.
+- Segurança de escopo reforçada em rotas críticas.
+- Fase 1 do módulo Loja concluída (L1 ao L10).
 
 ## 4. Matriz de módulos por escopo
 
-## 4.1 Global para ambos os nichos (Comercio e Serviços)
+## 4.1 Global para ambos os nichos (Comércio e Serviços)
 
 Esses módulos são base da plataforma e devem funcionar em qualquer contratante:
 
@@ -72,69 +73,64 @@ Esses módulos são base da plataforma e devem funcionar em qualquer contratante
 3. Usuários, perfis, permissões e plano contratado.
 4. Notificações in-app e e-mail.
 5. Upload de arquivos com controle de acesso.
-6. Relatorios assíncronos (jobs + exportação).
+6. Relatórios assíncronos (jobs + exportação).
 7. Auditoria de eventos críticos.
 8. Branding e identidade por contratante.
 9. Manuais e onboarding operacional.
-10. Padroes visuais globais (menu, abas, cards, tabela, modais).
+10. Padrões visuais globais (menu, abas, cards, tabela, modais).
 
 Status atual: **Parcial** (base sólida, com pendências em notificações e organização final de manuais).
 
 ## 4.2 Global para tipos de negócio do contratante
 
-Esses módulos são globais no nivel de operação empresarial e podem ser reutilizados por tipo de negócio:
+Esses módulos são globais no nível de operação empresarial e podem ser reutilizados por tipo de negócio:
 
 1. Cadastros base: clientes, fornecedores, categorias.
 2. Produtos/serviços (catálogo e variações por domínio).
 3. Pedidos/vendas com status e histórico.
 4. Financeiro gerencial (contas a pagar e receber).
 5. Gateways e formas de pagamento.
-6. Estoque (quando aplicavel ao tipo de negócio).
+6. Estoque (quando aplicável ao tipo de negócio).
 7. Dashboard operacional com métricas por contexto.
 
 Status atual: **Parcial** (estrutura existe, faltam capacidades avançadas e padronização final por tipo).
 
-## 4.3 Especifico por tipo de negócio (escopo inicial)
+## 4.3 Específico por tipo de negócio (escopo inicial)
 
 ### A) Loja (física/virtual)
 
 Entregue:
 
 1. Loja virtual com login, cadastro, conta, favoritos e carrinho.
-2. Checkout com opção integrada (Mercado Pago MVP) e base para fluxo manual.
-3. Pedidos e vendas no admin com modal de detalhes e pipeline.
-4. PDV com página dedicada de vendas.
+2. Checkout dual padronizado (integrado/manual), com CTA de WhatsApp no fluxo manual.
+3. Pedidos e vendas no admin com modal de detalhes, edição completa, recálculo e auditoria.
+4. PDV com página dedicada, taxas por forma de pagamento e edição segura.
+5. Produtos com galeria (limite técnico de 5), variações (SKU/preço/estoque) e controle de quota.
+6. Categorias com subcategorias refletidas na vitrine pública.
+7. Notificações de pedidos em in-app e e-mail para admin e cliente.
+8. Páginas legais (Termos e Privacidade) publicadas na landing institucional e vinculadas no footer global.
 
-Pendencias para fechamento do módulo:
-
-1. Edição completa de pedido/venda (cliente, itens, quantidade, desconto, total e estoque).
-2. Produto com até 5 fotos, variações e promoção com calculo seguro.
-3. Categorias com subcategorias refletindo na loja virtual.
-4. Taxa por forma de pagamento no PDV e na loja virtual.
-5. Fluxo dual de checkout totalmente padronizado (integrado/manual).
-6. Links legais da loja apontando para páginas LGPD institucionais do Veshop.
-
-Status: **Parcial avançado (próximo de concluído)**.
+Status: **Concluído (Fase 1 finalizada, L1 ao L10)**.
 
 ### B) Barbearia
 
 Objetivo:
 
 1. Operação orientada a agenda.
-2. Serviços, profissionais, horarios e fila de aténdimento.
+2. Serviços, profissionais, horários e fila de atendimento.
 3. Agendamento online com confirmação e status operacional.
-4. Comanda/fechamento financeiro por aténdimento.
+4. Comanda/fechamento financeiro por atendimento.
 
 Base já existente:
 
 1. Estrutura de nicho serviços.
 2. Módulos iniciais de serviços, catálogo e agenda (estrutura).
 
-Pendencias:
+Pendências:
 
-1. Modelagem de agenda por profissional e faixa de horario.
-2. Regras de bloqueio/conflito de horario.
-3. Fluxo de aténdimento ponta a ponta (agendado, em aténdimento, concluído, cancelado).
+1. Modelagem de agenda por profissional e faixa de horário.
+2. Regras de bloqueio/conflito de horário.
+3. Fluxo de atendimento ponta a ponta (agendado, em atendimento, concluído, cancelado).
 4. Dashboard específico de barbearia (ocupação, ticket médio, recorrência).
 
 Status: **Pendente (fase de estruturação funcional)**.
@@ -145,7 +141,7 @@ Objetivo inicial (não fiscal nesta fase):
 
 1. Gestão gerencial da operação contábil do contratante.
 2. Organização financeira e documental por cliente.
-3. Controle de prazos, honorarios e acompanhamento de carteira.
+3. Controle de prazos, honorários e acompanhamento de carteira.
 
 Módulos recomendados para fase contábil gerencial:
 
@@ -153,7 +149,7 @@ Módulos recomendados para fase contábil gerencial:
 2. Centro de custo.
 3. Conciliação bancária por importação (CSV/OFX).
 4. DRE gerencial e fluxo de caixa.
-5. Gestão de honorarios por cliente.
+5. Gestão de honorários por cliente.
 6. Agenda de vencimentos e obrigações internas.
 7. Repositório de documentos por cliente com histórico.
 
@@ -171,16 +167,16 @@ Prioridade para finalizar o módulo comercial antes dos demais tipos:
 
 | ID | Item | Status | Prioridade |
 | --- | --- | --- | --- |
-| L1 | Edição completa de pedido/venda com recálculo, ajuste de estoque e auditoria | Parcial | Crítica |
-| L2 | Checkout dual padronizado (integrado/manual) | Parcial | Crítica |
-| L3 | Taxa por forma de pagamento no total e exibição ao cliente | Pendente | Crítica |
-| L4 | Produto com galeria de fotos (até 5), processamento e limite por plano | Pendente | Alta |
-| L5 | Variações de produto (cor, tamanho, etc.) com SKU, preço e estoque por variação | Pendente | Crítica |
-| L6 | Categorias com subcategorias refletidas na loja virtual | Pendente | Alta |
-| L7 | Notificações operacionais (in-app/e-mail) no fluxo de pedido | Parcial | Alta |
-| L8 | Páginas legais LGPD institucionais (landing page Veshop + footer global) | Pendente | Alta |
-| L9 | Governança de storage por contratante/plano (quota e bloqueio de upload) | Pendente | Alta |
-| L10 | Cobertura de testes críticos e hardening final de release | Parcial | Crítica |
+| L1 | Edição completa de pedido/venda com recálculo, ajuste de estoque e auditoria | Concluído | Crítica |
+| L2 | Checkout dual padronizado (integrado/manual) | Concluído | Crítica |
+| L3 | Taxa por forma de pagamento no total e exibição ao cliente | Concluído | Crítica |
+| L4 | Produto com galeria de fotos (até 5), processamento e limite por plano | Concluído | Alta |
+| L5 | Variações de produto (cor, tamanho, etc.) com SKU, preço e estoque por variação | Concluído | Crítica |
+| L6 | Categorias com subcategorias refletidas na loja virtual | Concluído | Alta |
+| L7 | Notificações operacionais (in-app/e-mail) no fluxo de pedido | Concluído | Alta |
+| L8 | Páginas legais LGPD institucionais (landing page Veshop + footer global) | Concluído | Alta |
+| L9 | Governança de storage por contratante/plano (quota e bloqueio de upload) | Concluído | Alta |
+| L10 | Cobertura de testes críticos e hardening final de release | Concluído | Crítica |
 
 ### 5.1 Decisões fechadas para a Fase 1 da Loja
 
@@ -201,13 +197,15 @@ Prioridade para finalizar o módulo comercial antes dos demais tipos:
 
 ## 6. Plano de execução da Fase 1 (Loja)
 
-### Etapa 0 - Alinhamento e contrato técnico (agora)
+Status da Fase 1: **Concluída em 21/03/2026**.
+
+### Etapa 0 - Alinhamento e contrato técnico (concluída)
 
 1. consolidar este documento como fonte única do fechamento da Loja;
 2. travar decisões de produto e regra de negócio da fase;
 3. definir escopo "não entra" para evitar crescimento de backlog durante execução.
 
-### Etapa 1 - Núcleo transacional (L1, L2, L3)
+### Etapa 1 - Núcleo transacional (L1, L2, L3) - concluída
 
 1. finalizar edição completa de pedido no admin, alinhada com a edição de venda;
 2. padronizar checkout dual:
@@ -217,22 +215,22 @@ Prioridade para finalizar o módulo comercial antes dos demais tipos:
 6. implementar taxa por forma de pagamento no pedido/venda e refletir no total final;
 7. garantir snapshot da taxa no momento da compra para histórico.
 
-### Etapa 2 - Catálogo avançado (L4, L5, L6, L9)
+### Etapa 2 - Catálogo avançado (L4, L5, L6, L9) - concluída
 
 1. implementar galeria de imagens por produto com limite por plano e teto técnico;
-2. implementar variações por atributos (cor, tamanho, etc.) com combinações validas;
+2. implementar variações por atributos (cor, tamanho, etc.) com combinações válidas;
 3. controlar preço/estoque/SKU por variação;
 4. refletir seleção de variação no carrinho, checkout, pedido e PDV;
 5. implementar subcategorias e navegação hierárquica na loja;
 6. aplicar quota real de storage por contratante com bloqueio de upload ao atingir limite.
 
-### Etapa 3 - Compliance e comunicação (L7, L8)
+### Etapa 3 - Compliance e comunicação (L7, L8) - concluída
 
 1. concluir notificações de pedido em in-app e e-mail;
 2. publicar páginas legais de termos de uso e política de privacidade na landing page institucional do Veshop;
 3. vincular os links legais no footer global do Veshop.
 
-### Etapa 4 - Estabilização e release (L10)
+### Etapa 4 - Estabilização e release (L10) - concluída
 
 1. fechar matriz de testes críticos e regressão;
 2. revisar logs, auditoria e mensagens de erro para usuário final;
@@ -293,21 +291,21 @@ Toda entrega é considerada concluída somente se tiver:
 ### Fase 2 - Módulo Contábil (gerencial)
 
 1. modelagem de dados contábeis gerenciais;
-2. telas e fluxos operacionais minimos;
-3. relatorios gerenciais e auditoria de alterações.
+2. telas e fluxos operacionais mínimos;
+3. relatórios gerenciais e auditoria de alterações.
 
 ### Fase 3 - Módulo Barbearia
 
 1. agenda profissional com regras de disponibilidade;
-2. fluxo de aténdimento operacional completo;
+2. fluxo de atendimento operacional completo;
 3. dashboard específico do tipo de negócio.
 
-## 11. Proximo passo recomendado
+## 11. Próximo passo recomendado
 
-Proximo passo de desenvolvimento: **iniciar Etapa 1 (L1, L2, L3)**.
+Próximo passo de desenvolvimento: **iniciar Fase 2 (Módulo Contábil gerencial) com discovery técnico e contrato de escopo**.
 
-Ordem de implementação dentro da Etapa 1:
+Ordem de implementação recomendada para a próxima fase:
 
-1. fechar edição completa de pedido (recálculo/estoque/auditoria);
-2. padronizar checkout dual e CTA WhatsApp no manual;
-3. aplicar taxa por forma de pagamento no total e na persistência.
+1. modelagem do domínio contábil gerencial (plano de contas, centros de custo e entidades base);
+2. definição dos fluxos operacionais mínimos (cadastros, lançamentos e conciliação por importação);
+3. fechamento da matriz de testes críticos e critérios de aceite da Fase 2 antes de implementar UI.

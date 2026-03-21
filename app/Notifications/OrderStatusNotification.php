@@ -5,6 +5,7 @@ namespace App\Notifications;
 use App\Models\Sale;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class OrderStatusNotification extends Notification implements ShouldQueue
@@ -27,7 +28,13 @@ class OrderStatusNotification extends Notification implements ShouldQueue
      */
     public function via(mixed $notifiable): array
     {
-        return ['database'];
+        $channels = ['database'];
+
+        if ($this->shouldSendMail($notifiable)) {
+            $channels[] = 'mail';
+        }
+
+        return $channels;
     }
 
     /**
@@ -44,5 +51,37 @@ class OrderStatusNotification extends Notification implements ShouldQueue
             'target_url' => $this->targetUrl,
             'created_at' => now()->toIso8601String(),
         ];
+    }
+
+    public function toMail(mixed $notifiable): MailMessage
+    {
+        $orderCode = (string) $this->sale->code;
+        $orderStatus = (string) $this->sale->status;
+
+        return (new MailMessage)
+            ->subject("{$this->title} - {$orderCode}")
+            ->greeting('Olá!')
+            ->line($this->message)
+            ->line("Pedido: {$orderCode}")
+            ->line("Status atual: {$orderStatus}")
+            ->action('Acessar pedido', url($this->targetUrl))
+            ->line('Esta é uma notificação automática do Veshop.');
+    }
+
+    private function shouldSendMail(mixed $notifiable): bool
+    {
+        $email = method_exists($notifiable, 'routeNotificationFor')
+            ? (string) ($notifiable->routeNotificationFor('mail') ?? '')
+            : '';
+
+        if (trim($email) === '') {
+            return false;
+        }
+
+        $settings = is_array($this->sale->contractor?->settings)
+            ? $this->sale->contractor->settings
+            : [];
+
+        return (bool) ($settings['email_notifications_enabled'] ?? true);
     }
 }

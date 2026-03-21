@@ -251,6 +251,18 @@ const safeRouteCurrent = (pattern) => {
     }
 };
 
+const contractorBrandingHref = computed(() => {
+    if (!showContractorContext.value) return '#';
+
+    const routeName = currentArea.value === 'master'
+        ? 'master.branding.index'
+        : 'admin.branding.index';
+
+    return safeRoute(routeName, '#');
+});
+
+const hasContractorBrandingLink = computed(() => contractorBrandingHref.value !== '#');
+
 const getContractorRouteKey = (contractor) => contractor?.uuid || contractor?.id || null;
 
 const selectedContractorId = ref(null);
@@ -839,15 +851,39 @@ const handleGlobalKeydown = (event) => {
                             :class="sidebarCollapsed ? 'is-collapsed' : ''"
                         >
                             <div class="flex items-center gap-3" :class="sidebarCollapsed ? 'justify-center' : ''">
-                                <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70" :style="contractorLogoUrl ? null : { background: 'var(--contractor-primary)' }">
-                                    <img v-if="contractorLogoUrl" :src="contractorLogoUrl" :alt="contractorName" class="h-full w-full rounded-lg object-cover" />
-                                    <span v-else class="text-xs font-semibold text-white">{{ contractorInitials }}</span>
-                                </div>
-                                <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
-                                    <p class="truncate text-xs font-semibold text-slate-900">{{ contractorName }}</p>
-                                    <span class="veshop-head-context-chip mt-1">
-                                        {{ contractorPlanName }}
-                                    </span>
+                                <Link
+                                    v-if="hasContractorBrandingLink"
+                                    :href="contractorBrandingHref"
+                                    class="flex min-w-0 items-center gap-3 rounded-xl border border-transparent px-1.5 py-1 transition hover:border-slate-200 hover:bg-slate-100/80"
+                                    :class="sidebarCollapsed ? 'justify-center' : 'flex-1'"
+                                    title="Abrir branding"
+                                >
+                                    <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70" :style="contractorLogoUrl ? null : { background: 'var(--contractor-primary)' }">
+                                        <img v-if="contractorLogoUrl" :src="contractorLogoUrl" :alt="contractorName" class="h-full w-full rounded-lg object-cover" />
+                                        <span v-else class="text-xs font-semibold text-white">{{ contractorInitials }}</span>
+                                    </div>
+                                    <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
+                                        <p class="truncate text-xs font-semibold text-slate-900">{{ contractorName }}</p>
+                                        <span class="veshop-head-context-chip mt-1">
+                                            {{ contractorPlanName }}
+                                        </span>
+                                    </div>
+                                </Link>
+                                <div
+                                    v-else
+                                    class="flex min-w-0 items-center gap-3"
+                                    :class="sidebarCollapsed ? 'justify-center' : 'flex-1'"
+                                >
+                                    <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70" :style="contractorLogoUrl ? null : { background: 'var(--contractor-primary)' }">
+                                        <img v-if="contractorLogoUrl" :src="contractorLogoUrl" :alt="contractorName" class="h-full w-full rounded-lg object-cover" />
+                                        <span v-else class="text-xs font-semibold text-white">{{ contractorInitials }}</span>
+                                    </div>
+                                    <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
+                                        <p class="truncate text-xs font-semibold text-slate-900">{{ contractorName }}</p>
+                                        <span class="veshop-head-context-chip mt-1">
+                                            {{ contractorPlanName }}
+                                        </span>
+                                    </div>
                                 </div>
 
                                 <Dropdown v-if="canSwitchContractor && !sidebarCollapsed" align="right" width="48" content-classes="py-2 bg-white" class="ml-auto">
@@ -1125,15 +1161,35 @@ const handleGlobalKeydown = (event) => {
                                     class="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2"
                                 >
                                     <div class="flex items-center gap-3">
-                                        <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70" :style="contractorLogoUrl ? null : { background: 'var(--contractor-primary)' }">
-                                            <img v-if="contractorLogoUrl" :src="contractorLogoUrl" :alt="contractorName" class="h-full w-full rounded-lg object-cover" />
-                                            <span v-else class="text-xs font-semibold text-white">{{ contractorInitials }}</span>
-                                        </div>
-                                        <div class="min-w-0 flex-1">
-                                            <p class="truncate text-xs font-semibold text-slate-900">{{ contractorName }}</p>
-                                            <span class="mt-1 inline-flex w-fit items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                                                {{ contractorPlanName }}
-                                            </span>
+                                        <Link
+                                            v-if="hasContractorBrandingLink"
+                                            :href="contractorBrandingHref"
+                                            class="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-transparent px-1.5 py-1 transition hover:border-slate-200 hover:bg-white"
+                                            title="Abrir branding"
+                                            @click="closeSidebar"
+                                        >
+                                            <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70" :style="contractorLogoUrl ? null : { background: 'var(--contractor-primary)' }">
+                                                <img v-if="contractorLogoUrl" :src="contractorLogoUrl" :alt="contractorName" class="h-full w-full rounded-lg object-cover" />
+                                                <span v-else class="text-xs font-semibold text-white">{{ contractorInitials }}</span>
+                                            </div>
+                                            <div class="min-w-0 flex-1">
+                                                <p class="truncate text-xs font-semibold text-slate-900">{{ contractorName }}</p>
+                                                <span class="mt-1 inline-flex w-fit items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                                    {{ contractorPlanName }}
+                                                </span>
+                                            </div>
+                                        </Link>
+                                        <div v-else class="flex min-w-0 flex-1 items-center gap-3">
+                                            <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70" :style="contractorLogoUrl ? null : { background: 'var(--contractor-primary)' }">
+                                                <img v-if="contractorLogoUrl" :src="contractorLogoUrl" :alt="contractorName" class="h-full w-full rounded-lg object-cover" />
+                                                <span v-else class="text-xs font-semibold text-white">{{ contractorInitials }}</span>
+                                            </div>
+                                            <div class="min-w-0 flex-1">
+                                                <p class="truncate text-xs font-semibold text-slate-900">{{ contractorName }}</p>
+                                                <span class="mt-1 inline-flex w-fit items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                                    {{ contractorPlanName }}
+                                                </span>
+                                            </div>
                                         </div>
 
                                         <Dropdown v-if="canSwitchContractor" align="right" width="48" content-classes="py-2 bg-white" class="ml-auto">

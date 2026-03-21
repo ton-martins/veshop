@@ -318,7 +318,7 @@ class ContractorController extends Controller
         $settings = is_array($existing) ? $existing : [];
         $settings['business_niche'] = $this->normalizeNiche($niche);
         $settings['active_plan_name'] = trim((string) ($planName ?? '')) ?: 'Sem plano';
-        $settings['require_2fa'] = (bool) ($settings['require_2fa'] ?? true);
+        $settings['require_2fa'] = true;
         $settings['require_email_verification'] = (bool) ($settings['require_email_verification'] ?? true);
         $settings['email_notifications_enabled'] = (bool) ($settings['email_notifications_enabled'] ?? true);
 
