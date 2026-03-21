@@ -7,6 +7,7 @@ use App\Http\Requests\Master\StorePlanRequest;
 use App\Http\Requests\Master\UpdatePlanRequest;
 use App\Models\Contractor;
 use App\Models\Plan;
+use App\Services\ContractorCapabilitiesService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -15,6 +16,11 @@ use Inertia\Response;
 
 class PlanController extends Controller
 {
+    public function __construct(
+        private readonly ContractorCapabilitiesService $contractorCapabilitiesService,
+    ) {
+    }
+
     /**
      * @var list<string>
      */
@@ -45,7 +51,9 @@ class PlanController extends Controller
         $status = trim((string) $request->string('status')->toString());
         $niche = $this->normalizeNiche((string) $request->string('niche')->toString(), false);
 
-        $query = Plan::query()->withCount('contractors');
+        $query = Plan::query()
+            ->withCount('contractors')
+            ->with(['modules:id,code,name,is_active,scope,niche,business_types']);
 
         if ($search !== '') {
             $query->where(function ($innerQuery) use ($search): void {
@@ -96,6 +104,20 @@ class PlanController extends Controller
                     'description' => $plan->description,
                     'features' => $features,
                     'features_text' => $this->featuresToText($features),
+                    'module_codes' => $plan->modules
+                        ->where('is_active', true)
+                        ->pluck('code')
+                        ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+                        ->filter()
+                        ->values()
+                        ->all(),
+                    'module_names' => $plan->modules
+                        ->where('is_active', true)
+                        ->pluck('name')
+                        ->map(static fn (mixed $name): string => trim((string) $name))
+                        ->filter()
+                        ->values()
+                        ->all(),
                     'is_active' => (bool) $plan->is_active,
                     'is_featured' => (bool) $plan->is_featured,
                     'show_on_landing' => (bool) $plan->show_on_landing,
@@ -141,6 +163,12 @@ class PlanController extends Controller
                 ])
                 ->values()
                 ->all(),
+            'moduleCatalog' => $this->contractorCapabilitiesService->moduleCatalogForMaster(),
+            'defaultModuleCodesByNiche' => collect(Plan::availableNiches())
+                ->mapWithKeys(fn (string $niche): array => [
+                    $niche => $this->contractorCapabilitiesService->defaultPlanModuleCodes($niche),
+                ])
+                ->all(),
         ]);
     }
 
@@ -158,6 +186,11 @@ class PlanController extends Controller
         $userLimit = $data['user_limit'] ?? null;
         $tierRank = $data['tier_rank'] ?? 0;
         $niche = $this->normalizeNiche($data['niche']);
+        $moduleCodes = $this->contractorCapabilitiesService->resolvePlanModuleCodesForPersistence(
+            $niche,
+            $data['module_codes'] ?? [],
+        );
+        $moduleIds = $this->contractorCapabilitiesService->resolveModuleIdsFromCodes($moduleCodes);
 
         $plan = Plan::query()->create([
             'niche' => $niche,
@@ -182,6 +215,8 @@ class PlanController extends Controller
         ]);
 
         $this->syncPlanNameIntoContractors($plan);
+        $plan->modules()->sync($moduleIds);
+        $this->syncPlanModulesIntoContractors($plan);
 
         return back()->with('status', 'Plano criado com sucesso.');
     }
@@ -200,6 +235,11 @@ class PlanController extends Controller
         $userLimit = $data['user_limit'] ?? null;
         $tierRank = $data['tier_rank'] ?? 0;
         $niche = $this->normalizeNiche($data['niche']);
+        $moduleCodes = $this->contractorCapabilitiesService->resolvePlanModuleCodesForPersistence(
+            $niche,
+            $data['module_codes'] ?? [],
+        );
+        $moduleIds = $this->contractorCapabilitiesService->resolveModuleIdsFromCodes($moduleCodes);
 
         $plan->fill([
             'niche' => $niche,
@@ -223,7 +263,9 @@ class PlanController extends Controller
             'sort_order' => $data['sort_order'] ?? $tierRank,
         ])->save();
 
+        $plan->modules()->sync($moduleIds);
         $this->syncPlanNameIntoContractors($plan);
+        $this->syncPlanModulesIntoContractors($plan);
 
         return back()->with('status', 'Plano atualizado com sucesso.');
     }
@@ -237,7 +279,7 @@ class PlanController extends Controller
 
         if ($plan->contractors()->exists()) {
             return back()->withErrors([
-                'general' => 'Nao e possivel excluir um plano com contratantes vinculados.',
+                'general' => 'Não é possível excluir um plano com contratantes vinculados.',
             ]);
         }
 
@@ -422,6 +464,21 @@ class PlanController extends Controller
             $contractor->forceFill([
                 'settings' => $settings,
             ])->save();
+        }
+    }
+
+    private function syncPlanModulesIntoContractors(Plan $plan): void
+    {
+        $plan->loadMissing('modules:id,code,is_active');
+
+        $contractors = Contractor::query()
+            ->where('plan_id', $plan->id)
+            ->get();
+
+        foreach ($contractors as $contractor) {
+            $effectiveCodes = $this->contractorCapabilitiesService->enabledModuleCodesForContractor($contractor);
+            $moduleIds = $this->contractorCapabilitiesService->resolveModuleIdsFromCodes($effectiveCodes);
+            $contractor->modules()->sync($moduleIds);
         }
     }
 }

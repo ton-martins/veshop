@@ -26,11 +26,43 @@ class ContractorCapabilitiesService
     }
 
     /**
+     * @return array<int, Module>
+     */
+    public function availableModulesForPlanNiche(string $niche): array
+    {
+        $normalizedNiche = Contractor::normalizeNiche($niche);
+
+        return Module::query()
+            ->where('is_active', true)
+            ->orderByRaw("CASE scope WHEN 'global' THEN 0 WHEN 'niche' THEN 1 ELSE 2 END")
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (Module $module): bool => $this->moduleSupportsNiche($module, $normalizedNiche))
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return array<int, string>
      */
     public function defaultModuleCodes(string $niche, string $businessType): array
     {
         $modules = $this->availableModulesFor($niche, $businessType);
+        $defaultCodes = collect($modules)
+            ->filter(fn (Module $module): bool => (bool) $module->is_default)
+            ->pluck('code')
+            ->all();
+
+        return $this->ensureMandatoryModuleCodes($defaultCodes, $niche);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function defaultPlanModuleCodes(string $niche): array
+    {
+        $modules = $this->availableModulesForPlanNiche($niche);
         $defaultCodes = collect($modules)
             ->filter(fn (Module $module): bool => (bool) $module->is_default)
             ->pluck('code')
@@ -50,6 +82,36 @@ class ContractorCapabilitiesService
         }
 
         $allowedCodes = collect($this->availableModulesFor($niche, $businessType))
+            ->pluck('code')
+            ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+            ->filter()
+            ->values();
+
+        $sanitizedSubmitted = collect($submittedModuleCodes)
+            ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $filtered = $sanitizedSubmitted
+            ->filter(fn (string $code): bool => $allowedCodes->contains($code))
+            ->values()
+            ->all();
+
+        return $this->ensureMandatoryModuleCodes($filtered, $niche);
+    }
+
+    /**
+     * @param array<int, string> $submittedModuleCodes
+     * @return array<int, string>
+     */
+    public function resolvePlanModuleCodesForPersistence(string $niche, array $submittedModuleCodes): array
+    {
+        if ($submittedModuleCodes === []) {
+            return $this->defaultPlanModuleCodes($niche);
+        }
+
+        $allowedCodes = collect($this->availableModulesForPlanNiche($niche))
             ->pluck('code')
             ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
             ->filter()
@@ -126,6 +188,45 @@ class ContractorCapabilitiesService
      */
     public function enabledModuleCodesForContractor(Contractor $contractor): array
     {
+        $normalizedNiche = $contractor->niche();
+        $normalizedBusinessType = $contractor->businessType();
+        $allowedCodesForBusinessType = collect($this->availableModulesFor($normalizedNiche, $normalizedBusinessType))
+            ->pluck('code')
+            ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+            ->filter()
+            ->values();
+
+        $contractor->loadMissing('plan.modules:id,code,is_active');
+        if ($contractor->plan_id !== null && $contractor->plan !== null) {
+            $planCodes = $contractor->plan->relationLoaded('modules')
+                ? $contractor->plan->modules
+                    ->where('is_active', true)
+                    ->pluck('code')
+                    ->all()
+                : $contractor->plan->modules()
+                    ->where('is_active', true)
+                    ->pluck('code')
+                    ->all();
+
+            $normalizedPlanCodes = collect($planCodes)
+                ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            if ($normalizedPlanCodes === []) {
+                $normalizedPlanCodes = $this->defaultPlanModuleCodes($normalizedNiche);
+            }
+
+            $filteredByBusinessType = collect($normalizedPlanCodes)
+                ->filter(fn (string $code): bool => $allowedCodesForBusinessType->contains($code))
+                ->values()
+                ->all();
+
+            return $this->ensureMandatoryModuleCodes($filteredByBusinessType, $normalizedNiche);
+        }
+
         $codes = $contractor->relationLoaded('modules')
             ? $contractor->modules
                 ->where('is_active', true)
@@ -144,15 +245,20 @@ class ContractorCapabilitiesService
             ->all();
 
         if ($normalized !== []) {
-            return $normalized;
+            $filteredByBusinessType = collect($normalized)
+                ->filter(fn (string $code): bool => $allowedCodesForBusinessType->contains($code))
+                ->values()
+                ->all();
+
+            return $this->ensureMandatoryModuleCodes($filteredByBusinessType, $normalizedNiche);
         }
 
-        $defaultModules = $this->defaultModuleCodes($contractor->niche(), $contractor->businessType());
+        $defaultModules = $this->defaultModuleCodes($normalizedNiche, $normalizedBusinessType);
         if ($defaultModules !== []) {
             return $defaultModules;
         }
 
-        return $this->legacyFallbackModuleCodes($contractor->niche());
+        return $this->legacyFallbackModuleCodes($normalizedNiche);
     }
 
     /**
@@ -185,8 +291,7 @@ class ContractorCapabilitiesService
 
     private function moduleSupports(Module $module, string $niche, string $businessType): bool
     {
-        $moduleNiche = $module->niche !== null ? Contractor::normalizeNiche((string) $module->niche) : null;
-        if ($moduleNiche !== null && $moduleNiche !== $niche) {
+        if (! $this->moduleSupportsNiche($module, $niche)) {
             return false;
         }
 
@@ -202,5 +307,12 @@ class ContractorCapabilitiesService
         }
 
         return true;
+    }
+
+    private function moduleSupportsNiche(Module $module, string $niche): bool
+    {
+        $moduleNiche = $module->niche !== null ? Contractor::normalizeNiche((string) $module->niche) : null;
+
+        return $moduleNiche === null || $moduleNiche === $niche;
     }
 }

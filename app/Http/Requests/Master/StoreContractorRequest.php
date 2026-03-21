@@ -27,15 +27,6 @@ class StoreContractorRequest extends FormRequest
             $brandPrimaryColor = "#{$brandPrimaryColor}";
         }
 
-        $moduleCodes = $this->input('module_codes', []);
-        $moduleCodes = is_array($moduleCodes) ? $moduleCodes : [];
-        $moduleCodes = collect($moduleCodes)
-            ->map(static fn (mixed $value): string => strtolower(trim((string) $value)))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-
         $this->merge([
             'slug' => trim((string) $this->input('slug', '')),
             'email' => strtolower(trim((string) $this->input('email', ''))),
@@ -44,7 +35,9 @@ class StoreContractorRequest extends FormRequest
             'brand_name' => trim((string) $this->input('brand_name', '')),
             'brand_primary_color' => $brandPrimaryColor,
             'business_type' => strtolower(trim((string) $this->input('business_type', ''))),
-            'module_codes' => $moduleCodes,
+            'override_user_limit' => $this->nullableInteger('override_user_limit'),
+            'override_storage_limit_gb' => $this->nullableInteger('override_storage_limit_gb'),
+            'override_audit_log_retention_days' => $this->nullableInteger('override_audit_log_retention_days'),
             'is_active' => $this->boolean('is_active', true),
         ]);
     }
@@ -79,15 +72,24 @@ class StoreContractorRequest extends FormRequest
                         ->whereNull('deleted_at');
                 }),
             ],
-            'module_codes' => ['nullable', 'array'],
-            'module_codes.*' => [
-                'string',
-                'max:80',
-                Rule::exists('modules', 'code')->where(static function ($query) {
-                    $query->where('is_active', true);
-                }),
-            ],
+            'override_user_limit' => ['nullable', 'integer', 'min:1', 'max:1000000'],
+            'override_storage_limit_gb' => ['nullable', 'integer', 'min:1', 'max:1000000000'],
+            'override_audit_log_retention_days' => ['nullable', 'integer', 'min:1', 'max:1000000'],
             'is_active' => ['required', 'boolean'],
         ];
+    }
+
+    private function nullableInteger(string $key): ?int
+    {
+        if (! $this->has($key)) {
+            return null;
+        }
+
+        $rawValue = $this->input($key);
+        if ($rawValue === '' || $rawValue === null) {
+            return null;
+        }
+
+        return (int) $rawValue;
     }
 }

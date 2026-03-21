@@ -1,11 +1,16 @@
+-- Desenvolvimento local (sem cache agressivo)
 
--- Comandos de otimização e reconstrução do front
-
-php artisan cache:clear
 php artisan optimize:clear
+php artisan cache:clear
 php artisan config:clear
 php artisan route:clear
-php artisan optimize
+php artisan view:clear
+php artisan serve
+npm run dev
+
+-- Teste local com build (simulando produção)
+
+php artisan optimize:clear
 npm run build
 php artisan serve
 
@@ -14,3 +19,7 @@ php artisan serve
 php artisan queue:work redis --queue=emails,exports,default --sleep=1 --tries=3 --timeout=300
 php artisan queue:failed
 php artisan queue:retry all
+
+-- Observação
+
+Não use "php artisan optimize" no ambiente local.

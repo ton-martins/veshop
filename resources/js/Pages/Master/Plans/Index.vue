@@ -37,6 +37,14 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    moduleCatalog: {
+        type: Array,
+        default: () => [],
+    },
+    defaultModuleCodesByNiche: {
+        type: Object,
+        default: () => ({}),
+    },
 });
 
 const page = usePage();
@@ -132,17 +140,42 @@ const groupedRows = computed(() => {
     return Array.from(nicheMap.values());
 });
 
+const activeNicheTab = ref(props.filters?.niche ?? props.niches?.[0]?.value ?? 'commercial');
+const nicheTabs = computed(() =>
+    groupedRows.value.map((group) => ({
+        ...group,
+        icon: group.value === 'services' ? Briefcase : Store,
+    })),
+);
+
+watch(
+    nicheTabs,
+    (tabs) => {
+        if (!tabs.length) {
+            activeNicheTab.value = '';
+            return;
+        }
+
+        const selectedTabExists = tabs.some((tab) => tab.value === activeNicheTab.value);
+        if (!selectedTabExists) {
+            activeNicheTab.value = tabs[0].value;
+        }
+    },
+    { immediate: true },
+);
+
 const statsCards = computed(() => [
     { key: 'total', label: 'Planos', value: String(props.stats?.total ?? 0), icon: Layers, tone: 'bg-slate-100 text-slate-700' },
     { key: 'active', label: 'Planos ativos', value: String(props.stats?.active ?? 0), icon: CircleCheckBig, tone: 'bg-emerald-100 text-emerald-700' },
-    { key: 'commercial', label: 'Nicho comercio', value: String(props.stats?.commercial ?? 0), icon: Store, tone: 'bg-slate-100 text-slate-700' },
-    { key: 'services', label: 'Nicho servicos', value: String(props.stats?.services ?? 0), icon: Briefcase, tone: 'bg-amber-100 text-amber-700' },
+    { key: 'commercial', label: 'Nicho comércio', value: String(props.stats?.commercial ?? 0), icon: Store, tone: 'bg-slate-100 text-slate-700' },
+    { key: 'services', label: 'Nicho serviços', value: String(props.stats?.services ?? 0), icon: Briefcase, tone: 'bg-amber-100 text-amber-700' },
 ]);
 
 const showModal = ref(false);
 const editingPlan = ref(null);
 const showDeleteModal = ref(false);
 const planToDelete = ref(null);
+const currentPlanStep = ref(1);
 
 const planForm = useForm({
     niche: props.niches?.[0]?.value ?? 'commercial',
@@ -158,6 +191,7 @@ const planForm = useForm({
     audit_log_retention_days: '',
     tier_rank: 0,
     features_text: '',
+    module_codes: [],
     is_active: true,
     is_featured: false,
     show_on_landing: false,
@@ -165,6 +199,66 @@ const planForm = useForm({
 const deleteForm = useForm({});
 
 const isEditing = computed(() => Boolean(editingPlan.value?.id));
+const planWizardSteps = ['Dados do plano', 'Módulos e permissões'];
+const availablePlanModules = computed(() => {
+    const niche = String(planForm.niche ?? '').trim().toLowerCase();
+
+    return (props.moduleCatalog ?? []).filter((module) => {
+        const moduleNiche = String(module?.niche ?? '').trim().toLowerCase();
+        if (moduleNiche !== '' && moduleNiche !== niche) {
+            return false;
+        }
+
+        return true;
+    });
+});
+const planGlobalModules = computed(() => availablePlanModules.value.filter((module) => String(module?.scope ?? '') === 'global'));
+const planSpecificModules = computed(() => availablePlanModules.value.filter((module) => String(module?.scope ?? '') !== 'global'));
+
+const resolveDefaultPlanModules = (niche) => {
+    const normalizedNiche = String(niche ?? '').trim().toLowerCase();
+    const availableCodes = availablePlanModules.value
+        .map((module) => String(module?.code ?? '').trim().toLowerCase())
+        .filter(Boolean);
+
+    return (props.defaultModuleCodesByNiche?.[normalizedNiche] ?? [])
+        .map((code) => String(code ?? '').trim().toLowerCase())
+        .filter((code) => availableCodes.includes(code));
+};
+
+const isPlanModuleSelected = (moduleCode) =>
+    (planForm.module_codes ?? []).includes(String(moduleCode ?? '').trim().toLowerCase());
+
+const togglePlanModuleCode = (moduleCode) => {
+    const safeCode = String(moduleCode ?? '').trim().toLowerCase();
+    if (!safeCode) return;
+
+    const selected = new Set((planForm.module_codes ?? []).map((item) => String(item ?? '').trim().toLowerCase()));
+    if (selected.has(safeCode)) {
+        selected.delete(safeCode);
+    } else {
+        selected.add(safeCode);
+    }
+
+    planForm.module_codes = Array.from(selected);
+};
+
+const sanitizePlanModulesForNiche = () => {
+    const availableCodes = availablePlanModules.value
+        .map((module) => String(module?.code ?? '').trim().toLowerCase())
+        .filter(Boolean);
+
+    const selected = (planForm.module_codes ?? [])
+        .map((item) => String(item ?? '').trim().toLowerCase())
+        .filter((code) => availableCodes.includes(code));
+
+    if (selected.length > 0) {
+        planForm.module_codes = Array.from(new Set(selected));
+        return;
+    }
+
+    planForm.module_codes = resolveDefaultPlanModules(planForm.niche);
+};
 
 const openCreate = () => {
     editingPlan.value = null;
@@ -172,9 +266,11 @@ const openCreate = () => {
     planForm.clearErrors();
     planForm.niche = props.niches?.[0]?.value ?? 'commercial';
     planForm.tier_rank = 0;
+    planForm.module_codes = resolveDefaultPlanModules(planForm.niche);
     planForm.is_active = true;
     planForm.is_featured = false;
     planForm.show_on_landing = false;
+    currentPlanStep.value = 1;
     showModal.value = true;
 };
 
@@ -210,19 +306,32 @@ const openEdit = (plan) => {
     planForm.audit_log_retention_days = plan.audit_log_retention_days ?? '';
     planForm.tier_rank = Number(plan.tier_rank ?? 0);
     planForm.features_text = plan.features_text ?? toFeatureText(plan);
+    planForm.module_codes = Array.isArray(plan?.module_codes)
+        ? plan.module_codes.map((item) => String(item ?? '').trim().toLowerCase()).filter(Boolean)
+        : resolveDefaultPlanModules(planForm.niche);
     planForm.is_active = Boolean(plan.is_active);
     planForm.is_featured = Boolean(plan.is_featured);
     planForm.show_on_landing = Boolean(plan.show_on_landing);
+    sanitizePlanModulesForNiche();
+    currentPlanStep.value = 1;
     planForm.clearErrors();
     showModal.value = true;
 };
 
 const closeModal = () => {
+    currentPlanStep.value = 1;
     showModal.value = false;
     editingPlan.value = null;
 };
 
 const submitPlan = () => {
+    planForm.transform((data) => ({
+        ...data,
+        module_codes: Array.isArray(data.module_codes)
+            ? data.module_codes.map((item) => String(item ?? '').trim().toLowerCase()).filter(Boolean)
+            : [],
+    }));
+
     if (isEditing.value) {
         planForm.put(route('master.plans.update', editingPlan.value.id), {
             preserveScroll: true,
@@ -268,9 +377,9 @@ const formatMoney = (value) => {
 
 const limitLabel = (plan) => {
     const limit = plan?.user_limit ?? plan?.max_admin_users ?? null;
-    if (limit === null || limit === undefined || limit === '') return 'Usuarios ilimitados';
+    if (limit === null || limit === undefined || limit === '') return 'Usuários ilimitados';
 
-    return `${limit} usuario(s)`;
+    return `${limit} usuário(s)`;
 };
 
 const planFeatures = (plan) => {
@@ -309,6 +418,13 @@ const planFeatureLines = (plan) =>
 
         return `${label} - ${value}`;
     });
+
+watch(
+    () => planForm.niche,
+    () => {
+        sanitizePlanModulesForNiche();
+    },
+);
 </script>
 
 <template>
@@ -344,7 +460,7 @@ const planFeatureLines = (plan) =>
                         <input
                             v-model="filterForm.search"
                             type="text"
-                            placeholder="Buscar plano por nome, slug, badge ou subtitulo"
+                            placeholder="Buscar plano por nome, slug, badge ou subtítulo"
                             class="veshop-search-input w-full bg-transparent text-sm text-slate-700 outline-none"
                             @keydown.enter.prevent="applyFilters"
                         />
@@ -398,10 +514,32 @@ const planFeatureLines = (plan) =>
                     </div>
                 </div>
 
-                <div class="mt-6 space-y-8">
+                <div class="mt-6 space-y-6">
+                    <div v-if="nicheTabs.length" class="flex flex-wrap gap-2">
+                        <button
+                            v-for="tab in nicheTabs"
+                            :key="`niche-tab-${tab.value}`"
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition"
+                            :class="activeNicheTab === tab.value
+                                ? 'border-slate-900 bg-slate-900 text-white'
+                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                            @click="activeNicheTab = tab.value"
+                        >
+                            <component :is="tab.icon" class="h-3.5 w-3.5" />
+                            <span>{{ tab.label }}</span>
+                            <span
+                                class="rounded-full px-2 py-0.5 text-[11px] font-bold"
+                                :class="activeNicheTab === tab.value ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'"
+                            >
+                                {{ tab.plans.length }}
+                            </span>
+                        </button>
+                    </div>
                     <section
                         v-for="nicheGroup in groupedRows"
                         :key="`niche-group-${nicheGroup.value}`"
+                        v-show="activeNicheTab === nicheGroup.value"
                         class="rounded-2xl border border-slate-100 bg-slate-50/70 p-4 md:p-5"
                     >
                         <div class="mb-4 flex items-center justify-between gap-3">
@@ -443,7 +581,7 @@ const planFeatureLines = (plan) =>
                                         {{ plan.subtitle || limitLabel(plan) }}
                                     </p>
                                     <p class="mt-2 text-xs text-slate-500">
-                                        {{ plan.summary || 'Plano flexivel para cada fase da operacao.' }}
+                                        {{ plan.summary || 'Plano flexível para cada fase da operação.' }}
                                     </p>
                                 </div>
 
@@ -459,7 +597,7 @@ const planFeatureLines = (plan) =>
                                         </li>
                                     </ul>
                                     <p v-if="!planFeatureLines(plan).length" class="text-xs text-slate-500">
-                                        Nenhum beneficio configurado ainda.
+                                        Nenhum benefício configurado ainda.
                                     </p>
                                 </div>
 
@@ -482,7 +620,7 @@ const planFeatureLines = (plan) =>
                                                 {{ plan.niche_label }}
                                             </span>
                                             <span v-if="plan.show_on_landing" class="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-700">
-                                                Landing
+                                                Landing page
                                             </span>
                                         </div>
                                     </div>
@@ -513,7 +651,7 @@ const planFeatureLines = (plan) =>
                                         Gerenciar plano
                                     </button>
                                     <p class="mt-2 text-[11px] text-slate-500">
-                                        {{ plan.footer_message || 'Use este plano para controlar acesso, limite e operacao.' }}
+                                        {{ plan.footer_message || 'Use este plano para controlar acesso, limite e operação.' }}
                                     </p>
                                 </div>
                             </article>
@@ -528,7 +666,7 @@ const planFeatureLines = (plan) =>
                     </section>
 
                     <div v-if="!groupedRows.length" class="rounded-3xl border border-dashed border-slate-200 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
-                        Nenhum nicho encontrado para segmentacao.
+                        Nenhum nicho encontrado para segmentação.
                     </div>
                 </div>
 
@@ -539,12 +677,14 @@ const planFeatureLines = (plan) =>
         <Modal :show="showModal" max-width="5xl" @close="closeModal">
             <WizardModalFrame
                 :title="isEditing ? 'Editar plano' : 'Novo plano'"
-                description="Preencha os dados do plano."
-                :steps="['Dados do plano']"
-                :current-step="1"
+                description="Configure dados, limites e módulos do plano."
+                :steps="planWizardSteps"
+                :current-step="currentPlanStep"
+                :steps-clickable="true"
                 @close="closeModal"
+                @step-change="(step) => { currentPlanStep = step; }"
             >
-                <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div v-if="currentPlanStep === 1" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
                         <input
@@ -589,12 +729,12 @@ const planFeatureLines = (plan) =>
                     </div>
 
                     <div class="md:col-span-2 xl:col-span-3">
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Subtitulo</label>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Subtítulo</label>
                         <input
                             v-model="planForm.subtitle"
                             type="text"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="Operacao em crescimento"
+                            placeholder="Operação em crescimento"
                         >
                         <p v-if="planForm.errors.subtitle" class="mt-1 text-xs text-rose-600">{{ planForm.errors.subtitle }}</p>
                     </div>
@@ -624,7 +764,7 @@ const planFeatureLines = (plan) =>
                     </div>
 
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Limite de usuarios</label>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Limite de usuários</label>
                         <input
                             v-model="planForm.user_limit"
                             type="number"
@@ -650,20 +790,20 @@ const planFeatureLines = (plan) =>
                     </div>
 
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Retencao de auditoria (dias)</label>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Retenção de auditoria (dias)</label>
                         <input
                             v-model="planForm.audit_log_retention_days"
                             type="number"
                             min="1"
                             step="1"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="Vazio para padrao"
+                            placeholder="Vazio para padrão"
                         >
                         <p v-if="planForm.errors.audit_log_retention_days" class="mt-1 text-xs text-rose-600">{{ planForm.errors.audit_log_retention_days }}</p>
                     </div>
 
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Ordem de exibicao</label>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Ordem de exibição</label>
                         <input
                             v-model="planForm.tier_rank"
                             type="number"
@@ -676,18 +816,18 @@ const planFeatureLines = (plan) =>
                     </div>
 
                     <div class="md:col-span-2 xl:col-span-3">
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Beneficios (1 por linha)</label>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Benefícios (1 por linha)</label>
                         <textarea
                             v-model="planForm.features_text"
                             rows="4"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="Usuarios admin: Ate 5 admins&#10;Suporte: Prioritario"
+                            placeholder="Usuários admin: Até 5 admins&#10;Suporte: Prioritário"
                         />
                         <p v-if="planForm.errors.features_text" class="mt-1 text-xs text-rose-600">{{ planForm.errors.features_text }}</p>
                     </div>
 
                     <div class="md:col-span-2">
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Mensagem de rodape</label>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Mensagem de rodapé</label>
                         <textarea
                             v-model="planForm.footer_message"
                             rows="2"
@@ -698,7 +838,7 @@ const planFeatureLines = (plan) =>
                     </div>
                 </div>
 
-                <div class="grid gap-2 md:grid-cols-3">
+                <div v-if="currentPlanStep === 1" class="grid gap-2 md:grid-cols-3">
                     <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
                         <input v-model="planForm.is_active" type="checkbox" class="rounded border-slate-300">
                         Plano ativo
@@ -713,14 +853,77 @@ const planFeatureLines = (plan) =>
                     </label>
                 </div>
 
+                <div v-if="currentPlanStep === 2" class="space-y-4">
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Módulos globais</p>
+                        <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                            <label
+                                v-for="module in planGlobalModules"
+                                :key="`plan-global-${module.code}`"
+                                class="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                            >
+                                <input
+                                    type="checkbox"
+                                    class="mt-0.5 rounded border-slate-300"
+                                    :checked="isPlanModuleSelected(module.code)"
+                                    @change="togglePlanModuleCode(module.code)"
+                                >
+                                <span>
+                                    <span class="block font-semibold text-slate-800">{{ module.name }}</span>
+                                    <span v-if="module.description" class="text-slate-500">{{ module.description }}</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Módulos específicos do nicho</p>
+                        <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                            <label
+                                v-for="module in planSpecificModules"
+                                :key="`plan-specific-${module.code}`"
+                                class="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                            >
+                                <input
+                                    type="checkbox"
+                                    class="mt-0.5 rounded border-slate-300"
+                                    :checked="isPlanModuleSelected(module.code)"
+                                    @change="togglePlanModuleCode(module.code)"
+                                >
+                                <span>
+                                    <span class="block font-semibold text-slate-800">{{ module.name }}</span>
+                                    <span v-if="module.description" class="text-slate-500">{{ module.description }}</span>
+                                </span>
+                            </label>
+                        </div>
+                        <p v-if="planForm.errors.module_codes" class="mt-2 text-xs text-rose-600">{{ planForm.errors.module_codes }}</p>
+                    </div>
+                </div>
+
                 <template #footer>
                     <div class="flex items-center justify-end gap-2">
+                        <button
+                            v-if="currentPlanStep > 1"
+                            type="button"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="currentPlanStep = Math.max(1, currentPlanStep - 1)"
+                        >
+                            Voltar
+                        </button>
                         <button
                             type="button"
                             class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                             @click="closeModal"
                         >
                             Cancelar
+                        </button>
+                        <button
+                            v-if="currentPlanStep < planWizardSteps.length"
+                            type="button"
+                            class="rounded-xl bg-slate-200 px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-300"
+                            @click="currentPlanStep = Math.min(planWizardSteps.length, currentPlanStep + 1)"
+                        >
+                            Próximo
                         </button>
                         <button
                             type="button"

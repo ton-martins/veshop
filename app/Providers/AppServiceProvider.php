@@ -34,6 +34,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->assertSafeTestingDatabase();
+        $this->clearStaleViteHotFile();
 
         if ((bool) config('app.force_https', false)) {
             URL::forceScheme('https');
@@ -51,6 +52,58 @@ class AppServiceProvider extends ServiceProvider
         }
 
         Vite::prefetch(concurrency: 3);
+    }
+
+    private function clearStaleViteHotFile(): void
+    {
+        if (! $this->app->isLocal()) {
+            return;
+        }
+
+        $hotFile = public_path('hot');
+        if (! is_file($hotFile)) {
+            return;
+        }
+
+        $hotUrl = trim((string) @file_get_contents($hotFile));
+        if ($hotUrl === '') {
+            @unlink($hotFile);
+
+            return;
+        }
+
+        $parts = parse_url($hotUrl);
+        if (! is_array($parts)) {
+            @unlink($hotFile);
+
+            return;
+        }
+
+        $host = (string) ($parts['host'] ?? '');
+        $scheme = strtolower((string) ($parts['scheme'] ?? 'http'));
+        $port = isset($parts['port'])
+            ? (int) $parts['port']
+            : ($scheme === 'https' ? 443 : 80);
+
+        if ($host === '' || $port <= 0) {
+            @unlink($hotFile);
+
+            return;
+        }
+
+        $target = str_contains($host, ':')
+            ? "tcp://[{$host}]:{$port}"
+            : "tcp://{$host}:{$port}";
+
+        $socket = @stream_socket_client($target, $errno, $error, 0.25, STREAM_CLIENT_CONNECT);
+
+        if (! is_resource($socket)) {
+            @unlink($hotFile);
+
+            return;
+        }
+
+        fclose($socket);
     }
 
     private function assertSafeTestingDatabase(): void

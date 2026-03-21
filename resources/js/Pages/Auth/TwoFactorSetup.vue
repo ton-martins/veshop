@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 import { computed, ref, watch } from 'vue';
 
 const { brandName, systemIconUrl } = useBranding();
-const pageTitle = computed(() => `Autenticacao em dois fatores | ${brandName.value}`);
+const pageTitle = computed(() => `Autenticação em dois fatores | ${brandName.value}`);
 
 const props = defineProps({
     required: {
@@ -202,13 +202,6 @@ watch(
                         <p class="veshop-login-subtitle mt-0">
                             Use o app Authenticator para gerar códigos temporários e proteger sua conta.
                         </p>
-
-                        <div
-                            v-if="props.required"
-                            class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800"
-                        >
-                            Obrigatório para este contratante.
-                        </div>
                         <div
                             v-if="props.status"
                             class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700"

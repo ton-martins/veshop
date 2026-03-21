@@ -23,6 +23,14 @@ class StorePlanRequest extends FormRequest
     {
         $slug = trim((string) $this->input('slug', ''));
         $rawNiche = strtolower(trim((string) $this->input('niche', '')));
+        $moduleCodes = $this->input('module_codes', []);
+        $moduleCodes = is_array($moduleCodes) ? $moduleCodes : [];
+        $moduleCodes = collect($moduleCodes)
+            ->map(static fn (mixed $value): string => strtolower(trim((string) $value)))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
 
         $this->merge([
             'niche' => $rawNiche !== '' ? $rawNiche : Plan::defaultNiche(),
@@ -38,6 +46,7 @@ class StorePlanRequest extends FormRequest
             'storage_limit_gb' => $this->nullableInteger('storage_limit_gb'),
             'audit_log_retention_days' => $this->nullableInteger('audit_log_retention_days'),
             'tier_rank' => $this->nullableInteger('tier_rank'),
+            'module_codes' => $moduleCodes,
         ]);
     }
 
@@ -80,6 +89,14 @@ class StorePlanRequest extends FormRequest
             'features.*.value' => ['nullable', 'string', 'max:255'],
             'features.*.icon' => ['nullable', 'string', 'max:64'],
             'features.*.enabled' => ['nullable', 'boolean'],
+            'module_codes' => ['nullable', 'array'],
+            'module_codes.*' => [
+                'string',
+                'max:80',
+                Rule::exists('modules', 'code')->where(static function ($query) {
+                    $query->where('is_active', true);
+                }),
+            ],
             'is_active' => ['required', 'boolean'],
             'is_featured' => ['required', 'boolean'],
             'show_on_landing' => ['required', 'boolean'],

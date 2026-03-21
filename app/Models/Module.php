@@ -49,5 +49,10 @@ class Module extends Model
         return $this->belongsToMany(Contractor::class, 'contractor_module')
             ->withTimestamps();
     }
-}
 
+    public function plans(): BelongsToMany
+    {
+        return $this->belongsToMany(Plan::class, 'plan_module')
+            ->withTimestamps();
+    }
+}

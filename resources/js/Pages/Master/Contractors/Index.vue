@@ -35,14 +35,6 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
-    moduleCatalog: {
-        type: Array,
-        default: () => [],
-    },
-    modulePresets: {
-        type: Object,
-        default: () => ({}),
-    },
 });
 
 const page = usePage();
@@ -136,7 +128,6 @@ const showModal = ref(false);
 const editingContractor = ref(null);
 const showDeleteModal = ref(false);
 const contractorToDelete = ref(null);
-const suppressAutoModulePreset = ref(false);
 
 const contractorForm = useForm({
     name: '',
@@ -150,7 +141,9 @@ const contractorForm = useForm({
     business_niche: props.niches?.[0]?.value ?? 'commercial',
     business_type: '',
     plan_id: '',
-    module_codes: [],
+    override_user_limit: '',
+    override_storage_limit_gb: '',
+    override_audit_log_retention_days: '',
     is_active: true,
 });
 const deleteForm = useForm({});
@@ -178,54 +171,7 @@ const planFormOptions = computed(() => [
         label: plan.name,
     })),
 ]);
-
 const isEditing = computed(() => Boolean(editingContractor.value?.id));
-const availableFormModuleCatalog = computed(() => {
-    const niche = String(contractorForm.business_niche ?? '').trim().toLowerCase();
-    const businessType = String(contractorForm.business_type ?? '').trim().toLowerCase();
-
-    return (props.moduleCatalog ?? []).filter((module) => {
-        const moduleNiche = String(module?.niche ?? '').trim().toLowerCase();
-        const moduleBusinessTypes = Array.isArray(module?.business_types) ? module.business_types : [];
-
-        if (moduleNiche && moduleNiche !== niche) return false;
-        if (moduleBusinessTypes.length && !moduleBusinessTypes.includes(businessType)) return false;
-
-        return true;
-    });
-});
-const formGlobalModules = computed(() => availableFormModuleCatalog.value.filter((module) => module.scope === 'global'));
-const formSpecificModules = computed(() => availableFormModuleCatalog.value.filter((module) => module.scope !== 'global'));
-
-const resolvePresetModules = (businessType) => {
-    const fallback = [];
-    const value = String(businessType ?? '').trim().toLowerCase();
-    if (!value) return fallback;
-
-    const preset = props.modulePresets?.[value];
-    if (!Array.isArray(preset)) return fallback;
-
-    return preset
-        .map((moduleCode) => String(moduleCode ?? '').trim().toLowerCase())
-        .filter(Boolean);
-};
-
-const isModuleSelected = (moduleCode) =>
-    (contractorForm.module_codes ?? []).includes(String(moduleCode ?? '').trim().toLowerCase());
-
-const toggleModuleCode = (moduleCode) => {
-    const safeCode = String(moduleCode ?? '').trim().toLowerCase();
-    if (!safeCode) return;
-
-    const selected = new Set((contractorForm.module_codes ?? []).map((item) => String(item)));
-    if (selected.has(safeCode)) {
-        selected.delete(safeCode);
-    } else {
-        selected.add(safeCode);
-    }
-
-    contractorForm.module_codes = Array.from(selected);
-};
 
 watch(
     () => filterForm.niche,
@@ -252,33 +198,10 @@ watch(
                 contractorForm.plan_id = '';
             }
         }
-
-        const availableCodes = availableFormModuleCatalog.value.map((module) => String(module.code));
-        contractorForm.module_codes = (contractorForm.module_codes ?? [])
-            .filter((code) => availableCodes.includes(String(code)));
-
-        if (contractorForm.module_codes.length === 0) {
-            contractorForm.module_codes = resolvePresetModules(contractorForm.business_type);
-        }
-    },
-);
-
-watch(
-    () => contractorForm.business_type,
-    (value, oldValue) => {
-        if (suppressAutoModulePreset.value) return;
-        if (!value) return;
-        if (String(value) === String(oldValue)) return;
-
-        const preset = resolvePresetModules(value);
-        if (preset.length > 0) {
-            contractorForm.module_codes = preset;
-        }
     },
 );
 
 const openCreate = () => {
-    suppressAutoModulePreset.value = true;
     editingContractor.value = null;
     contractorForm.reset();
     contractorForm.clearErrors();
@@ -287,16 +210,14 @@ const openCreate = () => {
     contractorForm.business_niche = props.niches?.[0]?.value ?? 'commercial';
     contractorForm.business_type = businessTypeFormOptions.value[0]?.value ?? '';
     contractorForm.plan_id = '';
-    contractorForm.module_codes = resolvePresetModules(contractorForm.business_type);
+    contractorForm.override_user_limit = '';
+    contractorForm.override_storage_limit_gb = '';
+    contractorForm.override_audit_log_retention_days = '';
     contractorForm.is_active = true;
-    Promise.resolve().then(() => {
-        suppressAutoModulePreset.value = false;
-    });
     showModal.value = true;
 };
 
 const openEdit = (contractor) => {
-    suppressAutoModulePreset.value = true;
     editingContractor.value = contractor;
     contractorForm.name = contractor.name ?? '';
     contractorForm.email = contractor.email ?? '';
@@ -309,31 +230,20 @@ const openEdit = (contractor) => {
     contractorForm.business_niche = contractor.business_niche ?? 'commercial';
     contractorForm.business_type = contractor.business_type ?? (businessTypeFormOptions.value[0]?.value ?? '');
     contractorForm.plan_id = contractor.plan_id ?? '';
-    contractorForm.module_codes = Array.isArray(contractor.enabled_module_codes)
-        ? contractor.enabled_module_codes.map((item) => String(item ?? '').trim().toLowerCase()).filter(Boolean)
-        : resolvePresetModules(contractor.business_type ?? '');
+    contractorForm.override_user_limit = contractor.override_user_limit ?? '';
+    contractorForm.override_storage_limit_gb = contractor.override_storage_limit_gb ?? '';
+    contractorForm.override_audit_log_retention_days = contractor.override_audit_log_retention_days ?? '';
     contractorForm.is_active = Boolean(contractor.is_active);
     contractorForm.clearErrors();
-    Promise.resolve().then(() => {
-        suppressAutoModulePreset.value = false;
-    });
     showModal.value = true;
 };
 
 const closeModal = () => {
-    suppressAutoModulePreset.value = false;
     showModal.value = false;
     editingContractor.value = null;
 };
 
 const submitContractor = () => {
-    contractorForm.transform((data) => ({
-        ...data,
-        module_codes: Array.isArray(data.module_codes)
-            ? data.module_codes.map((item) => String(item ?? '').trim().toLowerCase()).filter(Boolean)
-            : [],
-    }));
-
     if (isEditing.value) {
         contractorForm.put(route('master.contractors.update', editingContractor.value.id), {
             preserveScroll: true,
@@ -664,55 +574,56 @@ const formatMoney = (value) => {
                             :options="planFormOptions"
                             button-class="mt-1 w-full text-sm"
                         />
+                        <p class="mt-1 text-xs text-slate-500">
+                            Módulos e permissões são definidos no plano selecionado.
+                        </p>
                         <p v-if="contractorForm.errors.plan_id" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.plan_id }}</p>
                     </div>
 
                     <div class="md:col-span-2">
                         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Módulos globais</p>
-                            <div class="mt-2 grid gap-2 sm:grid-cols-2">
-                                <label
-                                    v-for="module in formGlobalModules"
-                                    :key="`global-${module.code}`"
-                                    class="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
-                                >
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Overrides de limite (opcional)</p>
+                            <p class="mt-1 text-xs text-slate-600">
+                                Quando preenchido, o valor sobrescreve o limite padrão do plano para este contratante.
+                            </p>
+                            <div class="mt-3 grid gap-3 md:grid-cols-3">
+                                <div>
+                                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Limite de usuários</label>
                                     <input
-                                        type="checkbox"
-                                        class="mt-0.5 rounded border-slate-300"
-                                        :checked="isModuleSelected(module.code)"
-                                        @change="toggleModuleCode(module.code)"
+                                        v-model="contractorForm.override_user_limit"
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                        placeholder="Padrão do plano"
                                     >
-                                    <span>
-                                        <span class="block font-semibold text-slate-800">{{ module.name }}</span>
-                                        <span v-if="module.description" class="text-slate-500">{{ module.description }}</span>
-                                    </span>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="md:col-span-2">
-                        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Módulos específicos</p>
-                            <div class="mt-2 grid gap-2 sm:grid-cols-2">
-                                <label
-                                    v-for="module in formSpecificModules"
-                                    :key="`specific-${module.code}`"
-                                    class="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
-                                >
+                                    <p v-if="contractorForm.errors.override_user_limit" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.override_user_limit }}</p>
+                                </div>
+                                <div>
+                                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Storage (GB)</label>
                                     <input
-                                        type="checkbox"
-                                        class="mt-0.5 rounded border-slate-300"
-                                        :checked="isModuleSelected(module.code)"
-                                        @change="toggleModuleCode(module.code)"
+                                        v-model="contractorForm.override_storage_limit_gb"
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                        placeholder="Padrão do plano"
                                     >
-                                    <span>
-                                        <span class="block font-semibold text-slate-800">{{ module.name }}</span>
-                                        <span v-if="module.description" class="text-slate-500">{{ module.description }}</span>
-                                    </span>
-                                </label>
+                                    <p v-if="contractorForm.errors.override_storage_limit_gb" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.override_storage_limit_gb }}</p>
+                                </div>
+                                <div>
+                                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Auditoria (dias)</label>
+                                    <input
+                                        v-model="contractorForm.override_audit_log_retention_days"
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                        placeholder="Padrão do plano"
+                                    >
+                                    <p v-if="contractorForm.errors.override_audit_log_retention_days" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.override_audit_log_retention_days }}</p>
+                                </div>
                             </div>
-                            <p v-if="contractorForm.errors.module_codes" class="mt-2 text-xs text-rose-600">{{ contractorForm.errors.module_codes }}</p>
                         </div>
                     </div>
                 </div>

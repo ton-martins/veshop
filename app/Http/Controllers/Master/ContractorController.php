@@ -37,7 +37,6 @@ class ContractorController extends Controller
 
         $query = Contractor::query()
             ->with('plan:id,name,price_monthly,niche')
-            ->with('modules:id,code,is_active')
             ->withCount([
                 'users as admins_count' => static fn ($innerQuery) => $innerQuery->where('role', User::ROLE_ADMIN),
             ]);
@@ -73,6 +72,7 @@ class ContractorController extends Controller
             ->withQueryString()
             ->through(function (Contractor $contractor): array {
                 $niche = $contractor->niche();
+                $settings = is_array($contractor->settings) ? $contractor->settings : [];
 
                 return [
                     'id' => $contractor->id,
@@ -90,6 +90,9 @@ class ContractorController extends Controller
                     'business_type' => $contractor->businessType(),
                     'business_type_label' => Contractor::labelForBusinessType($contractor->businessType()),
                     'enabled_module_codes' => $contractor->enabledModules(),
+                    'override_user_limit' => $this->resolveOverrideLimit($settings, 'user_limit'),
+                    'override_storage_limit_gb' => $this->resolveOverrideLimit($settings, 'storage_limit_gb'),
+                    'override_audit_log_retention_days' => $this->resolveOverrideLimit($settings, 'audit_log_retention_days'),
                     'plan_id' => $contractor->plan_id,
                     'plan_name' => $contractor->plan?->name ?? $contractor->activePlanName(),
                     'monthly_price' => $contractor->plan?->price_monthly !== null ? (float) $contractor->plan->price_monthly : null,
@@ -120,6 +123,7 @@ class ContractorController extends Controller
                 'services' => $services,
             ],
             'plans' => Plan::query()
+                ->with(['modules:id,code,name,is_active'])
                 ->orderByRaw("CASE niche WHEN 'commercial' THEN 0 WHEN 'services' THEN 1 ELSE 99 END")
                 ->orderBy('sort_order')
                 ->orderBy('name')
@@ -130,6 +134,20 @@ class ContractorController extends Controller
                     'price_monthly' => $plan->price_monthly !== null ? (float) $plan->price_monthly : null,
                     'niche' => $plan->niche,
                     'niche_label' => Plan::labelForNiche($plan->niche),
+                    'module_codes' => $plan->modules
+                        ->where('is_active', true)
+                        ->pluck('code')
+                        ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+                        ->filter()
+                        ->values()
+                        ->all(),
+                    'module_names' => $plan->modules
+                        ->where('is_active', true)
+                        ->pluck('name')
+                        ->map(static fn (mixed $name): string => trim((string) $name))
+                        ->filter()
+                        ->values()
+                        ->all(),
                 ])
                 ->values()
                 ->all(),
@@ -151,8 +169,6 @@ class ContractorController extends Controller
                 })
                 ->values()
                 ->all(),
-            'moduleCatalog' => $this->contractorCapabilitiesService->moduleCatalogForMaster(),
-            'modulePresets' => $this->resolveModulePresetsPayload(),
         ]);
     }
 
@@ -166,12 +182,8 @@ class ContractorController extends Controller
         $niche = $this->normalizeNiche($data['business_niche']);
         $businessType = Contractor::normalizeBusinessType((string) ($data['business_type'] ?? ''), $niche);
         $plan = $this->resolvePlanOrNull($data['plan_id'] ?? null, $niche);
-        $moduleCodes = $this->contractorCapabilitiesService->resolveModuleCodesForPersistence(
-            $niche,
-            $businessType,
-            $data['module_codes'] ?? [],
-        );
-        $moduleIds = $this->contractorCapabilitiesService->resolveModuleIdsFromCodes($moduleCodes);
+        $effectiveModuleCodes = $this->resolveEffectiveModuleCodes($niche, $businessType, $plan);
+        $moduleIds = $this->contractorCapabilitiesService->resolveModuleIdsFromCodes($effectiveModuleCodes);
 
         $contractor = Contractor::query()->create([
             'uuid' => (string) Str::uuid(),
@@ -187,7 +199,10 @@ class ContractorController extends Controller
             'settings' => $this->buildSettings(
                 existing: [],
                 niche: $niche,
-                planName: $plan?->name
+                planName: $plan?->name,
+                overrideUserLimit: $data['override_user_limit'] ?? null,
+                overrideStorageLimitGb: $data['override_storage_limit_gb'] ?? null,
+                overrideAuditLogRetentionDays: $data['override_audit_log_retention_days'] ?? null,
             ),
             'business_type' => $businessType,
             'is_active' => $data['is_active'],
@@ -208,12 +223,8 @@ class ContractorController extends Controller
         $niche = $this->normalizeNiche($data['business_niche']);
         $businessType = Contractor::normalizeBusinessType((string) ($data['business_type'] ?? ''), $niche);
         $plan = $this->resolvePlanOrNull($data['plan_id'] ?? null, $niche);
-        $moduleCodes = $this->contractorCapabilitiesService->resolveModuleCodesForPersistence(
-            $niche,
-            $businessType,
-            $data['module_codes'] ?? [],
-        );
-        $moduleIds = $this->contractorCapabilitiesService->resolveModuleIdsFromCodes($moduleCodes);
+        $effectiveModuleCodes = $this->resolveEffectiveModuleCodes($niche, $businessType, $plan);
+        $moduleIds = $this->contractorCapabilitiesService->resolveModuleIdsFromCodes($effectiveModuleCodes);
 
         $contractor->fill([
             'name' => $data['name'],
@@ -228,7 +239,10 @@ class ContractorController extends Controller
             'settings' => $this->buildSettings(
                 existing: $contractor->settings,
                 niche: $niche,
-                planName: $plan?->name
+                planName: $plan?->name,
+                overrideUserLimit: $data['override_user_limit'] ?? null,
+                overrideStorageLimitGb: $data['override_storage_limit_gb'] ?? null,
+                overrideAuditLogRetentionDays: $data['override_audit_log_retention_days'] ?? null,
             ),
             'business_type' => $businessType,
             'is_active' => $data['is_active'],
@@ -313,7 +327,14 @@ class ContractorController extends Controller
      * @param array<string, mixed>|mixed $existing
      * @return array<string, mixed>
      */
-    private function buildSettings(mixed $existing, string $niche, ?string $planName): array
+    private function buildSettings(
+        mixed $existing,
+        string $niche,
+        ?string $planName,
+        ?int $overrideUserLimit = null,
+        ?int $overrideStorageLimitGb = null,
+        ?int $overrideAuditLogRetentionDays = null,
+    ): array
     {
         $settings = is_array($existing) ? $existing : [];
         $settings['business_niche'] = $this->normalizeNiche($niche);
@@ -321,24 +342,66 @@ class ContractorController extends Controller
         $settings['require_2fa'] = true;
         $settings['require_email_verification'] = (bool) ($settings['require_email_verification'] ?? true);
         $settings['email_notifications_enabled'] = (bool) ($settings['email_notifications_enabled'] ?? true);
+        $this->applyNullableIntegerSetting($settings, 'user_limit', $overrideUserLimit);
+        $this->applyNullableIntegerSetting($settings, 'storage_limit_gb', $overrideStorageLimitGb);
+        $this->applyNullableIntegerSetting($settings, 'audit_log_retention_days', $overrideAuditLogRetentionDays);
 
         return $settings;
     }
 
-    /**
-     * @return array<string, array<int, string>>
-     */
-    private function resolveModulePresetsPayload(): array
+    private function applyNullableIntegerSetting(array &$settings, string $key, ?int $value): void
     {
-        $payload = [];
-
-        foreach (Contractor::availableNiches() as $niche) {
-            foreach (Contractor::availableBusinessTypes($niche) as $businessType) {
-                $payload[$businessType] = $this->contractorCapabilitiesService
-                    ->defaultModuleCodes($niche, $businessType);
-            }
+        if ($value !== null && $value > 0) {
+            $settings[$key] = $value;
+            return;
         }
 
-        return $payload;
+        unset($settings[$key]);
+    }
+
+    private function resolveOverrideLimit(array $settings, string $key): ?int
+    {
+        $rawValue = $settings[$key] ?? null;
+        if ($rawValue === null || $rawValue === '') {
+            return null;
+        }
+
+        $parsed = (int) $rawValue;
+
+        return $parsed > 0 ? $parsed : null;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolveEffectiveModuleCodes(string $niche, string $businessType, ?Plan $plan): array
+    {
+        if ($plan !== null) {
+            $plan->loadMissing('modules:id,code,is_active');
+
+            $planModuleCodes = $plan->modules
+                ->where('is_active', true)
+                ->pluck('code')
+                ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+                ->filter()
+                ->values()
+                ->all();
+
+            $normalizedPlanCodes = $this->contractorCapabilitiesService
+                ->resolvePlanModuleCodesForPersistence($niche, $planModuleCodes);
+
+            $allowedCodes = collect($this->contractorCapabilitiesService->availableModulesFor($niche, $businessType))
+                ->pluck('code')
+                ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+                ->filter()
+                ->values();
+
+            return collect($normalizedPlanCodes)
+                ->filter(fn (string $code): bool => $allowedCodes->contains($code))
+                ->values()
+                ->all();
+        }
+
+        return $this->contractorCapabilitiesService->defaultModuleCodes($niche, $businessType);
     }
 }

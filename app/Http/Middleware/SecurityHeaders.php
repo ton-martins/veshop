@@ -16,6 +16,7 @@ class SecurityHeaders
     {
         $response = $next($request);
         $this->ensureInertiaHeaders($request, $response);
+        $this->setLocalNoCacheHeaders($response);
 
         if (! config('security.headers.enabled', true)) {
             return $response;
@@ -55,6 +56,18 @@ class SecurityHeaders
         }
 
         return $response;
+    }
+
+    private function setLocalNoCacheHeaders(Response $response): void
+    {
+        if (! app()->isLocal()) {
+            return;
+        }
+
+        // Local dev should always reflect current code, avoiding browser stale cache.
+        $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        $response->headers->set('Pragma', 'no-cache');
+        $response->headers->set('Expires', '0');
     }
 
     private function ensureInertiaHeaders(Request $request, Response $response): void
