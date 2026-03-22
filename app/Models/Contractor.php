@@ -166,6 +166,31 @@ class Contractor extends Model
         return $this->hasMany(AccountingDocumentRequest::class);
     }
 
+    public function accountingClientProfiles(): HasMany
+    {
+        return $this->hasMany(AccountingClientProfile::class);
+    }
+
+    public function accountingServiceTemplates(): HasMany
+    {
+        return $this->hasMany(AccountingServiceTemplate::class);
+    }
+
+    public function accountingTaskHistories(): HasMany
+    {
+        return $this->hasMany(AccountingTaskHistory::class);
+    }
+
+    public function accountingDocumentVersions(): HasMany
+    {
+        return $this->hasMany(AccountingDocumentVersion::class);
+    }
+
+    public function accountingReminderLogs(): HasMany
+    {
+        return $this->hasMany(AccountingReminderLog::class);
+    }
+
     public function paymentGateways(): HasMany
     {
         return $this->hasMany(PaymentGateway::class);

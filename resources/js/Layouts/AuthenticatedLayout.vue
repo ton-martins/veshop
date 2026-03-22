@@ -139,6 +139,7 @@ const showContractorContext = computed(
     () => currentArea.value === 'admin' && Boolean(currentContractor.value),
 );
 const contractorNiche = computed(() => String(currentContractor.value?.business_niche ?? 'commercial').toLowerCase());
+const contractorBusinessType = computed(() => String(currentContractor.value?.business_type ?? '').toLowerCase());
 const contractorNicheLabel = computed(() => {
     const explicitLabel = String(currentContractor.value?.business_niche_label ?? '').trim();
     if (explicitLabel) return explicitLabel;
@@ -361,13 +362,33 @@ const hasAllowedNiche = (group) => {
     return allowedNiches.includes(contractorNiche.value);
 };
 
+const hasAllowedBusinessType = (item) => {
+    const allowedBusinessTypes = Array.isArray(item?.businessTypes)
+        ? item.businessTypes.map((value) => String(value ?? '').trim().toLowerCase()).filter(Boolean)
+        : [];
+
+    if (!allowedBusinessTypes.length) {
+        return true;
+    }
+
+    const currentBusinessType = contractorBusinessType.value;
+    if (!currentBusinessType) {
+        return false;
+    }
+
+    return allowedBusinessTypes.includes(currentBusinessType);
+};
+
 const filteredAdminMenuGroups = computed(() =>
     adminMenuGroups
         .filter((group) => hasAllowedNiche(group))
+        .filter((group) => hasAllowedBusinessType(group))
         .filter((group) => hasEnabledModule(group.module))
         .map((group) => ({
             ...group,
-            links: (group.links ?? []).filter((link) => hasEnabledModule(link.module)),
+            links: (group.links ?? [])
+                .filter((link) => hasAllowedBusinessType(link))
+                .filter((link) => hasEnabledModule(link.module)),
         }))
         .filter((group) => (group.links ?? []).length > 0),
 );

@@ -233,6 +233,7 @@
                 match: ['admin.services.accounting', 'admin.services.accounting.*'],
                 icon: 'BookOpenCheck',
                 module: 'tasks',
+                businessTypes: ['accounting'],
             },
         ],
     },

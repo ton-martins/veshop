@@ -1646,7 +1646,7 @@ class PublicShopController extends Controller
             report($exception);
 
             throw ValidationException::withMessages([
-                'order' => 'Nao foi possivel iniciar o pagamento Pix agora. Tente novamente em instantes.',
+                'order' => 'Não foi possível iniciar o pagamento Pix agora. Tente novamente em instantes.',
             ]);
         }
 

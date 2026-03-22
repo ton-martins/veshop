@@ -52,12 +52,48 @@ const customer = computed(() => props.shop_auth?.customer ?? null);
 const accent = computed(() => normalizeHex(props.contractor?.primary_color || '', primaryColor.value));
 const pageStyles = computed(() => ({
     '--service-accent': accent.value,
-    '--service-accent-soft': withAlpha(accent.value, 0.18),
-    '--service-accent-strong': withAlpha(accent.value, 0.86),
+    '--service-accent-soft': withAlpha(accent.value, 0.14),
+    '--service-accent-strong': withAlpha(accent.value, 0.9),
+    '--service-border': withAlpha(accent.value, 0.24),
+    '--service-hero-gradient': `linear-gradient(135deg, ${withAlpha(accent.value, 0.16)} 0%, rgba(255,255,255,0.98) 50%, ${withAlpha(accent.value, 0.07)} 100%)`,
 }));
 
+const storefrontConfig = computed(() => {
+    const raw = props.storefront ?? {};
+    const hero = raw.hero ?? {};
+
+    return {
+        hero_title: String(hero.title ?? '').trim(),
+        hero_subtitle: String(hero.subtitle ?? '').trim(),
+        hero_cta: String(hero.cta_label ?? '').trim(),
+    };
+});
+
+const heroTitle = computed(() =>
+    storefrontConfig.value.hero_title || `Agende serviços com ${storeName.value}`,
+);
+const heroSubtitle = computed(() =>
+    storefrontConfig.value.hero_subtitle || 'Escolha o serviço, selecione o horário e confirme em poucos passos.',
+);
+const heroCtaLabel = computed(() =>
+    storefrontConfig.value.hero_cta || 'Agendar serviço',
+);
+
+const storeLogo = computed(() =>
+    String(props.contractor?.avatar_url || props.contractor?.logo_url || '').trim(),
+);
+
+const storeInitials = computed(() => {
+    const safe = String(storeName.value ?? '').trim();
+    if (!safe) return 'SV';
+    const parts = safe.split(/\s+/).filter(Boolean);
+    const first = parts[0]?.charAt(0) ?? 'S';
+    const second = parts.length > 1 ? parts[parts.length - 1]?.charAt(0) ?? '' : '';
+    return `${first}${second}`.toUpperCase();
+});
+
 const tabs = [
-    { key: 'home', label: 'In\u00edcio', icon: House },
+    { key: 'home', label: 'Início', icon: House },
     { key: 'bookings', label: 'Agendas', icon: CalendarCheck2 },
     { key: 'saved', label: 'Salvos', icon: Heart },
     { key: 'messages', label: 'Mensagens', icon: MessageCircle },
@@ -112,6 +148,12 @@ const savedServices = computed(() =>
 );
 
 const bookings = computed(() => (Array.isArray(props.bookings) ? props.bookings : []));
+
+const statsCards = computed(() => ([
+    { key: 'services', label: 'Serviços ativos', value: String(props.services?.length ?? 0) },
+    { key: 'categories', label: 'Categorias', value: String(Math.max(0, categoryTabs.value.length - 1)) },
+    { key: 'favorites', label: 'Favoritos', value: String(savedServices.value.length) },
+]));
 
 const bookingModalOpen = ref(false);
 const bookingTarget = ref(null);
@@ -187,6 +229,17 @@ const toggleFavorite = (serviceId) => {
     favoriteIds.value = [...favoriteIds.value, id];
 };
 
+const openAccountOrLogin = () => {
+    if (isAuthenticated.value) {
+        activeTab.value = 'account';
+        return;
+    }
+
+    if (typeof window !== 'undefined') {
+        window.location.href = loginUrl.value;
+    }
+};
+
 const resolveInitials = (label) => {
     const text = String(label ?? '').trim();
     if (!text) return 'SV';
@@ -202,8 +255,8 @@ const accountMenu = [
     { key: 'profile', label: 'Meu perfil', icon: UserCircle2 },
     { key: 'bookings', label: 'Meus agendamentos', icon: CalendarCheck2 },
     { key: 'wallet', label: 'Carteira', icon: Wallet },
-    { key: 'settings', label: 'Configura\u00e7\u00f5es', icon: Settings },
-    { key: 'privacy', label: 'Pol\u00edtica de privacidade', icon: ShieldCheck },
+    { key: 'settings', label: 'Configurações', icon: Settings },
+    { key: 'privacy', label: 'Política de privacidade', icon: ShieldCheck },
     { key: 'about', label: 'Sobre o app', icon: Info },
     { key: 'faq', label: 'FAQ', icon: CircleHelp },
 ];
@@ -225,22 +278,70 @@ watch(
     <div class="min-h-screen bg-slate-200" :style="pageStyles">
         <Head :title="`${storeName} | Agendamentos online`" />
 
-        <main class="relative mx-auto min-h-screen w-full max-w-[1200px] bg-slate-100 text-slate-900 md:my-4 md:overflow-hidden md:rounded-3xl md:border md:border-slate-300 md:shadow-sm">
-            <header class="border-b border-slate-200 bg-white px-4 py-4">
-                <div class="flex items-center justify-between gap-3">
-                    <div>
-                        <p class="text-[10px] uppercase tracking-[0.15em] text-slate-500">Loja de servi&#231;os</p>
-                        <h1 class="text-lg font-bold">{{ storeName }}</h1>
+        <main class="relative mx-auto min-h-screen w-full max-w-[1240px] bg-slate-100 text-slate-900 md:my-4 md:overflow-hidden md:rounded-3xl md:border md:border-slate-300 md:shadow-sm">
+            <header class="border-b border-slate-200 bg-white px-4 py-4 md:px-6">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <div class="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 text-sm font-semibold text-slate-700">
+                            <img v-if="storeLogo" :src="storeLogo" :alt="storeName" class="h-full w-full object-cover">
+                            <span v-else>{{ storeInitials }}</span>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase tracking-[0.15em] text-slate-500">Loja virtual de serviços</p>
+                            <h1 class="text-lg font-bold">{{ storeName }}</h1>
+                        </div>
                     </div>
-                    <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :style="{ background: 'var(--service-accent-soft)', color: 'var(--service-accent-strong)' }">Online</span>
+
+                    <div class="flex items-center gap-2">
+                        <span
+                            class="rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                            :style="{ background: 'var(--service-accent-soft)', color: 'var(--service-accent-strong)' }"
+                        >
+                            Online
+                        </span>
+                        <template v-if="isAuthenticated">
+                            <button
+                                type="button"
+                                class="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                @click="openAccountOrLogin"
+                            >
+                                Minha conta
+                            </button>
+                        </template>
+                        <template v-else>
+                            <Link :href="registerUrl" class="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:inline-flex">
+                                Cadastrar
+                            </Link>
+                            <Link :href="loginUrl" class="inline-flex rounded-xl px-3 py-2 text-xs font-semibold text-white" :style="{ background: 'var(--service-accent-strong)' }">
+                                Entrar
+                            </Link>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="mt-4 hidden rounded-xl border border-slate-200 bg-white p-2 md:block">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button
+                            v-for="tab in tabs"
+                            :key="`desktop-tab-${tab.key}`"
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
+                            :class="activeTab === tab.key ? 'text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'"
+                            :style="activeTab === tab.key ? { background: 'var(--service-accent-strong)' } : null"
+                            @click="activeTab = tab.key"
+                        >
+                            <component :is="tab.icon" class="h-3.5 w-3.5" />
+                            {{ tab.label }}
+                        </button>
+                    </div>
                 </div>
             </header>
 
-            <div v-if="flashStatus" class="mx-4 mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+            <div v-if="flashStatus" class="mx-4 mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 md:mx-6">
                 {{ flashStatus }}
             </div>
 
-            <div v-if="bookingWhatsappUrl" class="mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <div v-if="bookingWhatsappUrl" class="mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 md:mx-6">
                 <p>Se preferir, envie a confirmação do agendamento também pelo WhatsApp.</p>
                 <a
                     :href="bookingWhatsappUrl"
@@ -255,93 +356,143 @@ watch(
                 </p>
             </div>
 
-            <div class="mx-4 mt-3 hidden rounded-xl border border-slate-300 bg-white p-2 md:block">
-                <div class="flex flex-wrap items-center gap-2">
-                    <button
-                        v-for="tab in tabs"
-                        :key="`desktop-tab-${tab.key}`"
-                        type="button"
-                        class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
-                        :class="activeTab === tab.key ? 'text-white' : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'"
-                        :style="activeTab === tab.key ? { background: 'var(--service-accent-strong)' } : null"
-                        @click="activeTab = tab.key"
-                    >
-                        <component :is="tab.icon" class="h-3.5 w-3.5" />
-                        {{ tab.label }}
-                    </button>
-                </div>
-            </div>
-
-            <section class="space-y-3 px-4 pb-24 pt-3 md:pb-6">
+            <section class="space-y-3 px-4 pb-24 pt-3 md:px-6 md:pb-6">
                 <template v-if="activeTab === 'home'">
-                    <div class="flex gap-2 overflow-x-auto pb-1">
-                        <button
-                            v-for="category in categoryTabs"
-                            :key="`category-${category.id}`"
-                            type="button"
-                            class="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold"
-                            :class="selectedCategory === category.id ? 'border-transparent' : 'border-slate-300 bg-white text-slate-700'"
-                            :style="selectedCategory === category.id ? { background: 'var(--service-accent-soft)', color: 'var(--service-accent-strong)' } : null"
-                            @click="selectedCategory = category.id"
-                        >
-                            {{ category.name }}
-                        </button>
-                    </div>
-
-                    <div class="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2">
-                        <Search class="h-4 w-4 text-slate-500" />
-                        <input v-model="search" type="text" placeholder="Buscar servi&#231;o" class="w-full border-0 bg-transparent text-sm outline-none">
-                    </div>
-
-                    <div class="grid gap-3 md:grid-cols-2">
-                        <article
-                            v-for="service in servicesFiltered"
-                            :key="`service-${service.id}`"
-                            class="grid grid-cols-[4.25rem_minmax(0,1fr)] gap-3 rounded-2xl border border-slate-300 bg-white p-3"
-                        >
-                            <div class="grid h-[4.25rem] w-[4.25rem] place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-slate-200 to-slate-300 text-sm font-bold text-slate-600">
-                                <img v-if="service.image_url" :src="service.image_url" :alt="service.name" class="h-full w-full object-cover">
-                                <span v-else>{{ resolveInitials(service.name) }}</span>
+                    <div class="grid gap-4 xl:grid-cols-[18rem_minmax(0,1fr)]">
+                        <aside class="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm xl:sticky xl:top-4 xl:self-start">
+                            <div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <Search class="h-4 w-4 text-slate-500" />
+                                <input v-model="search" type="text" placeholder="Buscar serviço" class="w-full border-0 bg-transparent text-sm outline-none">
                             </div>
 
-                            <div class="min-w-0">
-                                <div class="flex items-start justify-between gap-2">
-                                    <div>
-                                        <h2 class="text-sm font-bold text-slate-900">{{ service.name }}</h2>
-                                        <p class="text-[11px] text-slate-500">{{ service.category_name }}</p>
-                                    </div>
+                            <div class="space-y-2">
+                                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Categorias</p>
+                                <div class="max-h-64 space-y-1.5 overflow-y-auto pr-1">
                                     <button
+                                        v-for="category in categoryTabs"
+                                        :key="`sidebar-category-${category.id}`"
                                         type="button"
-                                        class="inline-flex h-7 w-7 items-center justify-center rounded-full"
-                                        :class="favoriteIds.includes(Number(service.id)) ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-400'"
-                                        @click="toggleFavorite(service.id)"
+                                        class="flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs font-semibold"
+                                        :class="selectedCategory === category.id ? 'border-transparent' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                                        :style="selectedCategory === category.id ? { background: 'var(--service-accent-soft)', color: 'var(--service-accent-strong)' } : null"
+                                        @click="selectedCategory = category.id"
                                     >
-                                        <Heart class="h-4 w-4" />
-                                    </button>
-                                </div>
-
-                                <div class="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-500">
-                                    <Star class="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                                    <span>{{ Number(service.rating ?? 5).toFixed(1) }} ({{ service.reviews_label }})</span>
-                                </div>
-                                <p class="mt-1 text-[11px] text-slate-500">{{ service.coupon_label }}</p>
-
-                                <div class="mt-2 flex items-center justify-between gap-2">
-                                    <div>
-                                        <p class="text-sm font-bold text-slate-900">
-                                            {{ Number(service.base_price ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }}
-                                        </p>
-                                        <p class="text-[11px] text-slate-500">{{ service.duration_label }}</p>
-                                    </div>
-                                    <button type="button" class="rounded-xl px-3 py-2 text-xs font-semibold text-white" :style="{ background: 'var(--service-accent-strong)' }" @click="openBookingModal(service)">
-                                        Agendar
+                                        <span class="truncate">{{ category.name }}</span>
+                                        <span class="rounded-full bg-white/70 px-1.5 py-0.5 text-[10px]">{{ category.services_count }}</span>
                                     </button>
                                 </div>
                             </div>
-                        </article>
 
-                        <div v-if="!servicesFiltered.length" class="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center text-xs text-slate-500 md:col-span-2">
-                            Nenhum servi&#231;o encontrado com os filtros atuais.
+                            <div class="grid gap-2 pt-1">
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold text-white"
+                                    :style="{ background: 'var(--service-accent-strong)' }"
+                                    @click="servicesFiltered.length ? openBookingModal(servicesFiltered[0]) : null"
+                                >
+                                    {{ heroCtaLabel }}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                    @click="isAuthenticated ? activeTab = 'saved' : openAccountOrLogin()"
+                                >
+                                    Ver salvos
+                                </button>
+                            </div>
+                        </aside>
+
+                        <div class="space-y-4">
+                            <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5" :style="{ backgroundImage: 'var(--service-hero-gradient)' }">
+                                <div class="grid gap-4 lg:grid-cols-[1.15fr,0.85fr] lg:items-center">
+                                    <div class="space-y-2">
+                                        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Agendamento online</p>
+                                        <h2 class="text-xl font-bold leading-tight text-slate-900 md:text-2xl">{{ heroTitle }}</h2>
+                                        <p class="max-w-2xl text-sm text-slate-600">{{ heroSubtitle }}</p>
+                                    </div>
+                                    <div class="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
+                                        <article v-for="stat in statsCards" :key="`service-home-stat-${stat.key}`" class="rounded-lg border border-slate-200 bg-white/90 p-3">
+                                            <p class="text-[11px] text-slate-500">{{ stat.label }}</p>
+                                            <p class="mt-1 text-lg font-bold text-slate-900">{{ stat.value }}</p>
+                                        </article>
+                                    </div>
+                                </div>
+                            </article>
+
+                            <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:p-4">
+                                <div class="mb-2 flex items-center justify-between gap-2">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Categorias</p>
+                                    <p class="text-[11px] text-slate-500">{{ servicesFiltered.length }} serviço(s)</p>
+                                </div>
+                                <div class="service-chip-scroll flex gap-2 overflow-x-auto pb-1">
+                                    <button
+                                        v-for="category in categoryTabs"
+                                        :key="`category-${category.id}`"
+                                        type="button"
+                                        class="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold"
+                                        :class="selectedCategory === category.id ? 'border-transparent' : 'border-slate-300 bg-white text-slate-700'"
+                                        :style="selectedCategory === category.id ? { background: 'var(--service-accent-soft)', color: 'var(--service-accent-strong)' } : null"
+                                        @click="selectedCategory = category.id"
+                                    >
+                                        {{ category.name }}
+                                    </button>
+                                </div>
+                            </section>
+
+                            <div class="grid gap-3 md:grid-cols-2">
+                                <article
+                                    v-for="service in servicesFiltered"
+                                    :key="`service-${service.id}`"
+                                    class="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-[var(--service-border)]"
+                                >
+                                    <div class="grid h-20 w-20 place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-slate-200 to-slate-300 text-sm font-bold text-slate-600">
+                                        <img v-if="service.image_url" :src="service.image_url" :alt="service.name" class="h-full w-full object-cover">
+                                        <span v-else>{{ resolveInitials(service.name) }}</span>
+                                    </div>
+
+                                    <div class="min-w-0">
+                                        <div class="flex items-start justify-between gap-2">
+                                            <div>
+                                                <h2 class="text-sm font-bold text-slate-900">{{ service.name }}</h2>
+                                                <p class="text-[11px] text-slate-500">{{ service.category_name }}</p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                class="inline-flex h-7 w-7 items-center justify-center rounded-full"
+                                                :class="favoriteIds.includes(Number(service.id)) ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-400'"
+                                                @click="toggleFavorite(service.id)"
+                                            >
+                                                <Heart class="h-4 w-4" />
+                                            </button>
+                                        </div>
+
+                                        <p class="mt-1 text-[11px] text-slate-500">
+                                            {{ service.description || 'Atendimento profissional com execução sob medida para sua necessidade.' }}
+                                        </p>
+
+                                        <div class="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-500">
+                                            <Star class="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                                            <span>{{ Number(service.rating ?? 5).toFixed(1) }} ({{ service.reviews_label }})</span>
+                                        </div>
+
+                                        <div class="mt-2 flex items-center justify-between gap-2">
+                                            <div>
+                                                <p class="text-sm font-bold text-slate-900">
+                                                    {{ Number(service.base_price ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }}
+                                                </p>
+                                                <p class="text-[11px] text-slate-500">{{ service.duration_label }}</p>
+                                            </div>
+                                            <button type="button" class="rounded-xl px-3 py-2 text-xs font-semibold text-white" :style="{ background: 'var(--service-accent-strong)' }" @click="openBookingModal(service)">
+                                                Agendar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </article>
+
+                                <div v-if="!servicesFiltered.length" class="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center text-xs text-slate-500 md:col-span-2">
+                                    Nenhum serviço encontrado com os filtros atuais.
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </template>
@@ -353,14 +504,14 @@ watch(
                     </div>
 
                     <div v-if="!isAuthenticated" class="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center text-xs text-slate-500">
-                        Fa&#231;a login para acompanhar seus agendamentos.
+                        Faça login para acompanhar seus agendamentos.
                         <div class="mt-3">
                             <Link :href="loginUrl" class="inline-flex rounded-xl px-3 py-2 text-xs font-semibold text-white" :style="{ background: 'var(--service-accent-strong)' }">Entrar</Link>
                         </div>
                     </div>
 
                     <div v-else-if="!bookings.length" class="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center text-xs text-slate-500">
-                        Voc&#234; ainda n&#227;o possui agendamentos.
+                        Você ainda não possui agendamentos.
                     </div>
 
                     <div v-else class="space-y-3">
@@ -393,7 +544,7 @@ watch(
                     </div>
 
                     <div v-if="!savedServices.length" class="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center text-xs text-slate-500">
-                        Nenhum servi&#231;o salvo ainda.
+                        Nenhum serviço salvo ainda.
                     </div>
 
                     <div v-else class="space-y-3">
@@ -410,7 +561,7 @@ watch(
 
                 <template v-else-if="activeTab === 'messages'">
                     <div class="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center text-xs text-slate-500">
-                        Central de mensagens em breve.
+                        Central de mensagens disponível em breve.
                     </div>
                 </template>
 
@@ -468,7 +619,7 @@ watch(
         <div v-if="bookingModalOpen" class="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 md:items-center" @click.self="closeBookingModal">
             <div class="w-full max-w-[560px] rounded-t-2xl bg-white p-4 md:rounded-2xl">
                 <div class="mb-3 flex items-center justify-between">
-                    <h3 class="text-base font-bold">Agendar servi&#231;o</h3>
+                    <h3 class="text-base font-bold">Agendar serviço</h3>
                     <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100" @click="closeBookingModal"><X class="h-4 w-4" /></button>
                 </div>
 
@@ -478,7 +629,7 @@ watch(
                 </div>
 
                 <div v-if="!isAuthenticated" class="rounded-xl border border-dashed border-slate-300 p-4 text-center text-xs text-slate-500">
-                    Fa&#231;a login para continuar o agendamento.
+                    Faça login para continuar o agendamento.
                     <div class="mt-3"><Link :href="loginUrl" class="inline-flex rounded-xl px-3 py-2 text-xs font-semibold text-white" :style="{ background: 'var(--service-accent-strong)' }">Entrar agora</Link></div>
                 </div>
 
@@ -494,7 +645,7 @@ watch(
                     </label>
 
                     <label class="block">
-                        <span class="mb-1 block text-xs font-semibold text-slate-600">Observa&#231;&#245;es</span>
+                        <span class="mb-1 block text-xs font-semibold text-slate-600">Observações</span>
                         <textarea v-model="bookingForm.notes" rows="3" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Detalhes importantes para o atendimento" />
                         <p v-if="bookingForm.errors.notes" class="mt-1 text-xs text-rose-600">{{ bookingForm.errors.notes }}</p>
                     </label>
@@ -517,12 +668,12 @@ watch(
 
                 <div v-if="bookingDetails" class="space-y-3 text-sm text-slate-700">
                     <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p class="text-xs font-semibold text-slate-500">C&#243;digo</p>
+                        <p class="text-xs font-semibold text-slate-500">Código</p>
                         <p class="font-semibold text-slate-900">#{{ bookingDetails.code }}</p>
                     </div>
 
                     <div class="rounded-xl border border-slate-200 bg-white p-3">
-                        <p class="text-xs text-slate-500">Servi&#231;o</p>
+                        <p class="text-xs text-slate-500">Serviço</p>
                         <p class="font-semibold text-slate-900">{{ bookingDetails.service_name }}</p>
                         <p class="mt-2 text-xs text-slate-500">Data e hora</p>
                         <p class="font-semibold text-slate-900">{{ bookingDetails.scheduled_label }}</p>
@@ -531,11 +682,22 @@ watch(
                     </div>
 
                     <div class="rounded-xl border border-slate-200 bg-white p-3">
-                        <p class="text-xs text-slate-500">Observa&#231;&#245;es</p>
-                        <p>{{ bookingDetails.notes || 'Sem observa\u00e7\u00f5es.' }}</p>
+                        <p class="text-xs text-slate-500">Observações</p>
+                        <p>{{ bookingDetails.notes || 'Sem observações.' }}</p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </template>
+
+<style scoped>
+.service-chip-scroll {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.service-chip-scroll::-webkit-scrollbar {
+    display: none;
+}
+</style>

@@ -7,17 +7,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class AccountingFeeEntry extends Model
+class AccountingClientProfile extends Model
 {
     use HasFactory, SoftDeletes;
-
-    public const STATUS_PENDING = 'pending';
-
-    public const STATUS_PAID = 'paid';
-
-    public const STATUS_OVERDUE = 'overdue';
-
-    public const STATUS_CANCELLED = 'cancelled';
 
     /**
      * @var list<string>
@@ -25,21 +17,18 @@ class AccountingFeeEntry extends Model
     protected $fillable = [
         'contractor_id',
         'client_id',
-        'reference_label',
-        'due_date',
-        'amount',
-        'paid_amount',
-        'status',
-        'recurrence_frequency',
-        'recurrence_interval',
-        'next_reference_date',
-        'adjustment_type',
-        'adjustment_value',
+        'service_regime',
+        'contract_number',
+        'contract_start_date',
+        'contract_end_date',
+        'monthly_fee',
+        'billing_day',
+        'sla_hours',
+        'responsible_name',
+        'responsible_email',
+        'responsible_phone',
         'reminder_email_enabled',
         'reminder_whatsapp_enabled',
-        'overdue_notified_at',
-        'paid_at',
-        'notes',
         'metadata',
     ];
 
@@ -49,16 +38,13 @@ class AccountingFeeEntry extends Model
     protected function casts(): array
     {
         return [
-            'due_date' => 'date',
-            'amount' => 'decimal:2',
-            'paid_amount' => 'decimal:2',
-            'recurrence_interval' => 'integer',
-            'next_reference_date' => 'date',
-            'adjustment_value' => 'decimal:4',
+            'contract_start_date' => 'date',
+            'contract_end_date' => 'date',
+            'monthly_fee' => 'decimal:2',
+            'billing_day' => 'integer',
+            'sla_hours' => 'integer',
             'reminder_email_enabled' => 'boolean',
             'reminder_whatsapp_enabled' => 'boolean',
-            'overdue_notified_at' => 'datetime',
-            'paid_at' => 'datetime',
             'metadata' => 'array',
         ];
     }

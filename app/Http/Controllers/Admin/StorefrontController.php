@@ -26,7 +26,7 @@ class StorefrontController extends Controller
     public function edit(Request $request): Response
     {
         $contractor = $this->resolveCurrentContractor($request);
-        abort_unless($contractor, 404, 'Contratante ativo nao encontrado.');
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
         $supportsShipping = $contractor->niche() === Contractor::NICHE_COMMERCIAL;
 
         $settings = is_array($contractor->settings) ? $contractor->settings : [];
@@ -93,7 +93,7 @@ class StorefrontController extends Controller
     public function update(Request $request): RedirectResponse
     {
         $contractor = $this->resolveCurrentContractor($request);
-        abort_unless($contractor, 404, 'Contratante ativo nao encontrado.');
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
         $supportsShipping = $contractor->niche() === Contractor::NICHE_COMMERCIAL;
 
         $section = strtolower(trim((string) $request->input('section', 'storefront')));

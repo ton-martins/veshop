@@ -154,12 +154,21 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
                 Route::post('/accounting/obligations', [AccountingController::class, 'storeObligation'])->name('accounting.obligations.store');
                 Route::put('/accounting/obligations/{accountingObligation}', [AccountingController::class, 'updateObligation'])->name('accounting.obligations.update');
                 Route::delete('/accounting/obligations/{accountingObligation}', [AccountingController::class, 'destroyObligation'])->name('accounting.obligations.destroy');
+                Route::post('/accounting/client-profiles', [AccountingController::class, 'storeClientProfile'])->name('accounting.client-profiles.store');
+                Route::put('/accounting/client-profiles/{client}', [AccountingController::class, 'updateClientProfile'])->name('accounting.client-profiles.update');
+                Route::delete('/accounting/client-profiles/{client}', [AccountingController::class, 'destroyClientProfile'])->name('accounting.client-profiles.destroy');
+                Route::post('/accounting/templates', [AccountingController::class, 'storeTemplate'])->name('accounting.templates.store');
+                Route::put('/accounting/templates/{accountingServiceTemplate}', [AccountingController::class, 'updateTemplate'])->name('accounting.templates.update');
+                Route::delete('/accounting/templates/{accountingServiceTemplate}', [AccountingController::class, 'destroyTemplate'])->name('accounting.templates.destroy');
+                Route::post('/accounting/automation/recurring-fees', [AccountingController::class, 'processRecurringFees'])->name('accounting.automation.recurring-fees');
+                Route::post('/accounting/automation/reminders', [AccountingController::class, 'processReminders'])->name('accounting.automation.reminders');
             });
 
             Route::middleware('contractor.module:documents')->group(function (): void {
                 Route::post('/accounting/documents', [AccountingController::class, 'storeDocument'])->name('accounting.documents.store');
                 Route::put('/accounting/documents/{accountingDocumentRequest}', [AccountingController::class, 'updateDocument'])->name('accounting.documents.update');
                 Route::delete('/accounting/documents/{accountingDocumentRequest}', [AccountingController::class, 'destroyDocument'])->name('accounting.documents.destroy');
+                Route::post('/accounting/documents/{accountingDocumentRequest}/versions', [AccountingController::class, 'storeDocumentVersion'])->name('accounting.documents.versions.store');
             });
         });
     });

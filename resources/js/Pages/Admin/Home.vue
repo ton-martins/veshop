@@ -102,6 +102,41 @@ const serviceTemplateCopy = computed(() => {
     };
 });
 
+const serviceOverviewCopy = computed(() => {
+    if (activeOverviewTemplate.value === 'services_accounting') {
+        return {
+            title: 'Operação contábil e gestão de clientes',
+            subtitle: 'Acompanhe carteira, demandas e agenda em um único painel.',
+        };
+    }
+
+    if (activeOverviewTemplate.value === 'services_barbershop') {
+        return {
+            title: 'Operação da barbearia',
+            subtitle: 'Visualize agenda, atendimentos e evolução dos serviços do dia.',
+        };
+    }
+
+    if (activeOverviewTemplate.value === 'services_auto_electric') {
+        return {
+            title: 'Operação da autoelétrica',
+            subtitle: 'Centralize ordens, agendamentos e andamento dos atendimentos.',
+        };
+    }
+
+    if (activeOverviewTemplate.value === 'services_mechanic') {
+        return {
+            title: 'Operação da oficina mecânica',
+            subtitle: 'Controle de ordens, agenda técnica e status de execução.',
+        };
+    }
+
+    return {
+        title: 'Operação de serviços',
+        subtitle: 'Gerencie atendimento, agenda e serviços em uma visão central.',
+    };
+});
+
 const commercialTemplateCopy = computed(() => {
     if (activeOverviewTemplate.value === 'commercial_confectionery') {
         return {
@@ -205,6 +240,7 @@ const asCurrency = (value) =>
 const canViewServiceOrders = computed(() => hasModule('service_orders'));
 const canViewServiceSchedule = computed(() => hasModule('schedule'));
 const canViewServiceCatalog = computed(() => hasModule('services_catalog'));
+const canViewServiceStorefront = computed(() => hasModule('services_storefront'));
 
 const serviceStats = computed(() => {
     const stats = props.overview?.services?.stats ?? {};
@@ -254,6 +290,48 @@ const serviceStats = computed(() => {
 });
 
 const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
+const serviceQuickLinks = computed(() => {
+    const links = [];
+
+    if (canViewServiceCatalog.value) {
+        links.push({
+            key: 'catalog',
+            label: 'Catálogo de serviços',
+            href: route('admin.services.catalog'),
+            tone: 'secondary',
+        });
+    }
+
+    if (canViewServiceOrders.value) {
+        links.push({
+            key: 'orders',
+            label: 'Ordens de serviço',
+            href: route('admin.services.orders'),
+            tone: 'secondary',
+        });
+    }
+
+    if (canViewServiceSchedule.value) {
+        links.push({
+            key: 'schedule',
+            label: 'Agenda de serviços',
+            href: route('admin.services.schedule'),
+            tone: 'secondary',
+        });
+    }
+
+    if (canViewServiceStorefront.value) {
+        links.push({
+            key: 'storefront',
+            label: 'Configurar loja virtual',
+            href: route('admin.storefront.index'),
+            tone: 'primary',
+        });
+    }
+
+    return links;
+});
+
 const storefrontPublicUrl = computed(() => {
     const slug = String(currentContractor.value?.slug ?? '').trim();
     if (!slug) return '/';
@@ -335,6 +413,29 @@ const storefrontPublicUrl = computed(() => {
                         </button>
                     </div>
                 </div>
+
+                <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+                    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div class="space-y-2">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Visão geral de serviços</p>
+                            <h2 class="text-base font-semibold text-slate-900">{{ serviceOverviewCopy.title }}</h2>
+                            <p class="text-sm text-slate-600">{{ serviceOverviewCopy.subtitle }}</p>
+                        </div>
+                        <div v-if="serviceQuickLinks.length" class="flex flex-wrap items-center gap-2">
+                            <Link
+                                v-for="quickLink in serviceQuickLinks"
+                                :key="`service-quick-link-${quickLink.key}`"
+                                :href="quickLink.href"
+                                class="inline-flex items-center rounded-xl px-3 py-2 text-xs font-semibold transition"
+                                :class="quickLink.tone === 'primary'
+                                    ? 'bg-slate-900 text-white hover:bg-slate-800'
+                                    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                            >
+                                {{ quickLink.label }}
+                            </Link>
+                        </div>
+                    </div>
+                </section>
 
                 <template v-if="serviceActiveTab === 'storefront'">
                     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">

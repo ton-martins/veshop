@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class AccountingObligation extends Model
@@ -29,6 +30,14 @@ class AccountingObligation extends Model
 
     public const PRIORITY_CRITICAL = 'critical';
 
+    public const STAGE_BACKLOG = 'backlog';
+
+    public const STAGE_IN_PROGRESS = 'in_progress';
+
+    public const STAGE_REVIEW = 'review';
+
+    public const STAGE_DONE = 'done';
+
     /**
      * @var list<string>
      */
@@ -41,6 +50,11 @@ class AccountingObligation extends Model
         'due_date',
         'status',
         'priority',
+        'stage_code',
+        'assigned_to_name',
+        'started_at',
+        'reminder_at',
+        'last_reminder_at',
         'completed_at',
         'notes',
         'metadata',
@@ -54,6 +68,9 @@ class AccountingObligation extends Model
         return [
             'competence_date' => 'date',
             'due_date' => 'date',
+            'started_at' => 'datetime',
+            'reminder_at' => 'datetime',
+            'last_reminder_at' => 'datetime',
             'completed_at' => 'datetime',
             'metadata' => 'array',
         ];
@@ -67,5 +84,10 @@ class AccountingObligation extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function histories(): HasMany
+    {
+        return $this->hasMany(AccountingTaskHistory::class, 'accounting_obligation_id');
     }
 }
