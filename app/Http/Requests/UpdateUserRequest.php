@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\User;
+use App\Support\BrazilData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -21,11 +22,19 @@ class UpdateUserRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
+        $phone = BrazilData::normalizePhone($this->input('phone'));
+        $cpf = BrazilData::normalizeCpfCnpj($this->input('cpf'));
+
         if ($this->has('is_active')) {
             $this->merge([
                 'is_active' => $this->boolean('is_active'),
             ]);
         }
+
+        $this->merge([
+            'cpf' => $cpf !== '' ? $cpf : null,
+            'phone' => $phone !== '' ? $phone : null,
+        ]);
     }
 
     /**
@@ -51,12 +60,13 @@ class UpdateUserRequest extends FormRequest
                 'max:255',
                 Rule::unique('users', 'email')->ignore($targetUserId),
             ],
-            'cpf' => ['nullable', 'string', 'max:20'],
-            'phone' => ['nullable', 'string', 'max:32'],
+            'cpf' => ['nullable', 'string', 'size:14', 'regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/'],
+            'phone' => ['nullable', 'string', 'max:32', 'regex:/^\(\d{2}\)\s\d{5}-\d{4}$/'],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
             'role' => ['required', Rule::in(User::roles())],
             'job_title' => ['nullable', 'string', 'max:120'],
             'address' => ['nullable', 'array'],
+            'address.cep' => ['nullable', 'string', 'regex:/^\d{5}-\d{3}$/'],
             'preferences' => ['nullable', 'array'],
             'avatar_url' => ['nullable', 'url', 'max:2048'],
             'avatar' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:2048'],

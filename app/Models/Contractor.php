@@ -48,6 +48,8 @@ class Contractor extends Model
         'cnpj',
         'slug',
         'plan_id',
+        'contract_starts_at',
+        'contract_ends_at',
         'timezone',
         'address',
         'brand_name',
@@ -68,6 +70,8 @@ class Contractor extends Model
             'address' => 'array',
             'settings' => 'array',
             'is_active' => 'boolean',
+            'contract_starts_at' => 'date',
+            'contract_ends_at' => 'date',
         ];
     }
 

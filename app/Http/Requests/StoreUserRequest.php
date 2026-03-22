@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\User;
+use App\Support\BrazilData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -22,9 +23,13 @@ class StoreUserRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $isActive = $this->boolean('is_active', true);
+        $phone = BrazilData::normalizePhone($this->input('phone'));
+        $cpf = BrazilData::normalizeCpfCnpj($this->input('cpf'));
 
         $this->merge([
             'is_active' => $isActive,
+            'cpf' => $cpf !== '' ? $cpf : null,
+            'phone' => $phone !== '' ? $phone : null,
         ]);
     }
 
@@ -40,12 +45,13 @@ class StoreUserRequest extends FormRequest
             'contractor_ids.*' => ['integer', 'exists:contractors,id'],
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email'],
-            'cpf' => ['nullable', 'string', 'max:20'],
-            'phone' => ['nullable', 'string', 'max:32'],
+            'cpf' => ['nullable', 'string', 'size:14', 'regex:/^\d{3}\.\d{3}\.\d{3}-\d{2}$/'],
+            'phone' => ['nullable', 'string', 'max:32', 'regex:/^\(\d{2}\)\s\d{5}-\d{4}$/'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'role' => ['required', Rule::in(User::roles())],
             'job_title' => ['nullable', 'string', 'max:120'],
             'address' => ['nullable', 'array'],
+            'address.cep' => ['nullable', 'string', 'regex:/^\d{5}-\d{3}$/'],
             'preferences' => ['nullable', 'array'],
             'avatar_url' => ['nullable', 'url', 'max:2048'],
             'avatar' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:2048'],

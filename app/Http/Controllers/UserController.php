@@ -28,6 +28,7 @@ class UserController extends Controller
         $contractorId = trim((string) $request->string('contractor_id')->toString());
 
         $query = User::query()->with('contractors:id,name');
+        $query->whereKeyNot((int) $request->user()->id);
 
         if ($search !== '') {
             $query->where(function ($innerQuery) use ($search): void {

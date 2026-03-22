@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Master;
 
 use App\Models\Contractor;
+use App\Support\BrazilData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -21,8 +22,11 @@ class UpdateContractorRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
+        $phone = BrazilData::normalizePhone($this->input('phone'));
         $cnpj = preg_replace('/\D+/', '', (string) $this->input('cnpj', ''));
         $brandPrimaryColor = strtoupper(trim((string) $this->input('brand_primary_color', '')));
+        $contractStartsAt = trim((string) $this->input('contract_starts_at', ''));
+        $contractEndsAt = trim((string) $this->input('contract_ends_at', ''));
 
         if ($brandPrimaryColor !== '' && ! str_starts_with($brandPrimaryColor, '#')) {
             $brandPrimaryColor = "#{$brandPrimaryColor}";
@@ -31,10 +35,12 @@ class UpdateContractorRequest extends FormRequest
         $this->merge([
             'slug' => trim((string) $this->input('slug', '')),
             'email' => strtolower(trim((string) $this->input('email', ''))),
-            'phone' => trim((string) $this->input('phone', '')),
+            'phone' => $phone !== '' ? $phone : null,
             'cnpj' => $cnpj !== '' ? $cnpj : null,
             'brand_name' => trim((string) $this->input('brand_name', '')),
             'brand_primary_color' => $brandPrimaryColor,
+            'contract_starts_at' => $contractStartsAt !== '' ? $contractStartsAt : null,
+            'contract_ends_at' => $contractEndsAt !== '' ? $contractEndsAt : null,
             'business_type' => strtolower(trim((string) $this->input('business_type', ''))),
             'override_user_limit' => $this->nullableInteger('override_user_limit'),
             'override_storage_limit_gb' => $this->nullableInteger('override_storage_limit_gb'),
@@ -65,11 +71,12 @@ class UpdateContractorRequest extends FormRequest
                 'max:255',
                 Rule::unique('contractors', 'email')->ignore($contractorId),
             ],
-            'phone' => ['nullable', 'string', 'max:32'],
+            'phone' => ['nullable', 'string', 'max:32', 'regex:/^\(\d{2}\)\s\d{5}-\d{4}$/'],
             'cnpj' => [
                 'nullable',
                 'string',
                 'size:14',
+                'regex:/^\d{14}$/',
                 Rule::unique('contractors', 'cnpj')->ignore($contractorId),
             ],
             'slug' => [
@@ -81,6 +88,8 @@ class UpdateContractorRequest extends FormRequest
             'timezone' => ['required', 'timezone'],
             'brand_name' => ['nullable', 'string', 'max:180'],
             'brand_primary_color' => ['nullable', 'regex:/^#([A-Fa-f0-9]{6})$/'],
+            'contract_starts_at' => ['nullable', 'date', 'required_with:contract_ends_at'],
+            'contract_ends_at' => ['nullable', 'date', 'after_or_equal:contract_starts_at'],
             'business_niche' => ['required', Rule::in(Contractor::availableNiches())],
             'business_type' => ['required', Rule::in($allowedBusinessTypes)],
             'plan_id' => [

@@ -195,20 +195,13 @@ const limitText = (plan) => {
     return `${plan.user_limit} usuário(s)`;
 };
 
-const featureLine = (feature) => {
-    const label = String(feature?.label ?? '').trim();
-    const value = String(feature?.value ?? '').trim();
-
-    if (!label) return value;
-    if (!value) return label;
-
-    return `${label}: ${value}`;
-};
-
 const topFeatures = (plan) => {
     return (Array.isArray(plan?.features) ? plan.features : [])
-        .map(featureLine)
-        .filter(Boolean);
+        .map((feature) => ({
+            label: String(feature?.label ?? '').trim(),
+            value: String(feature?.value ?? '').trim(),
+        }))
+        .filter((feature) => feature.label || feature.value);
 };
 </script>
 
@@ -289,7 +282,10 @@ const topFeatures = (plan) => {
                                             <ul class="list-unstyled mb-0">
                                                 <li v-for="(feature, featureIndex) in topFeatures(plan)" :key="`${plan.id}-${featureIndex}`" class="d-flex align-items-start gap-2 mb-2">
                                                     <i class="ri-checkbox-circle-fill text-success mt-1"></i>
-                                                    <span>{{ feature }}</span>
+                                                    <span class="plan-feature-copy">
+                                                        <span class="plan-feature-title">{{ feature.label || feature.value }}</span>
+                                                        <span v-if="feature.label && feature.value" class="plan-feature-description">{{ feature.value }}</span>
+                                                    </span>
                                                 </li>
                                                 <li v-if="!topFeatures(plan).length" class="text-muted small">
                                                     Nenhum benefício configurado ainda.
@@ -376,6 +372,24 @@ const topFeatures = (plan) => {
 .plan-price {
     font-size: clamp(1.55rem, 3.3vw, 2.25rem);
     line-height: 1.15;
+}
+
+.plan-feature-copy {
+    display: inline-flex;
+    flex-direction: column;
+    line-height: 1.25;
+}
+
+.plan-feature-title {
+    color: #0f172a;
+    font-weight: 600;
+}
+
+.plan-feature-description {
+    margin-top: 0.1rem;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.35;
 }
 
 @media (max-width: 767.98px) {

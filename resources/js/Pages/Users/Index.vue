@@ -6,6 +6,7 @@ import UiSelect from '@/Components/App/UiSelect.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
+import { formatCpfCnpjBR, formatPhoneBR, isValidPhoneMaskBR } from '@/utils/br';
 import {
     CheckCircle2,
     ChevronLeft,
@@ -187,6 +188,7 @@ const avatarImageFailed = ref(false);
 const avatarFileInput = ref(null);
 const avatarUploadPreview = ref('');
 const contractorSearch = ref('');
+const contractorSelect = ref('');
 
 const userForm = useForm(buildFormDefaults());
 const deleteForm = useForm({});
@@ -227,12 +229,15 @@ const filteredContractors = computed(() => {
     return list.filter((contractor) => String(contractor?.name ?? '').toLowerCase().includes(search));
 });
 
-const selectedContractorNames = computed(() => {
+const selectedContractors = computed(() => {
     const selectedIds = new Set((userForm.contractor_ids ?? []).map((id) => Number(id)));
 
     return (props.contractors ?? [])
         .filter((contractor) => selectedIds.has(Number(contractor.id)))
-        .map((contractor) => contractor.name);
+        .map((contractor) => ({
+            id: Number(contractor.id),
+            name: String(contractor.name ?? ''),
+        }));
 });
 
 const isContractorSelected = (contractorId) => {
@@ -240,16 +245,40 @@ const isContractorSelected = (contractorId) => {
     return (userForm.contractor_ids ?? []).some((id) => Number(id) === numericId);
 };
 
-const toggleContractor = (contractorId) => {
-    const numericId = Number(contractorId);
-    const selected = (userForm.contractor_ids ?? []).map((id) => Number(id));
+const contractorSelectOptions = computed(() => ([
+    {
+        value: '',
+        label: filteredContractors.value.some((contractor) => !isContractorSelected(contractor.id))
+            ? 'Selecione um contratante'
+            : 'Nenhum contratante disponível',
+    },
+    ...filteredContractors.value
+        .filter((contractor) => !isContractorSelected(contractor.id))
+        .map((contractor) => ({
+        value: String(contractor.id),
+        label: String(contractor.name ?? ''),
+        })),
+]));
 
-    if (selected.includes(numericId)) {
-        userForm.contractor_ids = selected.filter((id) => id !== numericId);
+const addSelectedContractor = () => {
+    const selectedId = Number(contractorSelect.value);
+    if (selectedId <= 0) return;
+    if (isContractorSelected(selectedId)) {
+        contractorSelect.value = '';
         return;
     }
 
-    userForm.contractor_ids = [...selected, numericId];
+    const selected = (userForm.contractor_ids ?? []).map((id) => Number(id));
+    userForm.contractor_ids = [...selected, selectedId];
+    userForm.clearErrors('contractor_ids');
+    contractorSelect.value = '';
+};
+
+const removeSelectedContractor = (contractorId) => {
+    const numericId = Number(contractorId);
+    const selected = (userForm.contractor_ids ?? []).map((id) => Number(id));
+    userForm.contractor_ids = selected.filter((id) => id !== numericId);
+    userForm.clearErrors('contractor_ids');
 };
 
 const openAvatarPicker = () => {
@@ -295,11 +324,15 @@ const avatarInitials = computed(() => {
         .join('');
 });
 
-const formattedCep = computed(() => {
-    const digits = String(addressForm.value.cep ?? '').replace(/\D/g, '').slice(0, 8);
+const normalizeCepDigits = (value) => String(value ?? '').replace(/\D/g, '').slice(0, 8);
+const formatCepMask = (value) => {
+    const digits = normalizeCepDigits(value);
     if (digits.length <= 5) return digits;
     return `${digits.slice(0, 5)}-${digits.slice(5)}`;
-});
+};
+const isValidCepMaskBR = (value) => /^\d{5}-\d{3}$/.test(String(value ?? '').trim());
+
+const formattedCep = computed(() => formatCepMask(addressForm.value.cep));
 
 const canAdvance = computed(() => {
     if (currentStep.value === 1) {
@@ -327,12 +360,32 @@ onBeforeUnmount(() => {
     clearAvatarUploadPreview();
 });
 
-const normalizeCep = (value) => String(value ?? '').replace(/\D/g, '').slice(0, 8);
+const isValidCpfMaskBR = (value) => /^\d{3}\.\d{3}\.\d{3}-\d{2}$/.test(String(value ?? '').trim());
+
+const formatCpf = (value) => {
+    const digits = String(value ?? '').replace(/\D/g, '').slice(0, 11);
+    return formatCpfCnpjBR(digits);
+};
+
+const onCpfInput = (event) => {
+    userForm.cpf = formatCpf(event?.target?.value ?? userForm.cpf);
+    userForm.clearErrors('cpf');
+};
+
+const onPhoneInput = (event) => {
+    userForm.phone = formatPhoneBR(event?.target?.value ?? userForm.phone);
+    userForm.clearErrors('phone');
+};
+
+const onCepInput = (event) => {
+    addressForm.value.cep = formatCepMask(event?.target?.value ?? addressForm.value.cep);
+    cepLookupError.value = '';
+};
 
 const setAddressFromPayload = (address) => {
     const source = address && typeof address === 'object' ? address : {};
 
-    addressForm.value.cep = String(source.cep ?? source.zip_code ?? source.postal_code ?? '').replace(/\D/g, '').slice(0, 8);
+    addressForm.value.cep = formatCepMask(String(source.cep ?? source.zip_code ?? source.postal_code ?? ''));
     addressForm.value.street = String(source.street ?? source.address_line ?? '').trim();
     addressForm.value.number = String(source.number ?? '').trim();
     addressForm.value.complement = String(source.complement ?? '').trim();
@@ -343,7 +396,7 @@ const setAddressFromPayload = (address) => {
 
 const buildAddressPayload = () => {
     const payload = {
-        cep: normalizeCep(addressForm.value.cep),
+        cep: formatCepMask(addressForm.value.cep),
         street: String(addressForm.value.street ?? '').trim(),
         number: String(addressForm.value.number ?? '').trim(),
         complement: String(addressForm.value.complement ?? '').trim(),
@@ -368,6 +421,7 @@ const resetWizard = () => {
     jsonError.value = '';
     avatarImageFailed.value = false;
     contractorSearch.value = '';
+    contractorSelect.value = '';
     clearAvatarUploadPreview();
     userForm.avatar = null;
     if (avatarFileInput.value) {
@@ -389,8 +443,8 @@ const openEdit = (user) => {
     editingUser.value = user;
     userForm.name = user.name ?? '';
     userForm.email = user.email ?? '';
-    userForm.cpf = user.cpf ?? '';
-    userForm.phone = user.phone ?? '';
+    userForm.cpf = formatCpf(user.cpf ?? '');
+    userForm.phone = formatPhoneBR(user.phone ?? '');
     userForm.password = '';
     userForm.password_confirmation = '';
     userForm.role = user.role ?? props.roles?.[0] ?? 'admin';
@@ -441,8 +495,8 @@ const goPreviousStep = () => {
 const lookupCep = async () => {
     cepLookupError.value = '';
 
-    const cep = normalizeCep(addressForm.value.cep);
-    addressForm.value.cep = cep;
+    const cep = normalizeCepDigits(addressForm.value.cep);
+    addressForm.value.cep = formatCepMask(cep);
 
     if (!cep) return;
 
@@ -484,6 +538,25 @@ const lookupCep = async () => {
 const submitUser = () => {
     jsonError.value = '';
     cepLookupError.value = '';
+    userForm.clearErrors('cpf', 'phone');
+    userForm.cpf = formatCpf(userForm.cpf);
+    userForm.phone = formatPhoneBR(userForm.phone);
+    addressForm.value.cep = formatCepMask(addressForm.value.cep);
+
+    if (userForm.cpf && !isValidCpfMaskBR(userForm.cpf)) {
+        userForm.setError('cpf', 'Informe o CPF no formato 000.000.000-00.');
+        return;
+    }
+
+    if (userForm.phone && !isValidPhoneMaskBR(userForm.phone)) {
+        userForm.setError('phone', 'Informe o telefone no formato (11) 99999-9999.');
+        return;
+    }
+
+    if (addressForm.value.cep && !isValidCepMaskBR(addressForm.value.cep)) {
+        cepLookupError.value = 'Informe o CEP no formato 00000-000.';
+        return;
+    }
 
     try {
         userForm.address = buildAddressPayload();
@@ -784,8 +857,12 @@ const destroyUser = () => {
                         <input
                             v-model="userForm.cpf"
                             type="text"
+                            inputmode="numeric"
+                            maxlength="14"
+                            pattern="^\d{3}\.\d{3}\.\d{3}-\d{2}$"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="Somente números"
+                            placeholder="000.000.000-00"
+                            @input="onCpfInput"
                         >
                         <InputError :message="userForm.errors.cpf" class="mt-1" />
                     </div>
@@ -795,8 +872,12 @@ const destroyUser = () => {
                         <input
                             v-model="userForm.phone"
                             type="text"
+                            inputmode="tel"
+                            maxlength="15"
+                            pattern="^\(\d{2}\)\s\d{5}-\d{4}$"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                             placeholder="(00) 00000-0000"
+                            @input="onPhoneInput"
                         >
                         <InputError :message="userForm.errors.phone" class="mt-1" />
                     </div>
@@ -954,34 +1035,34 @@ const destroyUser = () => {
                                 </button>
                             </div>
 
-                            <div class="mt-2 max-h-40 space-y-2 overflow-y-auto pr-1">
+                            <div class="mt-2 flex items-center gap-2">
+                                <UiSelect
+                                    v-model="contractorSelect"
+                                    :options="contractorSelectOptions"
+                                    class="w-full"
+                                    button-class="text-sm"
+                                />
                                 <button
-                                    v-for="contractor in filteredContractors"
-                                    :key="`contractor-select-${contractor.id}`"
                                     type="button"
-                                    class="flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-xs font-semibold transition"
-                                    :class="isContractorSelected(contractor.id) ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
-                                    @click="toggleContractor(contractor.id)"
+                                    class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="!contractorSelect"
+                                    @click="addSelectedContractor"
                                 >
-                                    <span class="truncate">{{ contractor.name }}</span>
-                                    <span class="text-[10px]">
-                                        {{ isContractorSelected(contractor.id) ? 'Selecionado' : 'Selecionar' }}
-                                    </span>
+                                    Adicionar
                                 </button>
-
-                                <p v-if="!filteredContractors.length" class="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
-                                    Nenhum contratante encontrado na pesquisa.
-                                </p>
                             </div>
 
-                            <div v-if="selectedContractorNames.length" class="mt-2 flex flex-wrap gap-1.5">
-                                <span
-                                    v-for="name in selectedContractorNames"
-                                    :key="`selected-contractor-${name}`"
-                                    class="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600"
+                            <div v-if="selectedContractors.length" class="mt-2 flex flex-wrap gap-1.5">
+                                <button
+                                    v-for="contractor in selectedContractors"
+                                    :key="`selected-contractor-${contractor.id}`"
+                                    type="button"
+                                    class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
+                                    @click="removeSelectedContractor(contractor.id)"
                                 >
-                                    {{ name }}
-                                </span>
+                                    {{ contractor.name }}
+                                    <X class="h-3 w-3" />
+                                </button>
                             </div>
 
                             <InputError :message="userForm.errors.contractor_ids" class="mt-2" />
@@ -1004,8 +1085,11 @@ const destroyUser = () => {
                                         v-model="addressForm.cep"
                                         type="text"
                                         inputmode="numeric"
+                                        maxlength="9"
+                                        pattern="^\d{5}-\d{3}$"
                                         class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                                         placeholder="00000-000"
+                                        @input="onCepInput"
                                         @blur="lookupCep"
                                     >
                                     <button
@@ -1183,5 +1267,4 @@ const destroyUser = () => {
         />
     </AuthenticatedLayout>
 </template>
-
 

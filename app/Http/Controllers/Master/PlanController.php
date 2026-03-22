@@ -10,7 +10,11 @@ use App\Models\Plan;
 use App\Services\ContractorCapabilitiesService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -284,6 +288,163 @@ class PlanController extends Controller
         return back()->with('status', 'Plano atualizado com sucesso.');
     }
 
+    public function bulkUpdate(Request $request): RedirectResponse
+    {
+        $this->authorizeManager($request);
+
+        $rawPlans = $request->input('plans', []);
+        if (! is_array($rawPlans) || count($rawPlans) === 0) {
+            throw ValidationException::withMessages([
+                'general' => 'Nenhum plano foi informado para salvamento.',
+            ]);
+        }
+
+        $entries = [];
+
+        foreach ($rawPlans as $index => $rawPlan) {
+            if (! is_array($rawPlan)) {
+                throw ValidationException::withMessages([
+                    "plans.{$index}" => 'Formato de plano inválido.',
+                ]);
+            }
+
+            $planId = isset($rawPlan['id']) && is_numeric($rawPlan['id'])
+                ? (int) $rawPlan['id']
+                : null;
+
+            $plan = $planId !== null
+                ? Plan::query()->find($planId)
+                : null;
+
+            if ($planId !== null && $plan === null) {
+                throw ValidationException::withMessages([
+                    "plans.{$index}.id" => 'Plano não encontrado.',
+                ]);
+            }
+
+            $prepared = $this->preparePlanPayload($rawPlan);
+            $niche = $this->normalizeNiche((string) ($prepared['niche'] ?? Plan::defaultNiche()));
+
+            $validator = Validator::make(
+                $prepared,
+                $this->validationRulesForPayload($niche, $plan?->id)
+            );
+
+            if ($validator->fails()) {
+                $errorBag = [];
+
+                foreach ($validator->errors()->messages() as $field => $messages) {
+                    $message = (string) ($messages[0] ?? 'Valor inválido.');
+                    $errorBag["plans.{$index}.{$field}"] = $message;
+                }
+
+                throw ValidationException::withMessages($errorBag);
+            }
+
+            $entries[] = [
+                'index' => $index,
+                'plan' => $plan,
+                'raw' => $rawPlan,
+                'data' => $validator->validated(),
+            ];
+        }
+
+        DB::transaction(function () use ($entries): void {
+            foreach ($entries as $entry) {
+                $plan = $entry['plan'];
+                $raw = $entry['raw'];
+                $data = $entry['data'];
+
+                $slugBase = $data['slug'] ?: $data['name'];
+                $features = $this->parseFeatures(
+                    featuresText: $data['features_text'] ?? null,
+                    featuresInput: $data['features'] ?? null
+                );
+                $userLimit = $data['user_limit'] ?? null;
+                $tierRank = $data['tier_rank'] ?? 0;
+                $niche = $this->normalizeNiche((string) $data['niche']);
+
+                if ($plan === null) {
+                    $submittedModuleCodes = array_key_exists('module_codes', $raw)
+                        ? ($data['module_codes'] ?? [])
+                        : $this->contractorCapabilitiesService->defaultPlanModuleCodes($niche);
+                } else {
+                    $plan->loadMissing('modules:id,code,is_active');
+
+                    $existingModuleCodes = $plan->modules
+                        ->where('is_active', true)
+                        ->pluck('code')
+                        ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+                        ->filter()
+                        ->values()
+                        ->all();
+
+                    $submittedModuleCodes = array_key_exists('module_codes', $raw)
+                        ? ($data['module_codes'] ?? [])
+                        : $existingModuleCodes;
+                }
+
+                $moduleCodes = $this->contractorCapabilitiesService->resolvePlanModuleCodesForPersistence(
+                    $niche,
+                    $submittedModuleCodes,
+                );
+                $moduleIds = $this->contractorCapabilitiesService->resolveModuleIdsFromCodes($moduleCodes);
+
+                if ($plan === null) {
+                    $plan = Plan::query()->create([
+                        'niche' => $niche,
+                        'name' => $data['name'],
+                        'slug' => $this->resolveUniqueSlug($slugBase, $niche),
+                        'badge' => $this->nullIfBlank($data['badge'] ?? null),
+                        'subtitle' => $this->nullIfBlank($data['subtitle'] ?? null),
+                        'summary' => $this->nullIfBlank($data['summary'] ?? null),
+                        'footer_message' => $this->nullIfBlank($data['footer_message'] ?? null),
+                        'price_monthly' => $data['price_monthly'] ?? null,
+                        'max_admin_users' => $data['max_admin_users'] ?? $userLimit,
+                        'user_limit' => $userLimit,
+                        'storage_limit_gb' => $data['storage_limit_gb'] ?? null,
+                        'audit_log_retention_days' => $data['audit_log_retention_days'] ?? null,
+                        'description' => $this->nullIfBlank($data['description'] ?? null),
+                        'features' => $features,
+                        'is_active' => $data['is_active'],
+                        'is_featured' => $data['is_featured'] ?? false,
+                        'show_on_landing' => $data['show_on_landing'] ?? false,
+                        'tier_rank' => $tierRank,
+                        'sort_order' => $data['sort_order'] ?? $tierRank,
+                    ]);
+                } else {
+                    $plan->fill([
+                        'niche' => $niche,
+                        'name' => $data['name'],
+                        'slug' => $this->resolveUniqueSlug($slugBase, $niche, $plan->id),
+                        'badge' => $this->nullIfBlank($data['badge'] ?? null),
+                        'subtitle' => $this->nullIfBlank($data['subtitle'] ?? null),
+                        'summary' => $this->nullIfBlank($data['summary'] ?? null),
+                        'footer_message' => $this->nullIfBlank($data['footer_message'] ?? null),
+                        'price_monthly' => $data['price_monthly'] ?? null,
+                        'max_admin_users' => $data['max_admin_users'] ?? $userLimit,
+                        'user_limit' => $userLimit,
+                        'storage_limit_gb' => $data['storage_limit_gb'] ?? null,
+                        'audit_log_retention_days' => $data['audit_log_retention_days'] ?? null,
+                        'description' => $this->nullIfBlank($data['description'] ?? null),
+                        'features' => $features,
+                        'is_active' => $data['is_active'],
+                        'is_featured' => $data['is_featured'] ?? false,
+                        'show_on_landing' => $data['show_on_landing'] ?? false,
+                        'tier_rank' => $tierRank,
+                        'sort_order' => $data['sort_order'] ?? $tierRank,
+                    ])->save();
+                }
+
+                $plan->modules()->sync($moduleIds);
+                $this->syncPlanNameIntoContractors($plan);
+                $this->syncPlanModulesIntoContractors($plan);
+            }
+        });
+
+        return back()->with('status', 'Todos os planos foram salvos com sucesso.');
+    }
+
     /**
      * Remove the specified plan from storage.
      */
@@ -302,6 +463,154 @@ class PlanController extends Controller
         return redirect()
             ->route('master.plans.index')
             ->with('status', 'Plano removido com sucesso.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validationRulesForPayload(string $niche, ?int $ignorePlanId = null): array
+    {
+        return [
+            'niche' => ['required', Rule::in(Plan::availableNiches())],
+            'name' => [
+                'required',
+                'string',
+                'max:120',
+                Rule::unique('plans', 'name')
+                    ->where(static fn ($query) => $query->where('niche', $niche))
+                    ->ignore($ignorePlanId),
+            ],
+            'slug' => [
+                'nullable',
+                'string',
+                'max:140',
+                Rule::unique('plans', 'slug')
+                    ->where(static fn ($query) => $query->where('niche', $niche))
+                    ->ignore($ignorePlanId),
+            ],
+            'badge' => ['nullable', 'string', 'max:80'],
+            'subtitle' => ['nullable', 'string', 'max:180'],
+            'summary' => ['nullable', 'string', 'max:2000'],
+            'footer_message' => ['nullable', 'string', 'max:2000'],
+            'price_monthly' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'max_admin_users' => ['nullable', 'integer', 'min:1', 'max:1000000'],
+            'user_limit' => ['nullable', 'integer', 'min:1', 'max:1000000'],
+            'storage_limit_gb' => ['nullable', 'integer', 'min:1', 'max:1000000000'],
+            'audit_log_retention_days' => ['nullable', 'integer', 'min:1', 'max:1000000'],
+            'description' => ['nullable', 'string', 'max:2000'],
+            'features_text' => ['nullable', 'string', 'max:8000'],
+            'features' => ['nullable', 'array'],
+            'features.*.label' => ['nullable', 'string', 'max:120'],
+            'features.*.value' => ['nullable', 'string', 'max:255'],
+            'features.*.icon' => ['nullable', 'string', 'max:64'],
+            'features.*.enabled' => ['nullable', 'boolean'],
+            'module_codes' => ['nullable', 'array'],
+            'module_codes.*' => [
+                'string',
+                'max:80',
+                Rule::exists('modules', 'code')->where(static function ($query) {
+                    $query->where('is_active', true);
+                }),
+            ],
+            'is_active' => ['required', 'boolean'],
+            'is_featured' => ['required', 'boolean'],
+            'show_on_landing' => ['required', 'boolean'],
+            'tier_rank' => ['nullable', 'integer', 'min:0', 'max:1000000'],
+            'sort_order' => ['nullable', 'integer', 'min:0', 'max:1000000'],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function preparePlanPayload(array $payload): array
+    {
+        $slug = trim((string) ($payload['slug'] ?? ''));
+        $rawNiche = strtolower(trim((string) ($payload['niche'] ?? '')));
+
+        $prepared = [
+            'niche' => $rawNiche !== '' ? $rawNiche : Plan::defaultNiche(),
+            'name' => trim((string) ($payload['name'] ?? '')),
+            'slug' => $slug !== '' ? $slug : null,
+            'badge' => trim((string) ($payload['badge'] ?? '')),
+            'subtitle' => trim((string) ($payload['subtitle'] ?? '')),
+            'summary' => trim((string) ($payload['summary'] ?? '')),
+            'footer_message' => trim((string) ($payload['footer_message'] ?? '')),
+            'price_monthly' => $this->nullableDecimal($payload['price_monthly'] ?? null),
+            'max_admin_users' => $this->nullableIntegerValue($payload['max_admin_users'] ?? null),
+            'user_limit' => $this->nullableIntegerValue($payload['user_limit'] ?? null),
+            'storage_limit_gb' => $this->nullableIntegerValue($payload['storage_limit_gb'] ?? null),
+            'audit_log_retention_days' => $this->nullableIntegerValue($payload['audit_log_retention_days'] ?? null),
+            'description' => trim((string) ($payload['description'] ?? '')),
+            'features_text' => isset($payload['features_text']) ? (string) $payload['features_text'] : null,
+            'features' => is_array($payload['features'] ?? null) ? $payload['features'] : null,
+            'is_active' => $this->toBool($payload['is_active'] ?? true),
+            'is_featured' => $this->toBool($payload['is_featured'] ?? false),
+            'show_on_landing' => $this->toBool($payload['show_on_landing'] ?? false),
+            'tier_rank' => $this->nullableIntegerValue($payload['tier_rank'] ?? null),
+            'sort_order' => $this->nullableIntegerValue($payload['sort_order'] ?? null),
+        ];
+
+        if (array_key_exists('module_codes', $payload)) {
+            $moduleCodes = is_array($payload['module_codes']) ? $payload['module_codes'] : [];
+            $prepared['module_codes'] = collect($moduleCodes)
+                ->map(static fn (mixed $value): string => strtolower(trim((string) $value)))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        return $prepared;
+    }
+
+    private function nullableIntegerValue(mixed $value): ?int
+    {
+        if ($value === '' || $value === null) {
+            return null;
+        }
+
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
+    private function nullableDecimal(mixed $value): ?float
+    {
+        if ($value === '' || $value === null) {
+            return null;
+        }
+
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        return (float) $value;
+    }
+
+    private function toBool(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return (int) $value === 1;
+        }
+
+        $normalized = strtolower(trim((string) $value));
+        if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+            return true;
+        }
+
+        if (in_array($normalized, ['0', 'false', 'no', 'off', ''], true)) {
+            return false;
+        }
+
+        return false;
     }
 
     private function authorizeManager(Request $request): void

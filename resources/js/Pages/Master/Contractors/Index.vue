@@ -128,6 +128,8 @@ const showModal = ref(false);
 const editingContractor = ref(null);
 const showDeleteModal = ref(false);
 const contractorToDelete = ref(null);
+const contractorWizardSteps = ['Dados do contratante', 'Plano de assinatura'];
+const contractorWizardStep = ref(1);
 
 const contractorForm = useForm({
     name: '',
@@ -138,6 +140,8 @@ const contractorForm = useForm({
     timezone: 'America/Sao_Paulo',
     brand_name: '',
     brand_primary_color: '#073341',
+    contract_starts_at: '',
+    contract_ends_at: '',
     business_niche: props.niches?.[0]?.value ?? 'commercial',
     business_type: '',
     plan_id: '',
@@ -146,6 +150,58 @@ const contractorForm = useForm({
     override_audit_log_retention_days: '',
     is_active: true,
 });
+
+const timezoneFormOptions = [
+    { value: 'America/Noronha', label: 'Fernando de Noronha (UTC-02:00)' },
+    { value: 'America/Sao_Paulo', label: 'São Paulo, Brasília (UTC-03:00)' },
+    { value: 'America/Bahia', label: 'Bahia (UTC-03:00)' },
+    { value: 'America/Fortaleza', label: 'Fortaleza (UTC-03:00)' },
+    { value: 'America/Belem', label: 'Belém (UTC-03:00)' },
+    { value: 'America/Manaus', label: 'Manaus (UTC-04:00)' },
+    { value: 'America/Campo_Grande', label: 'Campo Grande (UTC-04:00)' },
+    { value: 'America/Cuiaba', label: 'Cuiabá (UTC-04:00)' },
+    { value: 'America/Porto_Velho', label: 'Porto Velho (UTC-04:00)' },
+    { value: 'America/Boa_Vista', label: 'Boa Vista (UTC-04:00)' },
+    { value: 'America/Rio_Branco', label: 'Rio Branco (UTC-05:00)' },
+];
+
+const digitsOnly = (value, maxLength = 99) => String(value ?? '').replace(/\D+/g, '').slice(0, maxLength);
+
+const normalizeBrandColor = (value) => {
+    const raw = String(value ?? '').trim();
+    const match = raw.match(/^#?[0-9a-fA-F]{6}$/);
+    if (!match) return '#073341';
+
+    return `#${match[0].replace('#', '').toUpperCase()}`;
+};
+
+const formatPhone = (value) => {
+    const digits = digitsOnly(value, 11);
+    if (!digits) return '';
+    if (digits.length <= 2) return `(${digits}`;
+    if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+};
+
+const formatCnpj = (value) => {
+    const digits = digitsOnly(value, 14);
+    if (!digits) return '';
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+    if (digits.length <= 8) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
+    if (digits.length <= 12) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
+
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+};
+
+const onPhoneInput = (event) => {
+    contractorForm.phone = formatPhone(event?.target?.value ?? contractorForm.phone);
+};
+
+const onCnpjInput = (event) => {
+    contractorForm.cnpj = formatCnpj(event?.target?.value ?? contractorForm.cnpj);
+};
 const deleteForm = useForm({});
 const formPlans = computed(() => {
     return (props.plans ?? []).filter((plan) => plan.niche === contractorForm.business_niche);
@@ -203,10 +259,13 @@ watch(
 
 const openCreate = () => {
     editingContractor.value = null;
+    contractorWizardStep.value = 1;
     contractorForm.reset();
     contractorForm.clearErrors();
     contractorForm.timezone = 'America/Sao_Paulo';
-    contractorForm.brand_primary_color = '#073341';
+    contractorForm.brand_primary_color = normalizeBrandColor('#073341');
+    contractorForm.contract_starts_at = '';
+    contractorForm.contract_ends_at = '';
     contractorForm.business_niche = props.niches?.[0]?.value ?? 'commercial';
     contractorForm.business_type = businessTypeFormOptions.value[0]?.value ?? '';
     contractorForm.plan_id = '';
@@ -219,14 +278,17 @@ const openCreate = () => {
 
 const openEdit = (contractor) => {
     editingContractor.value = contractor;
+    contractorWizardStep.value = 1;
     contractorForm.name = contractor.name ?? '';
     contractorForm.email = contractor.email ?? '';
-    contractorForm.phone = contractor.phone ?? '';
-    contractorForm.cnpj = contractor.cnpj ?? '';
+    contractorForm.phone = formatPhone(contractor.phone ?? '');
+    contractorForm.cnpj = formatCnpj(contractor.cnpj ?? '');
     contractorForm.slug = contractor.slug ?? '';
     contractorForm.timezone = contractor.timezone ?? 'America/Sao_Paulo';
     contractorForm.brand_name = contractor.brand_name ?? '';
-    contractorForm.brand_primary_color = contractor.brand_primary_color ?? '#073341';
+    contractorForm.brand_primary_color = normalizeBrandColor(contractor.brand_primary_color ?? '#073341');
+    contractorForm.contract_starts_at = contractor.contract_starts_at ?? '';
+    contractorForm.contract_ends_at = contractor.contract_ends_at ?? '';
     contractorForm.business_niche = contractor.business_niche ?? 'commercial';
     contractorForm.business_type = contractor.business_type ?? (businessTypeFormOptions.value[0]?.value ?? '');
     contractorForm.plan_id = contractor.plan_id ?? '';
@@ -241,9 +303,39 @@ const openEdit = (contractor) => {
 const closeModal = () => {
     showModal.value = false;
     editingContractor.value = null;
+    contractorWizardStep.value = 1;
+};
+
+const goToWizardStep = (step) => {
+    contractorWizardStep.value = Math.min(Math.max(Number(step) || 1, 1), contractorWizardSteps.length);
+};
+
+const nextWizardStep = () => {
+    goToWizardStep(contractorWizardStep.value + 1);
+};
+
+const previousWizardStep = () => {
+    goToWizardStep(contractorWizardStep.value - 1);
 };
 
 const submitContractor = () => {
+    contractorForm.clearErrors('phone', 'cnpj', 'brand_primary_color');
+
+    const phoneRegex = /^\(\d{2}\)\s\d{5}-\d{4}$/;
+    const cnpjRegex = /^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/;
+
+    if (contractorForm.phone && !phoneRegex.test(contractorForm.phone)) {
+        contractorForm.setError('phone', 'Informe no formato (00) 00000-0000.');
+        return;
+    }
+
+    if (contractorForm.cnpj && !cnpjRegex.test(contractorForm.cnpj)) {
+        contractorForm.setError('cnpj', 'Informe no formato 00.000.000/0000-00.');
+        return;
+    }
+
+    contractorForm.brand_primary_color = normalizeBrandColor(contractorForm.brand_primary_color);
+
     if (isEditing.value) {
         contractorForm.put(route('master.contractors.update', editingContractor.value.id), {
             preserveScroll: true,
@@ -449,16 +541,18 @@ const formatMoney = (value) => {
                 <PaginationLinks :links="paginationLinks" :min-links="4" />
             </section>
         </section>
-
         <Modal :show="showModal" max-width="5xl" @close="closeModal">
             <WizardModalFrame
                 :title="isEditing ? 'Editar contratante' : 'Novo contratante'"
                 description="Preencha os dados do contratante."
-                :steps="['Dados do contratante']"
-                :current-step="1"
+                :steps="contractorWizardSteps"
+                :current-step="contractorWizardStep"
+                :steps-clickable="true"
+                :max-clickable-step="contractorWizardSteps.length"
+                @step-change="goToWizardStep"
                 @close="closeModal"
             >
-                <div class="grid gap-3 md:grid-cols-2">
+                <div v-if="contractorWizardStep === 1" class="grid gap-3 md:grid-cols-2">
                     <div class="md:col-span-2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
                         <input
@@ -469,7 +563,6 @@ const formatMoney = (value) => {
                         >
                         <p v-if="contractorForm.errors.name" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.name }}</p>
                     </div>
-
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">E-mail</label>
                         <input
@@ -480,29 +573,34 @@ const formatMoney = (value) => {
                         >
                         <p v-if="contractorForm.errors.email" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.email }}</p>
                     </div>
-
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone</label>
                         <input
                             v-model="contractorForm.phone"
                             type="text"
+                            inputmode="tel"
+                            maxlength="15"
+                            pattern="^\(\d{2}\)\s\d{5}-\d{4}$"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                             placeholder="(00) 00000-0000"
+                            @input="onPhoneInput"
                         >
                         <p v-if="contractorForm.errors.phone" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.phone }}</p>
                     </div>
-
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">CNPJ</label>
                         <input
                             v-model="contractorForm.cnpj"
                             type="text"
+                            inputmode="numeric"
+                            maxlength="18"
+                            pattern="^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="Somente números"
+                            placeholder="00.000.000/0000-00"
+                            @input="onCnpjInput"
                         >
                         <p v-if="contractorForm.errors.cnpj" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.cnpj }}</p>
                     </div>
-
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Slug (opcional)</label>
                         <input
@@ -513,18 +611,15 @@ const formatMoney = (value) => {
                         >
                         <p v-if="contractorForm.errors.slug" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.slug }}</p>
                     </div>
-
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Timezone</label>
-                        <input
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Fuso horário</label>
+                        <UiSelect
                             v-model="contractorForm.timezone"
-                            type="text"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="America/Sao_Paulo"
-                        >
+                            :options="timezoneFormOptions"
+                            button-class="mt-1 w-full text-sm"
+                        />
                         <p v-if="contractorForm.errors.timezone" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.timezone }}</p>
                     </div>
-
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome da marca</label>
                         <input
@@ -535,18 +630,21 @@ const formatMoney = (value) => {
                         >
                         <p v-if="contractorForm.errors.brand_name" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.brand_name }}</p>
                     </div>
-
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cor principal</label>
-                        <input
-                            v-model="contractorForm.brand_primary_color"
-                            type="text"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="#073341"
-                        >
+                        <div class="mt-1 flex items-center gap-3">
+                            <input
+                                v-model="contractorForm.brand_primary_color"
+                                type="color"
+                                class="h-10 w-14 cursor-pointer rounded-lg border border-slate-200 bg-white p-1"
+                                aria-label="Selecionar cor principal"
+                            >
+                            <span class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-600">
+                                {{ contractorForm.brand_primary_color }}
+                            </span>
+                        </div>
                         <p v-if="contractorForm.errors.brand_primary_color" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.brand_primary_color }}</p>
                     </div>
-
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nicho</label>
                         <UiSelect
@@ -556,7 +654,6 @@ const formatMoney = (value) => {
                         />
                         <p v-if="contractorForm.errors.business_niche" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.business_niche }}</p>
                     </div>
-
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo de contratante</label>
                         <UiSelect
@@ -566,8 +663,9 @@ const formatMoney = (value) => {
                         />
                         <p v-if="contractorForm.errors.business_type" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.business_type }}</p>
                     </div>
-
-                    <div>
+                </div>
+                <div v-else class="grid gap-3 md:grid-cols-2">
+                    <div class="md:col-span-2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Plano ativo</label>
                         <UiSelect
                             v-model="contractorForm.plan_id"
@@ -579,7 +677,24 @@ const formatMoney = (value) => {
                         </p>
                         <p v-if="contractorForm.errors.plan_id" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.plan_id }}</p>
                     </div>
-
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Início do contrato</label>
+                        <input
+                            v-model="contractorForm.contract_starts_at"
+                            type="date"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        >
+                        <p v-if="contractorForm.errors.contract_starts_at" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.contract_starts_at }}</p>
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Término do contrato</label>
+                        <input
+                            v-model="contractorForm.contract_ends_at"
+                            type="date"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        >
+                        <p v-if="contractorForm.errors.contract_ends_at" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.contract_ends_at }}</p>
+                    </div>
                     <div class="md:col-span-2">
                         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
                             <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Overrides de limite (opcional)</p>
@@ -626,13 +741,13 @@ const formatMoney = (value) => {
                             </div>
                         </div>
                     </div>
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+                            <input v-model="contractorForm.is_active" type="checkbox" class="rounded border-slate-300">
+                            Contratante ativo
+                        </label>
+                    </div>
                 </div>
-
-                <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
-                    <input v-model="contractorForm.is_active" type="checkbox" class="rounded border-slate-300">
-                    Contratante ativo
-                </label>
-
                 <template #footer>
                     <div class="flex items-center justify-end gap-2">
                         <button
@@ -643,6 +758,23 @@ const formatMoney = (value) => {
                             Cancelar
                         </button>
                         <button
+                            v-if="contractorWizardStep > 1"
+                            type="button"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="previousWizardStep"
+                        >
+                            Voltar
+                        </button>
+                        <button
+                            v-if="contractorWizardStep < contractorWizardSteps.length"
+                            type="button"
+                            class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                            @click="nextWizardStep"
+                        >
+                            Próxima etapa
+                        </button>
+                        <button
+                            v-else
                             type="button"
                             class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                             :disabled="contractorForm.processing"
@@ -666,3 +798,5 @@ const formatMoney = (value) => {
         />
     </AuthenticatedLayout>
 </template>
+
+

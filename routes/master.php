@@ -22,6 +22,9 @@ Route::middleware(['auth', '2fa', 'verified', 'role:master'])
         Route::resource('contractors', ContractorController::class)
             ->except(['show', 'create', 'edit']);
 
+        Route::put('plans/bulk-update', [PlanController::class, 'bulkUpdate'])
+            ->name('plans.bulk-update');
+
         Route::resource('plans', PlanController::class)
             ->except(['show', 'create', 'edit']);
 
