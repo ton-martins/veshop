@@ -186,9 +186,12 @@ class PlanController extends Controller
         $userLimit = $data['user_limit'] ?? null;
         $tierRank = $data['tier_rank'] ?? 0;
         $niche = $this->normalizeNiche($data['niche']);
+        $submittedModuleCodes = $request->has('module_codes')
+            ? ($data['module_codes'] ?? [])
+            : $this->contractorCapabilitiesService->defaultPlanModuleCodes($niche);
         $moduleCodes = $this->contractorCapabilitiesService->resolvePlanModuleCodesForPersistence(
             $niche,
-            $data['module_codes'] ?? [],
+            $submittedModuleCodes,
         );
         $moduleIds = $this->contractorCapabilitiesService->resolveModuleIdsFromCodes($moduleCodes);
 
@@ -235,9 +238,20 @@ class PlanController extends Controller
         $userLimit = $data['user_limit'] ?? null;
         $tierRank = $data['tier_rank'] ?? 0;
         $niche = $this->normalizeNiche($data['niche']);
+        $plan->loadMissing('modules:id,code,is_active');
+        $existingModuleCodes = $plan->modules
+            ->where('is_active', true)
+            ->pluck('code')
+            ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+            ->filter()
+            ->values()
+            ->all();
+        $submittedModuleCodes = $request->has('module_codes')
+            ? ($data['module_codes'] ?? [])
+            : $existingModuleCodes;
         $moduleCodes = $this->contractorCapabilitiesService->resolvePlanModuleCodesForPersistence(
             $niche,
-            $data['module_codes'] ?? [],
+            $submittedModuleCodes,
         );
         $moduleIds = $this->contractorCapabilitiesService->resolveModuleIdsFromCodes($moduleCodes);
 
@@ -482,3 +496,4 @@ class PlanController extends Controller
         }
     }
 }
+

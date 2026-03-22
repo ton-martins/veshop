@@ -23,16 +23,7 @@ class StorePlanRequest extends FormRequest
     {
         $slug = trim((string) $this->input('slug', ''));
         $rawNiche = strtolower(trim((string) $this->input('niche', '')));
-        $moduleCodes = $this->input('module_codes', []);
-        $moduleCodes = is_array($moduleCodes) ? $moduleCodes : [];
-        $moduleCodes = collect($moduleCodes)
-            ->map(static fn (mixed $value): string => strtolower(trim((string) $value)))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-
-        $this->merge([
+        $mergePayload = [
             'niche' => $rawNiche !== '' ? $rawNiche : Plan::defaultNiche(),
             'slug' => $slug !== '' ? $slug : null,
             'badge' => trim((string) $this->input('badge', '')),
@@ -46,8 +37,22 @@ class StorePlanRequest extends FormRequest
             'storage_limit_gb' => $this->nullableInteger('storage_limit_gb'),
             'audit_log_retention_days' => $this->nullableInteger('audit_log_retention_days'),
             'tier_rank' => $this->nullableInteger('tier_rank'),
-            'module_codes' => $moduleCodes,
-        ]);
+        ];
+
+        if ($this->has('module_codes')) {
+            $moduleCodes = $this->input('module_codes', []);
+            $moduleCodes = is_array($moduleCodes) ? $moduleCodes : [];
+            $moduleCodes = collect($moduleCodes)
+                ->map(static fn (mixed $value): string => strtolower(trim((string) $value)))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            $mergePayload['module_codes'] = $moduleCodes;
+        }
+
+        $this->merge($mergePayload);
     }
 
     /**

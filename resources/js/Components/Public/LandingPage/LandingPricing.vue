@@ -208,8 +208,7 @@ const featureLine = (feature) => {
 const topFeatures = (plan) => {
     return (Array.isArray(plan?.features) ? plan.features : [])
         .map(featureLine)
-        .filter(Boolean)
-        .slice(0, 5);
+        .filter(Boolean);
 };
 </script>
 
@@ -288,7 +287,7 @@ const topFeatures = (plan) => {
                                             </h4>
 
                                             <ul class="list-unstyled mb-0">
-                                                <li v-for="feature in topFeatures(plan)" :key="`${plan.id}-${feature}`" class="d-flex align-items-start gap-2 mb-2">
+                                                <li v-for="(feature, featureIndex) in topFeatures(plan)" :key="`${plan.id}-${featureIndex}`" class="d-flex align-items-start gap-2 mb-2">
                                                     <i class="ri-checkbox-circle-fill text-success mt-1"></i>
                                                     <span>{{ feature }}</span>
                                                 </li>
