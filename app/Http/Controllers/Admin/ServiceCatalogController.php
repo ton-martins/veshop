@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
 use App\Models\Contractor;
 use App\Models\ServiceCatalog;
 use App\Models\ServiceCategory;
@@ -12,6 +13,8 @@ use Inertia\Response;
 
 class ServiceCatalogController extends Controller
 {
+    use ResolvesCurrentContractor;
+
     /**
      * Display a listing of service catalogs.
      */
@@ -111,33 +114,6 @@ class ServiceCatalogController extends Controller
         ]);
     }
 
-    private function resolveCurrentContractor(Request $request): ?Contractor
-    {
-        $user = $request->user();
-        if (! $user) {
-            return null;
-        }
-
-        $user->loadMissing('contractors');
-        $availableContractors = $user->contractors->values();
-
-        if ($availableContractors->isEmpty()) {
-            return null;
-        }
-
-        $sessionContractorId = (int) $request->session()->get('current_contractor_id', 0);
-        if ($sessionContractorId > 0) {
-            $selected = $availableContractors->firstWhere('id', $sessionContractorId);
-            if ($selected) {
-                return $selected;
-            }
-        }
-
-        $fallback = $availableContractors->first();
-        if ($fallback) {
-            $request->session()->put('current_contractor_id', $fallback->id);
-        }
-
-        return $fallback;
-    }
 }
+
+

@@ -3,13 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
 use App\Models\Client;
 use App\Models\CashSession;
 use App\Models\Contractor;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SalePayment;
+use App\Models\ServiceAppointment;
 use App\Models\ServiceCatalog;
+use App\Models\ServiceOrder;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -18,6 +21,8 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
+    use ResolvesCurrentContractor;
+
     /**
      * @var list<string>
      */
@@ -58,16 +63,80 @@ class DashboardController extends Controller
             ->where('contractor_id', $contractor->id)
             ->avg('base_price');
 
+        $servicesTimezoneNow = now($contractor->timezone);
+        $servicesTodayStart = $servicesTimezoneNow->copy()->startOfDay();
+        $servicesTodayEnd = $servicesTimezoneNow->copy()->endOfDay();
+        $servicesMonthStart = $servicesTimezoneNow->copy()->startOfMonth();
+        $servicesMonthEnd = $servicesTimezoneNow->copy()->endOfMonth();
+
+        $servicesOpenOrderStatuses = [
+            ServiceOrder::STATUS_OPEN,
+            ServiceOrder::STATUS_IN_PROGRESS,
+            ServiceOrder::STATUS_WAITING,
+        ];
+
+        $servicesOpenOrders = ServiceOrder::query()
+            ->where('contractor_id', $contractor->id)
+            ->whereIn('status', $servicesOpenOrderStatuses)
+            ->count();
+
+        $servicesTodayAppointments = ServiceAppointment::query()
+            ->where('contractor_id', $contractor->id)
+            ->whereBetween('starts_at', [$servicesTodayStart, $servicesTodayEnd])
+            ->count();
+
+        $servicesRevenue = (float) ServiceOrder::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('status', ServiceOrder::STATUS_DONE)
+            ->where(static function ($query) use ($servicesMonthStart, $servicesMonthEnd): void {
+                $query
+                    ->whereBetween('finished_at', [$servicesMonthStart, $servicesMonthEnd])
+                    ->orWhere(static function ($fallback) use ($servicesMonthStart, $servicesMonthEnd): void {
+                        $fallback
+                            ->whereNull('finished_at')
+                            ->whereBetween('updated_at', [$servicesMonthStart, $servicesMonthEnd]);
+                    });
+            })
+            ->sum('final_amount');
+
+        $servicesQueue = ServiceOrder::query()
+            ->where('contractor_id', $contractor->id)
+            ->whereIn('status', $servicesOpenOrderStatuses)
+            ->with([
+                'client:id,name',
+                'service:id,name',
+            ])
+            ->orderByRaw(
+                "CASE status WHEN ? THEN 0 WHEN ? THEN 1 WHEN ? THEN 2 ELSE 3 END",
+                [
+                    ServiceOrder::STATUS_OPEN,
+                    ServiceOrder::STATUS_IN_PROGRESS,
+                    ServiceOrder::STATUS_WAITING,
+                ]
+            )
+            ->orderByDesc('created_at')
+            ->limit(12)
+            ->get()
+            ->map(fn (ServiceOrder $order): array => [
+                'id' => (int) $order->id,
+                'code' => (string) $order->code,
+                'customer' => $order->client?->name ? (string) $order->client->name : 'Não informado',
+                'service' => $order->service?->name ? (string) $order->service->name : (string) $order->title,
+                'status' => $this->resolveServiceOrderStatusLabel((string) $order->status),
+            ])
+            ->values()
+            ->all();
+
         $servicesOverview = [
             'stats' => [
-                'open_orders' => 0,
-                'today' => 0,
+                'open_orders' => $servicesOpenOrders,
+                'today' => $servicesTodayAppointments,
                 'catalog' => $serviceCatalogCount,
-                'revenue' => 0,
+                'revenue' => round($servicesRevenue, 2),
                 'active_services' => $serviceActiveCount,
                 'avg_price' => $serviceAveragePrice !== null ? (float) $serviceAveragePrice : 0.0,
             ],
-            'queue' => [],
+            'queue' => $servicesQueue,
         ];
 
         $quickTotals = [
@@ -89,35 +158,6 @@ class DashboardController extends Controller
         ]);
     }
 
-    private function resolveCurrentContractor(Request $request): ?Contractor
-    {
-        $user = $request->user();
-        if (! $user) {
-            return null;
-        }
-
-        $user->loadMissing('contractors');
-        $availableContractors = $user->contractors->values();
-
-        if ($availableContractors->isEmpty()) {
-            return null;
-        }
-
-        $sessionContractorId = (int) $request->session()->get('current_contractor_id', 0);
-        if ($sessionContractorId > 0) {
-            $selected = $availableContractors->firstWhere('id', $sessionContractorId);
-            if ($selected) {
-                return $selected;
-            }
-        }
-
-        $fallback = $availableContractors->first();
-        if ($fallback) {
-            $request->session()->put('current_contractor_id', $fallback->id);
-        }
-
-        return $fallback;
-    }
 
     /**
      * @return array{
@@ -420,6 +460,18 @@ class DashboardController extends Controller
             'can_cancel' => $allowActions
                 && ! in_array($sale->status, [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED], true),
         ];
+    }
+
+    private function resolveServiceOrderStatusLabel(string $status): string
+    {
+        return match ($status) {
+            ServiceOrder::STATUS_OPEN => 'Triagem',
+            ServiceOrder::STATUS_IN_PROGRESS => 'Em execução',
+            ServiceOrder::STATUS_WAITING => 'Aguardando',
+            ServiceOrder::STATUS_DONE => 'Finalizada',
+            ServiceOrder::STATUS_CANCELLED => 'Cancelada',
+            default => ucfirst($status),
+        };
     }
 
     /**

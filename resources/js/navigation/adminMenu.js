@@ -141,10 +141,18 @@
         links: [
             {
                 key: 'admin-services-overview',
-                label: 'Visão geral',
+                label: 'Painel',
                 route: 'admin.services.index',
                 match: ['admin.services.index'],
                 icon: 'Clock3',
+                module: 'services',
+            },
+            {
+                key: 'admin-services-clients',
+                label: 'Clientes',
+                route: 'admin.clients.index',
+                match: ['admin.clients.*'],
+                icon: 'Users2',
                 module: 'services',
             },
             {
@@ -153,7 +161,7 @@
                 route: 'admin.services.catalog',
                 match: ['admin.services.catalog'],
                 icon: 'FileText',
-                module: 'services_catalog',
+                module: 'services',
             },
             {
                 key: 'admin-services-orders',
@@ -170,6 +178,14 @@
                 match: ['admin.services.schedule'],
                 icon: 'CalendarClock',
                 module: 'schedule',
+            },
+            {
+                key: 'admin-services-accounting',
+                label: 'Gestão Contábil',
+                route: 'admin.services.accounting',
+                match: ['admin.services.accounting', 'admin.services.accounting.*'],
+                icon: 'BookOpenCheck',
+                module: ['finance', 'tasks', 'documents'],
             },
         ],
     },

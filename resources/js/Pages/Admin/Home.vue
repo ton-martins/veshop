@@ -44,21 +44,76 @@ const enabledModules = computed(() => {
 const hasModule = (moduleCode) => enabledModules.value.includes(String(moduleCode ?? '').trim().toLowerCase());
 const hasAnyModule = (moduleCodes) => Array.isArray(moduleCodes) && moduleCodes.some((moduleCode) => hasModule(moduleCode));
 
-const dashboardProfileByType = {
-    store: 'commercial',
-    confectionery: 'commercial',
-    barbershop: 'services',
-    auto_electric: 'services',
-    mechanic: 'services',
-    accounting: 'services',
-    general_services: 'services',
+const overviewTemplateByBusinessType = {
+    store: 'commercial_store',
+    confectionery: 'commercial_confectionery',
+    barbershop: 'services_barbershop',
+    auto_electric: 'services_auto_electric',
+    mechanic: 'services_mechanic',
+    accounting: 'services_accounting',
+    general_services: 'services_general_services',
 };
 
-const dashboardProfile = computed(() => {
-    const byType = dashboardProfileByType[contractorBusinessType.value];
-    if (byType) return byType;
+const activeOverviewTemplate = computed(() => {
+    const mapped = overviewTemplateByBusinessType[contractorBusinessType.value];
+    if (mapped) return mapped;
 
-    return contractorNiche.value === 'services' ? 'services' : 'commercial';
+    return contractorNiche.value === 'services'
+        ? 'services_general_services'
+        : 'commercial_store';
+});
+
+const isCommercialOverview = computed(() =>
+    activeOverviewTemplate.value.startsWith('commercial_'),
+);
+
+const serviceTemplateCopy = computed(() => {
+    if (activeOverviewTemplate.value === 'services_accounting') {
+        return {
+            queueTitle: 'Fila de demandas contábeis',
+            queueEmpty: 'Nenhuma demanda contábil registrada.',
+        };
+    }
+
+    if (activeOverviewTemplate.value === 'services_barbershop') {
+        return {
+            queueTitle: 'Fila de atendimentos',
+            queueEmpty: 'Nenhum atendimento registrado.',
+        };
+    }
+
+    if (activeOverviewTemplate.value === 'services_auto_electric') {
+        return {
+            queueTitle: 'Fila da autoelétrica',
+            queueEmpty: 'Nenhuma ordem da autoelétrica registrada.',
+        };
+    }
+
+    if (activeOverviewTemplate.value === 'services_mechanic') {
+        return {
+            queueTitle: 'Fila da oficina',
+            queueEmpty: 'Nenhuma ordem da oficina registrada.',
+        };
+    }
+
+    return {
+        queueTitle: 'Fila de ordens de serviço',
+        queueEmpty: 'Nenhuma ordem de serviço registrada.',
+    };
+});
+
+const commercialTemplateCopy = computed(() => {
+    if (activeOverviewTemplate.value === 'commercial_confectionery') {
+        return {
+            operationsLabel: 'Confeitaria',
+            emptyModulesMessage: 'Nenhum módulo de confeitaria habilitado para este contratante.',
+        };
+    }
+
+    return {
+        operationsLabel: 'Loja virtual',
+        emptyModulesMessage: 'Nenhum módulo comercial habilitado para este contratante.',
+    };
 });
 
 const catalogUrl = computed(() => {
@@ -82,7 +137,7 @@ const commercialTabs = computed(() => {
     const tabs = [];
 
     if (hasAnyModule(['catalog', 'inventory', 'orders', 'crm'])) {
-        tabs.push({ key: 'operations', label: 'Loja virtual', icon: ShoppingBag });
+        tabs.push({ key: 'operations', label: commercialTemplateCopy.value.operationsLabel, icon: ShoppingBag });
     }
 
     if (hasModule('pdv')) {
@@ -127,7 +182,7 @@ const serviceStats = computed(() => {
             label: 'OS em aberto',
             value: String(stats.open_orders ?? 0),
             icon: ClipboardList,
-            tone: 'bg-amber-100 text-amber-700',
+            tone: 'text-slate-700',
         });
     }
 
@@ -137,7 +192,7 @@ const serviceStats = computed(() => {
             label: 'Atendimentos hoje',
             value: String(stats.today ?? 0),
             icon: Clock3,
-            tone: 'bg-blue-100 text-blue-700',
+            tone: 'text-slate-700',
         });
     }
 
@@ -147,7 +202,7 @@ const serviceStats = computed(() => {
             label: 'Serviços ativos',
             value: String(stats.active_services ?? 0),
             icon: Briefcase,
-            tone: 'bg-slate-100 text-slate-700',
+            tone: 'text-slate-700',
         });
     }
 
@@ -157,7 +212,7 @@ const serviceStats = computed(() => {
             label: 'Receita de serviços',
             value: asCurrency(stats.revenue ?? 0),
             icon: CircleDollarSign,
-            tone: 'bg-emerald-100 text-emerald-700',
+            tone: 'text-slate-700',
         });
     }
 
@@ -172,7 +227,7 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
 
     <AuthenticatedLayout area="admin" header-variant="compact" header-title="Visão Geral" :show-table-view-toggle="false">
         <section class="space-y-4" :style="overviewUiStyles">
-            <template v-if="dashboardProfile === 'commercial'">
+            <template v-if="isCommercialOverview">
                 <CatalogBanner
                     v-if="showCatalogBanner"
                     :contractor-name="contractorName"
@@ -212,7 +267,7 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
                     v-else
                     class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
                 >
-                    Nenhum módulo comercial habilitado para este contratante.
+                    {{ commercialTemplateCopy.emptyModulesMessage }}
                 </div>
             </template>
 
@@ -240,7 +295,7 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
 
                 <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                     <div class="flex flex-wrap items-center justify-between gap-3">
-                        <h2 class="text-sm font-semibold text-slate-900">Fila de ordens de serviço</h2>
+                        <h2 class="text-sm font-semibold text-slate-900">{{ serviceTemplateCopy.queueTitle }}</h2>
                         <div class="flex items-center gap-2">
                             <Link
                                 v-if="canViewServiceOrders"
@@ -306,7 +361,7 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
                         v-else
                         class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
                     >
-                        Nenhuma ordem de serviço registrada.
+                        {{ serviceTemplateCopy.queueEmpty }}
                     </div>
                 </section>
             </template>
@@ -369,4 +424,3 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
     color: #ffffff;
 }
 </style>
-

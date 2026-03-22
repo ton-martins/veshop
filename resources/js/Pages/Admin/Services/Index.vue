@@ -1,24 +1,68 @@
-﻿<script setup>
+<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import { Head, Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import { Briefcase, ClipboardList, Clock3, CircleDollarSign, ChevronRight } from 'lucide-vue-next';
 
-const stats = [
-    { key: 'services', label: 'Serviços cadastrados', value: '0', icon: Briefcase, tone: 'bg-slate-100 text-slate-700' },
-    { key: 'open', label: 'OS em aberto', value: '0', icon: ClipboardList, tone: 'bg-amber-100 text-amber-700' },
-    { key: 'today', label: 'Atendimentos hoje', value: '0', icon: Clock3, tone: 'bg-blue-100 text-blue-700' },
-    { key: 'revenue', label: 'Receita do mês', value: 'R$ 0,00', icon: CircleDollarSign, tone: 'bg-emerald-100 text-emerald-700' },
-];
+const props = defineProps({
+    stats: {
+        type: Object,
+        default: () => ({}),
+    },
+    pipeline: {
+        type: Array,
+        default: () => [],
+    },
+    todayAppointments: {
+        type: Array,
+        default: () => [],
+    },
+});
 
-const pipelines = [
-    { key: 'triagem', label: 'Triagem', qty: 0 },
-    { key: 'execucao', label: 'Em execução', qty: 0 },
-    { key: 'aguardo', label: 'Aguardando peça', qty: 0 },
-    { key: 'finalizacao', label: 'Finalização', qty: 0 },
-];
+const asCurrency = (value) =>
+    Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-const todayAppointments = [];
+const statsCards = computed(() => [
+    {
+        key: 'services',
+        label: 'Serviços cadastrados',
+        value: String(props.stats?.services ?? 0),
+        icon: Briefcase,
+        tone: 'text-slate-700',
+    },
+    {
+        key: 'open',
+        label: 'OS em aberto',
+        value: String(props.stats?.open ?? 0),
+        icon: ClipboardList,
+        tone: 'text-slate-700',
+    },
+    {
+        key: 'today',
+        label: 'Atendimentos hoje',
+        value: String(props.stats?.today ?? 0),
+        icon: Clock3,
+        tone: 'text-slate-700',
+    },
+    {
+        key: 'revenue',
+        label: 'Receita do mês',
+        value: asCurrency(props.stats?.revenue ?? 0),
+        icon: CircleDollarSign,
+        tone: 'text-slate-700',
+    },
+]);
+
+const pipelines = computed(() => {
+    if (!Array.isArray(props.pipeline)) {
+        return [];
+    }
+
+    return props.pipeline;
+});
+
+const todayAppointments = computed(() => (Array.isArray(props.todayAppointments) ? props.todayAppointments : []));
 </script>
 
 <template>
@@ -27,7 +71,7 @@ const todayAppointments = [];
     <AuthenticatedLayout area="admin" header-variant="compact" header-title="Serviços" :show-table-view-toggle="false">
         <section class="space-y-4">
             <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <article v-for="stat in stats" :key="stat.key" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <article v-for="stat in statsCards" :key="stat.key" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div class="flex items-start justify-between gap-3">
                         <div>
                             <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
@@ -50,11 +94,14 @@ const todayAppointments = [];
                         </Link>
                     </div>
 
-                    <div class="mt-4 grid gap-3 sm:grid-cols-2">
-                        <article v-for="pipeline in pipelines" :key="pipeline.key" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ pipeline.label }}</p>
-                            <p class="mt-1 text-2xl font-bold text-slate-900">{{ pipeline.qty }}</p>
+                    <div v-if="pipelines.length" class="mt-4 grid gap-3 sm:grid-cols-2">
+                        <article v-for="pipelineItem in pipelines" :key="pipelineItem.key" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ pipelineItem.label }}</p>
+                            <p class="mt-1 text-2xl font-bold text-slate-900">{{ pipelineItem.qty }}</p>
                         </article>
+                    </div>
+                    <div v-else class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                        Nenhuma ordem de serviço em andamento.
                     </div>
                 </section>
 
@@ -73,7 +120,11 @@ const todayAppointments = [];
                             <ChevronRight class="h-4 w-4" />
                         </Link>
                         <Link :href="route('admin.services.schedule')" class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-                            Agenda técnica
+                            Agenda de serviços
+                            <ChevronRight class="h-4 w-4" />
+                        </Link>
+                        <Link :href="route('admin.services.accounting')" class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                            Gestão contábil
                             <ChevronRight class="h-4 w-4" />
                         </Link>
                     </div>
@@ -82,7 +133,7 @@ const todayAppointments = [];
 
             <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                 <h2 class="text-sm font-semibold text-slate-900">Atendimentos de hoje</h2>
-                                <div class="mt-3 flex justify-end">
+                <div class="mt-3 flex justify-end">
                     <TableViewToggle />
                 </div>
 
@@ -94,12 +145,12 @@ const todayAppointments = [];
                                 <th class="px-4 py-3">Cliente</th>
                                 <th class="px-4 py-3">Serviço</th>
                                 <th class="px-4 py-3">Horário</th>
-                                <th class="px-4 py-3">Técnico</th>
+                                <th class="px-4 py-3">Responsável</th>
                             </tr>
                         </thead>
                         <tbody v-if="todayAppointments.length" class="divide-y divide-slate-100 bg-white">
                             <tr v-for="appointment in todayAppointments" :key="appointment.id">
-                                <td class="px-4 py-3 font-semibold text-slate-900">{{ appointment.id }}</td>
+                                <td class="px-4 py-3 font-semibold text-slate-900">{{ appointment.service_order_code }}</td>
                                 <td class="px-4 py-3 text-slate-700">{{ appointment.customer }}</td>
                                 <td class="px-4 py-3 text-slate-700">{{ appointment.service }}</td>
                                 <td class="px-4 py-3 text-slate-700">{{ appointment.time }}</td>

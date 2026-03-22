@@ -309,3 +309,37 @@ Ordem de implementação recomendada para a próxima fase:
 1. modelagem do domínio contábil gerencial (plano de contas, centros de custo e entidades base);
 2. definição dos fluxos operacionais mínimos (cadastros, lançamentos e conciliação por importação);
 3. fechamento da matriz de testes críticos e critérios de aceite da Fase 2 antes de implementar UI.
+
+## 12. Serviços: núcleo global x contábil
+
+### 12.1 Núcleo global de serviços (todas as empresas de serviços)
+
+Entregas estruturadas em 22/03/2026:
+
+1. **Ordens de serviço** (`service_orders`): cadastro, listagem, status, prioridade, responsável, previsão e valor final.
+2. **Agenda técnica** (`service_appointments`): compromissos com início/fim, vínculo opcional com OS, cliente e serviço.
+3. **Visão geral de serviços**: indicadores operacionais e pipeline conectado a dados reais.
+4. **Catálogo de serviços**: mantido como base do domínio para composição operacional.
+
+### 12.2 Módulos específicos de contabilidade
+
+Entregas estruturadas em 22/03/2026:
+
+1. **Honorários** (`accounting_fee_entries`): referência, vencimento, valor, valor pago e status.
+2. **Obrigações** (`accounting_obligations`): título, tipo, competência, vencimento, prioridade e status.
+3. **Documentos** (`accounting_document_requests`): solicitações por cliente, prazo e status de recebimento/validação.
+4. **Tela contábil com abas** (`/app/services/accounting`): visão consolidada para operação contábil gerencial.
+
+### 12.3 Regras de escopo e segurança
+
+1. Todas as tabelas novas são multi-tenant por `contractor_id`.
+2. Rotas protegidas por `contractor.module:*` e por validação de tipo de negócio contábil no backend.
+3. O módulo contábil não fiscal permanece no escopo gerencial (sem SPED/ECD/ECF nesta fase).
+
+### 12.4 Próximos passos recomendados (continuidade da fase contábil)
+
+1. Vincular upload real de arquivos em `accounting_document_requests` com storage por contratante e quota.
+2. Incluir edição completa nos registros contábeis (além do cadastro/exclusão inicial).
+3. Criar alertas automáticos de vencimento (notificações in-app/e-mail) para obrigações e honorários.
+4. Disponibilizar relatórios contábeis gerenciais: posição por carteira, inadimplência e SLA documental.
+5. Adicionar testes de fluxo crítico para ordens de serviço, agenda e módulo contábil.

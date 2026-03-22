@@ -44,6 +44,40 @@ const normalizeNiche = (value) => {
     return nicheValues.value.includes(safe) ? safe : defaultNiche.value;
 };
 
+const knownScopes = ['global', 'niche', 'specific'];
+const businessTypeLabels = {
+    store: 'Loja',
+    confectionery: 'Confeitaria',
+    barbershop: 'Barbearia',
+    auto_electric: 'Autoelétrica',
+    mechanic: 'Mecânica',
+    accounting: 'Contabilidade',
+    general_services: 'Serviços gerais',
+};
+
+const normalizeScope = (value) => {
+    const safe = String(value ?? '').trim().toLowerCase();
+    return knownScopes.includes(safe) ? safe : 'specific';
+};
+
+const normalizeBusinessTypes = (value) => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return Array.from(new Set(
+        value
+            .map((item) => String(item ?? '').trim().toLowerCase())
+            .filter(Boolean)
+    ));
+};
+
+const labelForBusinessType = (businessType) => {
+    const normalized = String(businessType ?? '').trim().toLowerCase();
+    if (!normalized) return '';
+    return businessTypeLabels[normalized] ?? normalized.replaceAll('_', ' ');
+};
+
 const buildFeature = () => ({
     label: '',
     value: '',
@@ -103,12 +137,16 @@ const catalog = computed(() => {
 
             const rawNiche = String(item?.niche ?? '').trim().toLowerCase();
             const niche = rawNiche && nicheValues.value.includes(rawNiche) ? rawNiche : null;
+            const scope = normalizeScope(item?.scope);
+            const business_types = normalizeBusinessTypes(item?.business_types);
 
             return {
                 code,
                 name: String(item?.name ?? code).trim() || code,
                 description: String(item?.description ?? '').trim(),
+                scope,
                 niche,
+                business_types,
                 is_default: Boolean(item?.is_default),
             };
         })
@@ -242,6 +280,45 @@ const featuresAsText = (plan) => {
 const featurePreview = (plan) => featuresForPayload(plan).filter((feature) => feature.enabled !== false).slice(0, 6);
 const selectedModuleCount = (plan) => resolveModuleCodes(plan.niche, plan.module_codes, false).length;
 const modulesForPlan = (plan) => modulesForNiche(plan.niche);
+const scopeOrder = { global: 0, niche: 1, specific: 2 };
+
+const sortedModules = (modules) => {
+    return [...modules].sort((a, b) => {
+        const scopeDiff = (scopeOrder[a.scope] ?? 99) - (scopeOrder[b.scope] ?? 99);
+        if (scopeDiff !== 0) return scopeDiff;
+        return String(a.name ?? '').localeCompare(String(b.name ?? ''));
+    });
+};
+
+const groupedModulesForPlan = (plan) => {
+    const modules = sortedModules(modulesForPlan(plan));
+
+    return [
+        {
+            key: 'global',
+            title: 'Módulos globais',
+            description: 'Recursos base válidos para qualquer nicho.',
+            modules: modules.filter((module) => module.scope === 'global'),
+        },
+        {
+            key: 'niche',
+            title: 'Módulos do nicho',
+            description: 'Recursos gerais do nicho selecionado para o plano.',
+            modules: modules.filter((module) => module.scope === 'niche'),
+        },
+        {
+            key: 'specific',
+            title: 'Módulos por tipo de negócio',
+            description: 'Recursos específicos para tipos de negócio do nicho.',
+            modules: modules.filter((module) => module.scope === 'specific'),
+        },
+    ].filter((group) => group.modules.length > 0);
+};
+
+const moduleBusinessTypeLabels = (module) => {
+    const values = Array.isArray(module?.business_types) ? module.business_types : [];
+    return values.map((businessType) => labelForBusinessType(businessType)).filter(Boolean);
+};
 
 const payload = (plan) => ({
     niche: normalizeNiche(plan.niche),
@@ -473,6 +550,14 @@ const modulesModalPlan = computed(() => {
     return plansState.value.find((plan) => plan.temp_id === modulesModalPlanId.value) ?? null;
 });
 
+const modulesModalGroups = computed(() => {
+    if (!modulesModalPlan.value) {
+        return [];
+    }
+
+    return groupedModulesForPlan(modulesModalPlan.value);
+});
+
 const openModulesModal = (plan) => {
     modulesModalPlanId.value = plan?.temp_id ?? '';
     modulesModalOpen.value = modulesModalPlanId.value !== '';
@@ -678,16 +763,29 @@ const closeModulesModal = () => {
                     </button>
                 </div>
 
-                <div v-if="modulesModalPlan && modulesForPlan(modulesModalPlan).length" class="grid gap-2 sm:grid-cols-2">
-                    <label v-for="module in modulesForPlan(modulesModalPlan)" :key="`module-modal-${modulesModalPlan.temp_id}-${module.code}`" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                        <span class="flex items-start gap-2">
-                            <input type="checkbox" class="mt-0.5 rounded border-slate-300" :checked="isModuleSelected(modulesModalPlan, module.code)" @change="toggleModule(modulesModalPlan, module.code)">
-                            <span class="space-y-0.5">
-                                <span class="block font-semibold text-slate-800">{{ module.name }}</span>
-                                <span v-if="module.description" class="block text-[11px] text-slate-500">{{ module.description }}</span>
-                            </span>
-                        </span>
-                    </label>
+                <div v-if="modulesModalPlan && modulesModalGroups.length" class="space-y-4">
+                    <section v-for="group in modulesModalGroups" :key="`module-group-${group.key}`" class="space-y-2">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-600">{{ group.title }}</p>
+                            <p class="text-[11px] text-slate-500">{{ group.description }}</p>
+                        </div>
+                        <div class="grid gap-2 sm:grid-cols-2">
+                            <label v-for="module in group.modules" :key="`module-modal-${modulesModalPlan.temp_id}-${module.code}`" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                                <span class="flex items-start gap-2">
+                                    <input type="checkbox" class="mt-0.5 rounded border-slate-300" :checked="isModuleSelected(modulesModalPlan, module.code)" @change="toggleModule(modulesModalPlan, module.code)">
+                                    <span class="space-y-1">
+                                        <span class="block font-semibold text-slate-800">{{ module.name }}</span>
+                                        <span v-if="module.description" class="block text-[11px] text-slate-500">{{ module.description }}</span>
+                                        <span v-if="module.scope === 'specific' && moduleBusinessTypeLabels(module).length" class="flex flex-wrap gap-1">
+                                            <span v-for="businessType in moduleBusinessTypeLabels(module)" :key="`module-type-${module.code}-${businessType}`" class="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                                                {{ businessType }}
+                                            </span>
+                                        </span>
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+                    </section>
                 </div>
 
                 <p v-else class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">

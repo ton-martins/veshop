@@ -32,20 +32,6 @@
                 match: ['master.plans.*'],
                 icon: 'ServerCog',
             },
-            {
-                key: 'master-billing',
-                label: 'Faturamento',
-                route: 'master.billing.index',
-                match: ['master.billing.*'],
-                icon: 'ReceiptText',
-            },
-            {
-                key: 'master-support',
-                label: 'Suporte',
-                route: 'master.support.index',
-                match: ['master.support.*'],
-                icon: 'LifeBuoy',
-            },
         ],
     },
     {

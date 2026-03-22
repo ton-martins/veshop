@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
 use App\Http\Requests\Admin\StoreCategoryRequest;
 use App\Http\Requests\Admin\UpdateCategoryRequest;
 use App\Models\Category;
@@ -18,6 +19,8 @@ use Inertia\Response;
 
 class CategoryController extends Controller
 {
+    use ResolvesCurrentContractor;
+
     /**
      * Display a listing of categories.
      */
@@ -172,35 +175,6 @@ class CategoryController extends Controller
         return back()->with('status', 'Categoria removida com sucesso.');
     }
 
-    private function resolveCurrentContractor(Request $request): ?Contractor
-    {
-        $user = $request->user();
-        if (! $user) {
-            return null;
-        }
-
-        $user->loadMissing('contractors');
-        $availableContractors = $user->contractors->values();
-
-        if ($availableContractors->isEmpty()) {
-            return null;
-        }
-
-        $sessionContractorId = (int) $request->session()->get('current_contractor_id', 0);
-        if ($sessionContractorId > 0) {
-            $selected = $availableContractors->firstWhere('id', $sessionContractorId);
-            if ($selected) {
-                return $selected;
-            }
-        }
-
-        $fallback = $availableContractors->first();
-        if ($fallback) {
-            $request->session()->put('current_contractor_id', $fallback->id);
-        }
-
-        return $fallback;
-    }
 
     private function resolveOwnedCategory(Contractor $contractor, Category $category): Category
     {
@@ -327,3 +301,5 @@ class CategoryController extends Controller
         return $flattened;
     }
 }
+
+

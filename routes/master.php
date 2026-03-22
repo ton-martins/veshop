@@ -6,7 +6,6 @@ use App\Http\Controllers\Master\BrandingController;
 use App\Http\Controllers\Master\PlanController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 Route::middleware(['auth', '2fa', 'verified', 'role:master'])
     ->prefix('master')
@@ -27,14 +26,6 @@ Route::middleware(['auth', '2fa', 'verified', 'role:master'])
 
         Route::resource('plans', PlanController::class)
             ->except(['show', 'create', 'edit']);
-
-        Route::get('/billing', function () {
-            return Inertia::render('Master/Billing/Index');
-        })->name('billing.index');
-
-        Route::get('/support', function () {
-            return Inertia::render('Master/Support/Index');
-        })->name('support.index');
 
         Route::get('/branding', [BrandingController::class, 'edit'])->name('branding.index');
         Route::put('/branding', [BrandingController::class, 'update'])->name('branding.update');

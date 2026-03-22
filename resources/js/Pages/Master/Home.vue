@@ -1,7 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, Link } from '@inertiajs/vue3';
 
 defineProps({
     totals: {
@@ -10,8 +9,6 @@ defineProps({
     },
 });
 
-const page = usePage();
-const userName = computed(() => page.props.auth?.user?.name ?? 'Usuário');
 </script>
 
 <template>
@@ -47,11 +44,11 @@ const userName = computed(() => page.props.auth?.user?.name ?? 'Usuário');
                 <Link class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700" :href="route('master.plans.index')">
                     Planos
                 </Link>
-                <Link class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700" :href="route('master.billing.index')">
-                    Faturamento
+                <Link class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700" :href="route('master.users.index')">
+                    Usuários
                 </Link>
-                <Link class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700" :href="route('master.support.index')">
-                    Suporte
+                <Link class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700" :href="route('master.branding.index')">
+                    Branding
                 </Link>
             </div>
         </section>

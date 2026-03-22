@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
 use App\Models\Contractor;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
@@ -14,6 +15,8 @@ use Inertia\Response;
 
 class ContractorBrandingController extends Controller
 {
+    use ResolvesCurrentContractor;
+
     /**
      * Show contractor branding form.
      */
@@ -54,7 +57,7 @@ class ContractorBrandingController extends Controller
                     [
                         'value' => Contractor::NICHE_SERVICES,
                         'label' => 'Serviços',
-                        'description' => 'Catálogo de serviços, ordens de serviço e agenda técnica.',
+                        'description' => 'Catálogo de serviços, ordens de serviço e agenda de serviços.',
                     ],
                 ],
             ],
@@ -142,35 +145,6 @@ class ContractorBrandingController extends Controller
         return back()->with('status', 'Branding atualizada com sucesso.');
     }
 
-    private function resolveCurrentContractor(Request $request): ?Contractor
-    {
-        $user = $request->user();
-        if (! $user) {
-            return null;
-        }
-
-        $user->loadMissing('contractors');
-
-        $availableContractors = $user->contractors->values();
-        if ($availableContractors->isEmpty()) {
-            return null;
-        }
-
-        $sessionContractorId = (int) $request->session()->get('current_contractor_id', 0);
-        if ($sessionContractorId > 0) {
-            $selected = $availableContractors->firstWhere('id', $sessionContractorId);
-            if ($selected) {
-                return $selected;
-            }
-        }
-
-        $fallback = $availableContractors->first();
-        if ($fallback) {
-            $request->session()->put('current_contractor_id', $fallback->id);
-        }
-
-        return $fallback;
-    }
 
     /**
      * @return array<int, array{value: string, label: string}>
@@ -262,3 +236,5 @@ class ContractorBrandingController extends Controller
         }
     }
 }
+
+

@@ -12,10 +12,14 @@ use App\Http\Controllers\Admin\PdvController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\ContractorBrandingController;
 use App\Http\Controllers\Admin\StorefrontController;
+use App\Http\Controllers\Admin\AccountingController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\ClientController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ServiceCatalogController;
+use App\Http\Controllers\Admin\ServiceOrderController;
+use App\Http\Controllers\Admin\ServiceOverviewController;
+use App\Http\Controllers\Admin\ServiceScheduleController;
 use App\Http\Controllers\Admin\SupplierController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -46,7 +50,7 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
                 ->except(['show', 'create', 'edit']);
         });
 
-        Route::middleware('contractor.module:crm,orders,pdv')->group(function (): void {
+        Route::middleware('contractor.module:crm,orders,pdv,services')->group(function (): void {
             Route::resource('clients', ClientController::class)
                 ->except(['show', 'create', 'edit']);
         });
@@ -107,18 +111,44 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
         });
 
         Route::middleware('contractor.module:services')->prefix('services')->name('services.')->group(function (): void {
-            Route::get('/', function () {
-                return Inertia::render('Admin/Services/Index');
-            })->name('index');
+            Route::get('/', [ServiceOverviewController::class, 'index'])->name('index');
 
-            Route::middleware('contractor.module:services_catalog')->get('/catalog', [ServiceCatalogController::class, 'index'])->name('catalog');
+            Route::middleware('contractor.module:services_catalog,services')->get('/catalog', [ServiceCatalogController::class, 'index'])->name('catalog');
 
-            Route::middleware('contractor.module:service_orders')->get('/orders', function () {
-                return Inertia::render('Admin/Services/Orders');
-            })->name('orders');
+            Route::middleware('contractor.module:service_orders')->group(function (): void {
+                Route::get('/orders', [ServiceOrderController::class, 'index'])->name('orders');
+                Route::post('/orders', [ServiceOrderController::class, 'store'])->name('orders.store');
+                Route::put('/orders/{serviceOrder}', [ServiceOrderController::class, 'update'])->name('orders.update');
+                Route::delete('/orders/{serviceOrder}', [ServiceOrderController::class, 'destroy'])->name('orders.destroy');
+            });
 
-            Route::middleware('contractor.module:schedule')->get('/schedule', function () {
-                return Inertia::render('Admin/Services/Schedule');
-            })->name('schedule');
+            Route::middleware('contractor.module:schedule')->group(function (): void {
+                Route::get('/schedule', [ServiceScheduleController::class, 'index'])->name('schedule');
+                Route::post('/schedule', [ServiceScheduleController::class, 'store'])->name('schedule.store');
+                Route::put('/schedule/{serviceAppointment}', [ServiceScheduleController::class, 'update'])->name('schedule.update');
+                Route::delete('/schedule/{serviceAppointment}', [ServiceScheduleController::class, 'destroy'])->name('schedule.destroy');
+            });
+
+            Route::middleware('contractor.module:finance,tasks,documents')->group(function (): void {
+                Route::get('/accounting', [AccountingController::class, 'index'])->name('accounting');
+            });
+
+            Route::middleware('contractor.module:finance')->group(function (): void {
+                Route::post('/accounting/fees', [AccountingController::class, 'storeFee'])->name('accounting.fees.store');
+                Route::put('/accounting/fees/{accountingFeeEntry}', [AccountingController::class, 'updateFee'])->name('accounting.fees.update');
+                Route::delete('/accounting/fees/{accountingFeeEntry}', [AccountingController::class, 'destroyFee'])->name('accounting.fees.destroy');
+            });
+
+            Route::middleware('contractor.module:tasks')->group(function (): void {
+                Route::post('/accounting/obligations', [AccountingController::class, 'storeObligation'])->name('accounting.obligations.store');
+                Route::put('/accounting/obligations/{accountingObligation}', [AccountingController::class, 'updateObligation'])->name('accounting.obligations.update');
+                Route::delete('/accounting/obligations/{accountingObligation}', [AccountingController::class, 'destroyObligation'])->name('accounting.obligations.destroy');
+            });
+
+            Route::middleware('contractor.module:documents')->group(function (): void {
+                Route::post('/accounting/documents', [AccountingController::class, 'storeDocument'])->name('accounting.documents.store');
+                Route::put('/accounting/documents/{accountingDocumentRequest}', [AccountingController::class, 'updateDocument'])->name('accounting.documents.update');
+                Route::delete('/accounting/documents/{accountingDocumentRequest}', [AccountingController::class, 'destroyDocument'])->name('accounting.documents.destroy');
+            });
         });
     });

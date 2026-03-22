@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
 use App\Http\Requests\Admin\StoreSupplierRequest;
 use App\Http\Requests\Admin\UpdateSupplierRequest;
 use App\Models\Contractor;
@@ -14,6 +15,8 @@ use Inertia\Response;
 
 class SupplierController extends Controller
 {
+    use ResolvesCurrentContractor;
+
     /**
      * Display a listing of suppliers.
      */
@@ -148,35 +151,6 @@ class SupplierController extends Controller
         return back()->with('status', 'Fornecedor removido com sucesso.');
     }
 
-    private function resolveCurrentContractor(Request $request): ?Contractor
-    {
-        $user = $request->user();
-        if (! $user) {
-            return null;
-        }
-
-        $user->loadMissing('contractors');
-        $availableContractors = $user->contractors->values();
-
-        if ($availableContractors->isEmpty()) {
-            return null;
-        }
-
-        $sessionContractorId = (int) $request->session()->get('current_contractor_id', 0);
-        if ($sessionContractorId > 0) {
-            $selected = $availableContractors->firstWhere('id', $sessionContractorId);
-            if ($selected) {
-                return $selected;
-            }
-        }
-
-        $fallback = $availableContractors->first();
-        if ($fallback) {
-            $request->session()->put('current_contractor_id', $fallback->id);
-        }
-
-        return $fallback;
-    }
 
     private function resolveOwnedSupplier(Contractor $contractor, Supplier $supplier): Supplier
     {
@@ -185,3 +159,5 @@ class SupplierController extends Controller
         return $supplier;
     }
 }
+
+

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
 use App\Models\Client;
 use App\Models\Contractor;
 use App\Models\InventoryMovement;
@@ -24,6 +25,8 @@ use Inertia\Response;
 
 class OrderController extends Controller
 {
+    use ResolvesCurrentContractor;
+
     /**
      * @var list<string>
      */
@@ -1266,35 +1269,6 @@ class OrderController extends Controller
         return back()->with('status', 'Pedido cancelado com sucesso.');
     }
 
-    private function resolveCurrentContractor(Request $request): ?Contractor
-    {
-        $user = $request->user();
-        if (! $user) {
-            return null;
-        }
-
-        $user->loadMissing('contractors');
-        $availableContractors = $user->contractors->values();
-
-        if ($availableContractors->isEmpty()) {
-            return null;
-        }
-
-        $sessionContractorId = (int) $request->session()->get('current_contractor_id', 0);
-        if ($sessionContractorId > 0) {
-            $selected = $availableContractors->firstWhere('id', $sessionContractorId);
-            if ($selected) {
-                return $selected;
-            }
-        }
-
-        $fallback = $availableContractors->first();
-        if ($fallback) {
-            $request->session()->put('current_contractor_id', $fallback->id);
-        }
-
-        return $fallback;
-    }
 
     private function lockOrderForContractor(Contractor $contractor, int $saleId): Sale
     {
@@ -1615,4 +1589,5 @@ class OrderController extends Controller
         app(\App\Services\OrderNotificationService::class)->notifyOrderStatusChanged($sale);
     }
 }
+
 

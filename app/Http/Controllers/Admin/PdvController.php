@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
 use App\Http\Requests\Admin\CloseCashSessionRequest;
 use App\Http\Requests\Admin\OpenCashSessionRequest;
 use App\Http\Requests\Admin\StorePdvClientRequest;
@@ -30,6 +31,8 @@ use Inertia\Response;
 
 class PdvController extends Controller
 {
+    use ResolvesCurrentContractor;
+
     public function index(Request $request): Response
     {
         $contractor = $this->resolveCurrentContractor($request);
@@ -777,35 +780,6 @@ class PdvController extends Controller
             ->with('pdv_new_client_id', $client->id);
     }
 
-    private function resolveCurrentContractor(Request $request): ?Contractor
-    {
-        $user = $request->user();
-        if (! $user) {
-            return null;
-        }
-
-        $user->loadMissing('contractors');
-        $availableContractors = $user->contractors->values();
-
-        if ($availableContractors->isEmpty()) {
-            return null;
-        }
-
-        $sessionContractorId = (int) $request->session()->get('current_contractor_id', 0);
-        if ($sessionContractorId > 0) {
-            $selected = $availableContractors->firstWhere('id', $sessionContractorId);
-            if ($selected) {
-                return $selected;
-            }
-        }
-
-        $fallback = $availableContractors->first();
-        if ($fallback) {
-            $request->session()->put('current_contractor_id', $fallback->id);
-        }
-
-        return $fallback;
-    }
 
     private function generateCashSessionCode(Contractor $contractor): string
     {
@@ -835,3 +809,5 @@ class PdvController extends Controller
         return $code;
     }
 }
+
+

@@ -241,6 +241,8 @@ class PlanSeeder extends Seeder
                     'services',
                     'finance',
                     'services_catalog',
+                    'tasks',
+                    'documents',
                     'crm',
                     'reports',
                 ],
@@ -280,6 +282,8 @@ class PlanSeeder extends Seeder
                     'services_catalog',
                     'service_orders',
                     'schedule',
+                    'tasks',
+                    'documents',
                     'crm',
                     'reports',
                 ],
@@ -304,4 +308,3 @@ class PlanSeeder extends Seeder
             ->all();
     }
 }
-

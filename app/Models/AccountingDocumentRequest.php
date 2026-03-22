@@ -1,0 +1,59 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+class AccountingDocumentRequest extends Model
+{
+    use HasFactory, SoftDeletes;
+
+    public const STATUS_PENDING = 'pending';
+
+    public const STATUS_RECEIVED = 'received';
+
+    public const STATUS_VALIDATED = 'validated';
+
+    public const STATUS_REJECTED = 'rejected';
+
+    /**
+     * @var list<string>
+     */
+    protected $fillable = [
+        'contractor_id',
+        'client_id',
+        'title',
+        'document_type',
+        'due_date',
+        'status',
+        'received_at',
+        'file_path',
+        'notes',
+        'metadata',
+    ];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'due_date' => 'date',
+            'received_at' => 'datetime',
+            'metadata' => 'array',
+        ];
+    }
+
+    public function contractor(): BelongsTo
+    {
+        return $this->belongsTo(Contractor::class);
+    }
+
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class);
+    }
+}
