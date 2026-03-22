@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import Modal from '@/Components/Modal.vue';
@@ -7,7 +7,7 @@ import UiSelect from '@/Components/App/UiSelect.vue';
 import { useBranding } from '@/branding';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
-import { CircleDollarSign, CalendarClock, FileText, Plus, Pencil, Trash2 } from 'lucide-vue-next';
+import { CircleDollarSign, CalendarClock, Eye, FileText, Plus, Pencil, Trash2, Upload } from 'lucide-vue-next';
 
 const props = defineProps({
     clients: { type: Array, default: () => [] },
@@ -126,6 +126,7 @@ const obligationForm = useForm({
 
 const documentModalOpen = ref(false);
 const editingDocument = ref(null);
+const documentFormFileInput = ref(null);
 const documentForm = useForm({
     client_id: '',
     title: '',
@@ -134,11 +135,172 @@ const documentForm = useForm({
     status: props.documentStatusOptions?.[0]?.value ?? 'pending',
     received_at: '',
     notes: '',
+    version_file: null,
+    version_notes: '',
 });
 
 const deleteModalOpen = ref(false);
 const deleteTarget = ref({ type: '', id: null, label: '' });
 const deleteForm = useForm({});
+const documentUploadModalOpen = ref(false);
+const documentUploadTarget = ref(null);
+const documentUploadFileInput = ref(null);
+const documentUploadForm = useForm({
+    version_file: null,
+    version_notes: '',
+});
+const documentPreviewModalOpen = ref(false);
+const documentPreviewData = ref(null);
+
+const feeFilters = ref({
+    search: '',
+    client_id: '',
+    status: '',
+    due_from: '',
+    due_to: '',
+});
+const obligationFilters = ref({
+    search: '',
+    client_id: '',
+    status: '',
+    due_from: '',
+    due_to: '',
+});
+const documentFilters = ref({
+    search: '',
+    client_id: '',
+    status: '',
+    due_from: '',
+    due_to: '',
+});
+
+const normalizeFilterText = (value) =>
+    String(value ?? '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+
+const normalizedDate = (value) => {
+    const safe = String(value ?? '').trim();
+    if (safe === '') return '';
+    return safe.slice(0, 10);
+};
+
+const isDateWithinRange = (dateValue, fromDate, toDate) => {
+    const target = normalizedDate(dateValue);
+    if (target === '') return true;
+
+    const from = normalizedDate(fromDate);
+    if (from !== '' && target < from) return false;
+
+    const to = normalizedDate(toDate);
+    if (to !== '' && target > to) return false;
+
+    return true;
+};
+
+const formatDateBR = (value) => {
+    const safe = normalizedDate(value);
+    if (safe === '') return '-';
+
+    const [year, month, day] = safe.split('-');
+    if (!year || !month || !day) return '-';
+    return `${day}/${month}/${year}`;
+};
+
+const statusFilterOptions = (options) => ([
+    { value: '', label: 'Todos' },
+    ...(Array.isArray(options) ? options : []),
+]);
+
+const feeStatusFilterOptions = computed(() => statusFilterOptions(props.feeStatusOptions));
+const obligationStatusFilterOptions = computed(() => statusFilterOptions(props.obligationStatusOptions));
+const documentStatusFilterOptions = computed(() => statusFilterOptions(props.documentStatusOptions));
+
+const filteredFees = computed(() => {
+    const term = normalizeFilterText(feeFilters.value.search);
+
+    return (props.fees ?? []).filter((entry) => {
+        const clientMatch = feeFilters.value.client_id === ''
+            || String(entry.client_id ?? '') === String(feeFilters.value.client_id);
+        const statusMatch = feeFilters.value.status === ''
+            || String(entry.status ?? '') === String(feeFilters.value.status);
+        const dateMatch = isDateWithinRange(entry.due_date, feeFilters.value.due_from, feeFilters.value.due_to);
+
+        if (!clientMatch || !statusMatch || !dateMatch) return false;
+        if (term === '') return true;
+
+        const haystack = normalizeFilterText([
+            entry.client_name,
+            entry.reference_label,
+            entry.notes,
+        ].join(' '));
+
+        return haystack.includes(term);
+    });
+});
+
+const filteredObligations = computed(() => {
+    const term = normalizeFilterText(obligationFilters.value.search);
+
+    return (props.obligations ?? []).filter((entry) => {
+        const clientMatch = obligationFilters.value.client_id === ''
+            || String(entry.client_id ?? '') === String(obligationFilters.value.client_id);
+        const statusMatch = obligationFilters.value.status === ''
+            || String(entry.status ?? '') === String(obligationFilters.value.status);
+        const dateMatch = isDateWithinRange(entry.due_date, obligationFilters.value.due_from, obligationFilters.value.due_to);
+
+        if (!clientMatch || !statusMatch || !dateMatch) return false;
+        if (term === '') return true;
+
+        const haystack = normalizeFilterText([
+            entry.client_name,
+            entry.title,
+            entry.obligation_type,
+            entry.notes,
+        ].join(' '));
+
+        return haystack.includes(term);
+    });
+});
+
+const filteredDocuments = computed(() => {
+    const term = normalizeFilterText(documentFilters.value.search);
+
+    return (props.documents ?? []).filter((entry) => {
+        const clientMatch = documentFilters.value.client_id === ''
+            || String(entry.client_id ?? '') === String(documentFilters.value.client_id);
+        const statusMatch = documentFilters.value.status === ''
+            || String(entry.status ?? '') === String(documentFilters.value.status);
+        const dateMatch = isDateWithinRange(entry.due_date, documentFilters.value.due_from, documentFilters.value.due_to);
+
+        if (!clientMatch || !statusMatch || !dateMatch) return false;
+        if (term === '') return true;
+
+        const haystack = normalizeFilterText([
+            entry.client_name,
+            entry.title,
+            entry.document_type,
+            entry.protocol_code,
+            entry.notes,
+        ].join(' '));
+
+        return haystack.includes(term);
+    });
+});
+
+const clearFeeFilters = () => {
+    feeFilters.value = { search: '', client_id: '', status: '', due_from: '', due_to: '' };
+};
+
+const clearObligationFilters = () => {
+    obligationFilters.value = { search: '', client_id: '', status: '', due_from: '', due_to: '' };
+};
+
+const clearDocumentFilters = () => {
+    documentFilters.value = { search: '', client_id: '', status: '', due_from: '', due_to: '' };
+};
 
 const openDelete = (type, id, label) => {
     deleteTarget.value = { type, id, label };
@@ -201,6 +363,11 @@ const openDocumentCreate = () => {
     documentForm.reset();
     documentForm.clearErrors();
     documentForm.status = props.documentStatusOptions?.[0]?.value ?? 'pending';
+    documentForm.version_file = null;
+    documentForm.version_notes = '';
+    if (documentFormFileInput.value) {
+        documentFormFileInput.value.value = '';
+    }
     documentModalOpen.value = true;
 };
 
@@ -213,6 +380,11 @@ const openDocumentEdit = (entry) => {
     documentForm.status = entry.status ?? (props.documentStatusOptions?.[0]?.value ?? 'pending');
     documentForm.received_at = entry.received_at ?? '';
     documentForm.notes = entry.notes ?? '';
+    documentForm.version_file = null;
+    documentForm.version_notes = '';
+    if (documentFormFileInput.value) {
+        documentFormFileInput.value.value = '';
+    }
     documentForm.clearErrors();
     documentModalOpen.value = true;
 };
@@ -265,10 +437,16 @@ const submitDocument = () => {
     if (editingDocument.value?.id) {
         documentForm.put(route('admin.services.accounting.documents.update', editingDocument.value.id), {
             preserveScroll: true,
+            forceFormData: true,
             onSuccess: () => {
                 documentModalOpen.value = false;
                 editingDocument.value = null;
                 documentForm.reset();
+                documentForm.version_file = null;
+                documentForm.version_notes = '';
+                if (documentFormFileInput.value) {
+                    documentFormFileInput.value.value = '';
+                }
             },
         });
         return;
@@ -276,12 +454,92 @@ const submitDocument = () => {
 
     documentForm.post(route('admin.services.accounting.documents.store'), {
         preserveScroll: true,
+        forceFormData: true,
         onSuccess: () => {
             documentModalOpen.value = false;
             documentForm.reset();
+            documentForm.version_file = null;
+            documentForm.version_notes = '';
+            if (documentFormFileInput.value) {
+                documentFormFileInput.value.value = '';
+            }
         },
     });
 };
+
+const onDocumentFormFileChange = (event) => {
+    documentForm.version_file = event?.target?.files?.[0] ?? null;
+};
+
+const latestDocumentVersion = (entry) => {
+    const versions = Array.isArray(entry?.versions) ? entry.versions : [];
+    return versions.find((version) => String(version?.file_url ?? '').trim() !== '') ?? null;
+};
+
+const openDocumentUpload = (entry) => {
+    documentUploadTarget.value = entry ?? null;
+    documentUploadForm.reset();
+    documentUploadForm.clearErrors();
+    if (documentUploadFileInput.value) {
+        documentUploadFileInput.value.value = '';
+    }
+    documentUploadModalOpen.value = true;
+};
+
+const closeDocumentUpload = () => {
+    documentUploadModalOpen.value = false;
+    documentUploadTarget.value = null;
+    documentUploadForm.reset();
+    documentUploadForm.clearErrors();
+    if (documentUploadFileInput.value) {
+        documentUploadFileInput.value.value = '';
+    }
+};
+
+const onDocumentUploadFileChange = (event) => {
+    documentUploadForm.version_file = event?.target?.files?.[0] ?? null;
+};
+
+const submitDocumentUpload = () => {
+    if (!documentUploadTarget.value?.id) return;
+
+    documentUploadForm.post(route('admin.services.accounting.documents.versions.store', documentUploadTarget.value.id), {
+        preserveScroll: true,
+        forceFormData: true,
+        onSuccess: closeDocumentUpload,
+    });
+};
+
+const openDocumentPreview = (entry) => {
+    const latestVersion = latestDocumentVersion(entry);
+    if (!latestVersion?.file_url) return;
+
+    documentPreviewData.value = {
+        title: String(entry?.title ?? 'Documento'),
+        file_name: String(latestVersion.file_name ?? 'Documento'),
+        file_url: String(latestVersion.file_url ?? ''),
+        uploaded_at: String(latestVersion.uploaded_at ?? ''),
+    };
+    documentPreviewModalOpen.value = true;
+};
+
+const closeDocumentPreview = () => {
+    documentPreviewModalOpen.value = false;
+    documentPreviewData.value = null;
+};
+
+const previewExtension = computed(() => {
+    const rawName = String(documentPreviewData.value?.file_name ?? documentPreviewData.value?.file_url ?? '').trim().toLowerCase();
+    if (!rawName.includes('.')) return '';
+    return rawName.split('.').pop() ?? '';
+});
+
+const previewType = computed(() => {
+    const extension = previewExtension.value;
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(extension)) return 'image';
+    if (extension === 'pdf') return 'pdf';
+    return 'other';
+});
 
 const confirmDelete = () => {
     if (!deleteTarget.value?.id) return;
@@ -379,6 +637,33 @@ const statusLabel = (options, value) => {
                     <div v-if="!moduleAccess.finance" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-700">
                         O módulo Financeiro não está habilitado para este contratante.
                     </div>
+                    <div class="grid gap-2 md:grid-cols-5">
+                        <input
+                            v-model="feeFilters.search"
+                            type="text"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 md:col-span-2"
+                            placeholder="Buscar por cliente ou referência"
+                        >
+                        <UiSelect v-model="feeFilters.client_id" :options="clientOptions" button-class="w-full text-sm" />
+                        <UiSelect v-model="feeFilters.status" :options="feeStatusFilterOptions" button-class="w-full text-sm" />
+                        <button
+                            type="button"
+                            class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="clearFeeFilters"
+                        >
+                            Limpar filtros
+                        </button>
+                    </div>
+                    <div class="grid gap-2 md:grid-cols-4">
+                        <div>
+                            <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Vencimento de</label>
+                            <input v-model="feeFilters.due_from" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        </div>
+                        <div>
+                            <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Vencimento até</label>
+                            <input v-model="feeFilters.due_to" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        </div>
+                    </div>
                     <div class="mt-3 flex justify-end">
                         <TableViewToggle />
                     </div>
@@ -395,13 +680,13 @@ const statusLabel = (options, value) => {
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 bg-white">
-                                <tr v-if="!fees.length">
+                                <tr v-if="!filteredFees.length">
                                     <td colspan="6" class="px-4 py-8 text-center text-sm text-slate-500">Nenhum honorário cadastrado.</td>
                                 </tr>
-                                <tr v-for="entry in fees" :key="entry.id">
+                                <tr v-for="entry in filteredFees" :key="entry.id">
                                     <td class="px-4 py-3 text-slate-700">{{ entry.client_name }}</td>
                                     <td class="px-4 py-3 text-slate-700">{{ entry.reference_label }}</td>
-                                    <td class="px-4 py-3 text-slate-700">{{ entry.due_date || '-' }}</td>
+                                    <td class="px-4 py-3 text-slate-700">{{ formatDateBR(entry.due_date) }}</td>
                                     <td class="px-4 py-3 text-slate-700">
                                         <p>{{ asCurrency(entry.amount) }}</p>
                                         <p class="text-xs text-slate-500">Pago: {{ asCurrency(entry.paid_amount) }}</p>
@@ -443,6 +728,33 @@ const statusLabel = (options, value) => {
                     <div v-if="!moduleAccess.tasks" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-700">
                         O módulo Tarefas recorrentes não está habilitado para este contratante.
                     </div>
+                    <div class="grid gap-2 md:grid-cols-5">
+                        <input
+                            v-model="obligationFilters.search"
+                            type="text"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 md:col-span-2"
+                            placeholder="Buscar por cliente, obrigação ou tipo"
+                        >
+                        <UiSelect v-model="obligationFilters.client_id" :options="clientOptions" button-class="w-full text-sm" />
+                        <UiSelect v-model="obligationFilters.status" :options="obligationStatusFilterOptions" button-class="w-full text-sm" />
+                        <button
+                            type="button"
+                            class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="clearObligationFilters"
+                        >
+                            Limpar filtros
+                        </button>
+                    </div>
+                    <div class="grid gap-2 md:grid-cols-4">
+                        <div>
+                            <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Vencimento de</label>
+                            <input v-model="obligationFilters.due_from" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        </div>
+                        <div>
+                            <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Vencimento até</label>
+                            <input v-model="obligationFilters.due_to" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        </div>
+                    </div>
                     <div class="mt-3 flex justify-end">
                         <TableViewToggle />
                     </div>
@@ -459,13 +771,13 @@ const statusLabel = (options, value) => {
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 bg-white">
-                                <tr v-if="!obligations.length">
+                                <tr v-if="!filteredObligations.length">
                                     <td colspan="6" class="px-4 py-8 text-center text-sm text-slate-500">Nenhuma obrigação cadastrada.</td>
                                 </tr>
-                                <tr v-for="entry in obligations" :key="entry.id">
+                                <tr v-for="entry in filteredObligations" :key="entry.id">
                                     <td class="px-4 py-3 text-slate-700">{{ entry.client_name }}</td>
                                     <td class="px-4 py-3 text-slate-700">{{ entry.title }}</td>
-                                    <td class="px-4 py-3 text-slate-700">{{ entry.due_date || '-' }}</td>
+                                    <td class="px-4 py-3 text-slate-700">{{ formatDateBR(entry.due_date) }}</td>
                                     <td class="px-4 py-3 text-slate-700">{{ statusLabel(priorityOptions, entry.priority) }}</td>
                                     <td class="px-4 py-3">
                                         <span class="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
@@ -504,6 +816,33 @@ const statusLabel = (options, value) => {
                     <div v-if="!moduleAccess.documents" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-700">
                         O módulo Documentos não está habilitado para este contratante.
                     </div>
+                    <div class="grid gap-2 md:grid-cols-5">
+                        <input
+                            v-model="documentFilters.search"
+                            type="text"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 md:col-span-2"
+                            placeholder="Buscar por cliente, documento, tipo ou protocolo"
+                        >
+                        <UiSelect v-model="documentFilters.client_id" :options="clientOptions" button-class="w-full text-sm" />
+                        <UiSelect v-model="documentFilters.status" :options="documentStatusFilterOptions" button-class="w-full text-sm" />
+                        <button
+                            type="button"
+                            class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="clearDocumentFilters"
+                        >
+                            Limpar filtros
+                        </button>
+                    </div>
+                    <div class="grid gap-2 md:grid-cols-4">
+                        <div>
+                            <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Prazo de</label>
+                            <input v-model="documentFilters.due_from" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        </div>
+                        <div>
+                            <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Prazo até</label>
+                            <input v-model="documentFilters.due_to" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        </div>
+                    </div>
                     <div class="mt-3 flex justify-end">
                         <TableViewToggle />
                     </div>
@@ -515,19 +854,36 @@ const statusLabel = (options, value) => {
                                     <th class="px-4 py-3">Documento</th>
                                     <th class="px-4 py-3">Tipo</th>
                                     <th class="px-4 py-3">Prazo</th>
+                                    <th class="px-4 py-3">Arquivo</th>
                                     <th class="px-4 py-3">Status</th>
                                     <th class="px-4 py-3">Ações</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 bg-white">
-                                <tr v-if="!documents.length">
-                                    <td colspan="6" class="px-4 py-8 text-center text-sm text-slate-500">Nenhuma solicitação de documento cadastrada.</td>
+                                <tr v-if="!filteredDocuments.length">
+                                    <td colspan="7" class="px-4 py-8 text-center text-sm text-slate-500">Nenhuma solicitação de documento cadastrada.</td>
                                 </tr>
-                                <tr v-for="entry in documents" :key="entry.id">
+                                <tr v-for="entry in filteredDocuments" :key="entry.id">
                                     <td class="px-4 py-3 text-slate-700">{{ entry.client_name }}</td>
                                     <td class="px-4 py-3 text-slate-700">{{ entry.title }}</td>
                                     <td class="px-4 py-3 text-slate-700">{{ entry.document_type || '-' }}</td>
-                                    <td class="px-4 py-3 text-slate-700">{{ entry.due_date || '-' }}</td>
+                                    <td class="px-4 py-3 text-slate-700">{{ formatDateBR(entry.due_date) }}</td>
+                                    <td class="px-4 py-3 text-slate-700">
+                                        <template v-if="latestDocumentVersion(entry)">
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                                @click="openDocumentPreview(entry)"
+                                            >
+                                                <Eye class="h-3.5 w-3.5" />
+                                                {{ latestDocumentVersion(entry).file_name || `Versão ${latestDocumentVersion(entry).version_number}` }}
+                                            </button>
+                                            <p class="mt-1 text-[11px] text-slate-500">
+                                                Enviado em {{ latestDocumentVersion(entry).uploaded_at || '-' }}
+                                            </p>
+                                        </template>
+                                        <span v-else class="text-xs text-slate-400">Sem arquivo</span>
+                                    </td>
                                     <td class="px-4 py-3">
                                         <span class="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
                                             {{ statusLabel(documentStatusOptions, entry.status) }}
@@ -543,6 +899,15 @@ const statusLabel = (options, value) => {
                                             >
                                                 <Pencil class="h-3.5 w-3.5" />
                                                 Editar
+                                            </button>
+                                            <button
+                                                v-if="moduleAccess.documents"
+                                                type="button"
+                                                class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                                @click="openDocumentUpload(entry)"
+                                            >
+                                                <Upload class="h-3.5 w-3.5" />
+                                                Upload
                                             </button>
                                             <button
                                                 v-if="moduleAccess.documents"
@@ -659,10 +1024,138 @@ const statusLabel = (options, value) => {
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
                         <UiSelect v-model="documentForm.status" :options="documentStatusOptions" button-class="mt-1 w-full text-sm" />
                     </div>
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Arquivo do documento</label>
+                        <input
+                            ref="documentFormFileInput"
+                            type="file"
+                            class="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-800"
+                            @change="onDocumentFormFileChange"
+                        >
+                        <p class="mt-1 text-[11px] text-slate-500">
+                            Opcional. Envie PDF ou imagem para já anexar a primeira versão.
+                        </p>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Observações da versão</label>
+                        <textarea
+                            v-model="documentForm.version_notes"
+                            rows="2"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Ex.: Documento enviado pelo cliente em 22/03/2026"
+                        />
+                    </div>
                 </div>
                 <div class="flex justify-end gap-2 border-t border-slate-100 pt-4">
                     <button type="button" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="documentModalOpen = false">Cancelar</button>
                     <button type="button" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800" @click="submitDocument">Salvar</button>
+                </div>
+            </div>
+        </Modal>
+
+        <Modal :show="documentUploadModalOpen" max-width="2xl" @close="closeDocumentUpload">
+            <div class="space-y-4 px-6 py-6 sm:px-8">
+                <h3 class="text-lg font-semibold text-slate-900">Upload de documento</h3>
+                <p class="text-sm text-slate-600">
+                    {{ documentUploadTarget?.title || 'Documento' }}
+                </p>
+
+                <div>
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Arquivo</label>
+                    <input
+                        ref="documentUploadFileInput"
+                        type="file"
+                        class="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-800"
+                        @change="onDocumentUploadFileChange"
+                    >
+                    <p class="mt-1 text-[11px] text-slate-500">Aceita PDF e imagens.</p>
+                </div>
+
+                <div>
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Observações</label>
+                    <textarea
+                        v-model="documentUploadForm.version_notes"
+                        rows="3"
+                        class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        placeholder="Inclua detalhes sobre esta versão"
+                    />
+                </div>
+
+                <div class="flex justify-end gap-2 border-t border-slate-100 pt-4">
+                    <button
+                        type="button"
+                        class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        @click="closeDocumentUpload"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        type="button"
+                        class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        :disabled="documentUploadForm.processing"
+                        @click="submitDocumentUpload"
+                    >
+                        {{ documentUploadForm.processing ? 'Enviando...' : 'Enviar versão' }}
+                    </button>
+                </div>
+            </div>
+        </Modal>
+
+        <Modal :show="documentPreviewModalOpen" max-width="5xl" @close="closeDocumentPreview">
+            <div class="space-y-4 px-6 py-6 sm:px-8">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h3 class="text-lg font-semibold text-slate-900">{{ documentPreviewData?.title || 'Documento' }}</h3>
+                        <p class="text-sm text-slate-600">{{ documentPreviewData?.file_name || '-' }}</p>
+                        <p class="text-[11px] text-slate-500">
+                            Enviado em: {{ documentPreviewData?.uploaded_at || '-' }}
+                        </p>
+                    </div>
+                    <a
+                        v-if="documentPreviewData?.file_url"
+                        :href="documentPreviewData.file_url"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                        Abrir em nova aba
+                    </a>
+                </div>
+
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <img
+                        v-if="previewType === 'image' && documentPreviewData?.file_url"
+                        :src="documentPreviewData.file_url"
+                        :alt="documentPreviewData?.file_name || 'Documento'"
+                        class="mx-auto max-h-[70vh] w-auto rounded-lg object-contain"
+                    >
+                    <iframe
+                        v-else-if="previewType === 'pdf' && documentPreviewData?.file_url"
+                        :src="documentPreviewData.file_url"
+                        class="h-[70vh] w-full rounded-lg border border-slate-200 bg-white"
+                    />
+                    <div v-else class="space-y-2 px-2 py-6 text-center">
+                        <p class="text-sm text-slate-600">Pré-visualização indisponível para este formato.</p>
+                        <a
+                            v-if="documentPreviewData?.file_url"
+                            :href="documentPreviewData.file_url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex items-center rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                        >
+                            Baixar arquivo
+                        </a>
+                    </div>
+                </div>
+
+                <div class="flex justify-end border-t border-slate-100 pt-4">
+                    <button
+                        type="button"
+                        class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        @click="closeDocumentPreview"
+                    >
+                        Fechar
+                    </button>
                 </div>
             </div>
         </Modal>

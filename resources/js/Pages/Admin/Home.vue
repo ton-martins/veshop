@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import CatalogBanner from '@/Components/App/AdminOverview/CatalogBanner.vue';
@@ -64,7 +64,7 @@ const activeOverviewTemplate = computed(() => {
 });
 
 const isCommercialOverview = computed(() =>
-    activeOverviewTemplate.value.startsWith('commercial_'),
+    activeOverviewTemplate.value.startsWith('commercial_') || contractorNiche.value === 'services',
 );
 
 const serviceTemplateCopy = computed(() => {
@@ -166,12 +166,20 @@ const catalogUrl = computed(() => {
     return `/shop/${slug}`;
 });
 
-const showCatalogBanner = computed(() => hasAnyModule(['catalog', 'checkout']));
+const showCatalogBanner = computed(() =>
+    contractorNiche.value === 'services'
+        ? hasAnyModule(['services_storefront'])
+        : hasAnyModule(['catalog', 'checkout']),
+);
 
 const commercialTabs = computed(() => {
     const tabs = [];
 
-    if (hasAnyModule(['catalog', 'inventory', 'orders', 'crm'])) {
+    if (
+        contractorNiche.value === 'services'
+            ? hasAnyModule(['services', 'services_catalog', 'service_orders', 'schedule', 'services_storefront'])
+            : hasAnyModule(['catalog', 'inventory', 'orders', 'crm'])
+    ) {
         tabs.push({ key: 'operations', label: commercialTemplateCopy.value.operationsLabel, icon: ShoppingBag });
     }
 
@@ -290,6 +298,24 @@ const serviceStats = computed(() => {
 });
 
 const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
+const operationsOverviewStats = computed(() => {
+    if (contractorNiche.value !== 'services') {
+        return props.overview?.commercial?.operations ?? {};
+    }
+
+    const serviceStats = props.overview?.services?.stats ?? {};
+    const commercialStats = props.overview?.commercial?.operations ?? {};
+
+    return {
+        orders_today: Number(serviceStats.today ?? 0),
+        in_production: Number(serviceStats.open_orders ?? 0),
+        monthly_revenue: Number(serviceStats.revenue ?? 0),
+        clients: Number(commercialStats.clients ?? 0),
+        pending_quotes: Number(commercialStats.pending_quotes ?? 0),
+        deliveries_today: Number(commercialStats.deliveries_today ?? 0),
+        recent_orders: Array.isArray(commercialStats.recent_orders) ? commercialStats.recent_orders : [],
+    };
+});
 const serviceQuickLinks = computed(() => {
     const links = [];
 
@@ -380,7 +406,7 @@ const storefrontPublicUrl = computed(() => {
                     <div class="space-y-4">
                         <OperationsOverview
                             v-if="activeTab === 'operations'"
-                            :stats="props.overview?.commercial?.operations ?? {}"
+                            :stats="operationsOverviewStats"
                         />
                         <PdvOverview
                             v-else

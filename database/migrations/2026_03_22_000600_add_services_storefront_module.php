@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
@@ -20,8 +20,8 @@ return new class extends Migration
         DB::table('modules')->upsert([
             [
                 'code' => 'services_storefront',
-                'name' => "Loja virtual de servi\u{00E7}os",
-                'description' => "Cat\u{00E1}logo e agendamentos online do nicho servi\u{00E7}os",
+                'name' => "Loja virtual de serviços",
+                'description' => "Catálogo e agendamentos online do nicho serviços",
                 'scope' => 'specific',
                 'niche' => 'services',
                 'business_types' => json_encode([

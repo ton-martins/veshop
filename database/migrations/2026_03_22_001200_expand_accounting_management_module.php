@@ -86,16 +86,9 @@ return new class extends Migration
         if (Schema::hasTable('accounting_document_requests') && Schema::hasTable('contractors') && ! Schema::hasTable('accounting_document_versions')) {
             Schema::create('accounting_document_versions', function (Blueprint $table): void {
                 $table->id();
-                $table->foreignId('contractor_id')
-                    ->constrained(table: 'contractors', indexName: 'acc_doc_ver_contractor_fk')
-                    ->cascadeOnDelete();
-                $table->foreignId('accounting_document_request_id')
-                    ->constrained(table: 'accounting_document_requests', indexName: 'acc_doc_ver_doc_req_fk')
-                    ->cascadeOnDelete();
-                $table->foreignId('created_by_user_id')
-                    ->nullable()
-                    ->constrained(table: 'users', indexName: 'acc_doc_ver_created_by_fk')
-                    ->nullOnDelete();
+                $table->unsignedBigInteger('contractor_id');
+                $table->unsignedBigInteger('accounting_document_request_id');
+                $table->unsignedBigInteger('created_by_user_id')->nullable();
                 $table->unsignedInteger('version_number')->default(1);
                 $table->string('file_path', 255)->nullable();
                 $table->string('file_name', 180)->nullable();
@@ -103,6 +96,19 @@ return new class extends Migration
                 $table->string('notes', 500)->nullable();
                 $table->json('metadata')->nullable();
                 $table->timestamps();
+
+                $table->foreign('contractor_id', 'acc_doc_ver_contractor_fk')
+                    ->references('id')
+                    ->on('contractors')
+                    ->cascadeOnDelete();
+                $table->foreign('accounting_document_request_id', 'acc_doc_ver_doc_req_fk')
+                    ->references('id')
+                    ->on('accounting_document_requests')
+                    ->cascadeOnDelete();
+                $table->foreign('created_by_user_id', 'acc_doc_ver_created_by_fk')
+                    ->references('id')
+                    ->on('users')
+                    ->nullOnDelete();
 
                 $table->unique(['accounting_document_request_id', 'version_number'], 'acc_document_version_unique');
                 $table->index(['contractor_id', 'uploaded_at'], 'acc_document_version_uploaded_idx');
@@ -315,6 +321,10 @@ return new class extends Migration
 
     private function hasForeignKeyForColumn(string $tableName, string $columnName): bool
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return true;
+        }
+
         return DB::table('information_schema.KEY_COLUMN_USAGE')
             ->where('TABLE_SCHEMA', DB::getDatabaseName())
             ->where('TABLE_NAME', $tableName)
