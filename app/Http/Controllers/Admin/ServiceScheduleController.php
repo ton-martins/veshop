@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
+use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Contractor;
 use App\Models\ServiceAppointment;
 use App\Models\ServiceCatalog;
 use App\Models\ServiceOrder;
+use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -26,8 +27,15 @@ class ServiceScheduleController extends Controller
 
         $search = trim((string) $request->string('search')->toString());
         $status = trim((string) $request->string('status')->toString());
-        $date = trim((string) $request->string('date')->toString());
-        $dateFilter = $date !== '' ? $date : now($contractor->timezone)->toDateString();
+        $layout = $this->normalizeLayout((string) $request->string('layout')->toString());
+        $timezone = trim((string) ($contractor->timezone ?: config('app.timezone', 'America/Sao_Paulo')));
+        if ($timezone === '') {
+            $timezone = (string) config('app.timezone', 'America/Sao_Paulo');
+        }
+
+        $referenceDate = trim((string) $request->string('reference_date')->toString());
+        $reference = $this->resolveReferenceDate($referenceDate, $timezone);
+        [$periodStart, $periodEnd] = $this->resolvePeriodRange($layout, $reference);
 
         $query = ServiceAppointment::query()
             ->where('contractor_id', $contractor->id)
@@ -55,13 +63,11 @@ class ServiceScheduleController extends Controller
             $query->where('status', $status);
         }
 
-        if ($dateFilter !== '') {
-            $query->whereDate('starts_at', $dateFilter);
-        }
+        $query->whereBetween('starts_at', [$periodStart, $periodEnd]);
 
         $appointments = $query
             ->orderBy('starts_at')
-            ->paginate(20)
+            ->paginate(500)
             ->withQueryString()
             ->through(static fn (ServiceAppointment $appointment): array => [
                 'id' => (int) $appointment->id,
@@ -72,8 +78,8 @@ class ServiceScheduleController extends Controller
                 'client_name' => $appointment->client?->name ? (string) $appointment->client->name : 'Não informado',
                 'service_catalog_id' => $appointment->service_catalog_id ? (int) $appointment->service_catalog_id : null,
                 'service_name' => $appointment->service?->name ? (string) $appointment->service->name : '',
-                'starts_at' => optional($appointment->starts_at)?->format('Y-m-d\TH:i'),
-                'ends_at' => optional($appointment->ends_at)?->format('Y-m-d\TH:i'),
+                'starts_at' => optional($appointment->starts_at)?->format('Y-m-d\\TH:i'),
+                'ends_at' => optional($appointment->ends_at)?->format('Y-m-d\\TH:i'),
                 'time_label' => sprintf(
                     '%s - %s',
                     optional($appointment->starts_at)?->format('H:i'),
@@ -85,9 +91,10 @@ class ServiceScheduleController extends Controller
                 'technician' => $appointment->serviceOrder?->assigned_to_name ? (string) $appointment->serviceOrder->assigned_to_name : '-',
             ]);
 
-        $todayStart = now($contractor->timezone)->startOfDay();
-        $todayEnd = now($contractor->timezone)->endOfDay();
-        $next24h = now($contractor->timezone)->addDay();
+        $now = now($timezone);
+        $todayStart = $now->copy()->startOfDay();
+        $todayEnd = $now->copy()->endOfDay();
+        $next24h = $now->copy()->addDay();
 
         $stats = [
             'today' => ServiceAppointment::query()
@@ -96,7 +103,7 @@ class ServiceScheduleController extends Controller
                 ->count(),
             'next_24h' => ServiceAppointment::query()
                 ->where('contractor_id', $contractor->id)
-                ->whereBetween('starts_at', [now($contractor->timezone), $next24h])
+                ->whereBetween('starts_at', [$now, $next24h])
                 ->count(),
             'teams' => ServiceOrder::query()
                 ->where('contractor_id', $contractor->id)
@@ -152,8 +159,14 @@ class ServiceScheduleController extends Controller
             'filters' => [
                 'search' => $search,
                 'status' => $status,
-                'date' => $dateFilter,
+                'layout' => $layout,
+                'reference_date' => $reference->toDateString(),
             ],
+            'period' => [
+                'starts_at' => $periodStart->toIso8601String(),
+                'ends_at' => $periodEnd->toIso8601String(),
+            ],
+            'timezone' => $timezone,
             'clients' => $clients,
             'services' => $services,
             'orders' => $orders,
@@ -226,12 +239,54 @@ class ServiceScheduleController extends Controller
         ]);
     }
 
-
     private function resolveOwnedAppointment(Contractor $contractor, ServiceAppointment $serviceAppointment): ServiceAppointment
     {
         abort_unless((int) $serviceAppointment->contractor_id === (int) $contractor->id, 404);
 
         return $serviceAppointment;
+    }
+
+    private function normalizeLayout(string $layout): string
+    {
+        return in_array($layout, ['day', 'week', 'month'], true) ? $layout : 'month';
+    }
+
+    private function resolveReferenceDate(string $referenceDate, string $timezone): Carbon
+    {
+        if ($referenceDate !== '') {
+            try {
+                return Carbon::parse($referenceDate, $timezone)->startOfDay();
+            } catch (\Throwable) {
+                // fallback para hoje no timezone do contratante
+            }
+        }
+
+        return now($timezone)->startOfDay();
+    }
+
+    /**
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function resolvePeriodRange(string $layout, Carbon $reference): array
+    {
+        if ($layout === 'day') {
+            return [
+                $reference->copy()->startOfDay(),
+                $reference->copy()->endOfDay(),
+            ];
+        }
+
+        if ($layout === 'week') {
+            return [
+                $reference->copy()->startOfWeek(Carbon::MONDAY)->startOfDay(),
+                $reference->copy()->endOfWeek(Carbon::SUNDAY)->endOfDay(),
+            ];
+        }
+
+        return [
+            $reference->copy()->startOfMonth()->startOfDay(),
+            $reference->copy()->endOfMonth()->endOfDay(),
+        ];
     }
 
     /**
@@ -249,5 +304,3 @@ class ServiceScheduleController extends Controller
         ];
     }
 }
-
-

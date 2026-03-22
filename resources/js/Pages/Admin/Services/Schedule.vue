@@ -1,13 +1,25 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import Modal from '@/Components/Modal.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
-import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
-import { CalendarClock, Clock3, UserRound, Filter, Search, Plus, Pencil, Trash2 } from 'lucide-vue-next';
+import {
+    Calendar,
+    CalendarClock,
+    CalendarDays,
+    CalendarRange,
+    ChevronLeft,
+    ChevronRight,
+    Clock3,
+    UserRound,
+    Filter,
+    Search,
+    Plus,
+    Pencil,
+    Trash2,
+} from 'lucide-vue-next';
 
 const props = defineProps({
     appointments: {
@@ -38,20 +50,63 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    timezone: {
+        type: String,
+        default: 'America/Sao_Paulo',
+    },
 });
+
+const pad2 = (value) => String(value).padStart(2, '0');
+const parseDateTime = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+const parseDate = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const parsed = new Date(`${raw}T00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+const toIsoDate = (date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+const toDateTimeLocal = (date) => `${toIsoDate(date)}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+const addDays = (date, days) => {
+    const next = new Date(date.getTime());
+    next.setDate(next.getDate() + days);
+    return next;
+};
+const startOfWeek = (date) => {
+    const next = new Date(date.getTime());
+    next.setHours(0, 0, 0, 0);
+    const weekday = next.getDay();
+    const diff = weekday === 0 ? -6 : 1 - weekday;
+    next.setDate(next.getDate() + diff);
+    return next;
+};
+const addMinutes = (datetimeLocal, minutes) => {
+    const parsed = parseDateTime(datetimeLocal);
+    if (!parsed) return '';
+    parsed.setSeconds(0, 0);
+    parsed.setMinutes(parsed.getMinutes() + minutes);
+    return toDateTimeLocal(parsed);
+};
 
 const filterForm = useForm({
     search: props.filters?.search ?? '',
     status: props.filters?.status ?? '',
-    date: props.filters?.date ?? '',
 });
+
+const layout = ref(props.filters?.layout ?? 'month');
+const referenceDate = ref(props.filters?.reference_date ?? toIsoDate(new Date()));
 
 watch(
     () => props.filters,
     (next) => {
         filterForm.search = next?.search ?? '';
         filterForm.status = next?.status ?? '';
-        filterForm.date = next?.date ?? '';
+        layout.value = next?.layout ?? 'month';
+        referenceDate.value = next?.reference_date ?? toIsoDate(new Date());
     },
     { deep: true },
 );
@@ -62,7 +117,8 @@ const applyFilters = () => {
         {
             search: filterForm.search || undefined,
             status: filterForm.status || undefined,
-            date: filterForm.date || undefined,
+            layout: layout.value,
+            reference_date: referenceDate.value || undefined,
         },
         {
             preserveState: true,
@@ -75,13 +131,130 @@ const applyFilters = () => {
 const clearFilters = () => {
     filterForm.search = '';
     filterForm.status = '';
-    filterForm.date = '';
     applyFilters();
 };
 
 const rows = computed(() => props.appointments?.data ?? []);
-const paginationLinks = computed(() => props.appointments?.links ?? []);
 const hasServices = computed(() => Array.isArray(props.services) && props.services.length > 0);
+const viewOptions = [
+    { value: 'day', label: 'Dia', icon: CalendarDays },
+    { value: 'week', label: 'Semana', icon: CalendarRange },
+    { value: 'month', label: 'Mês', icon: Calendar },
+];
+
+const calendarBaseDate = computed(() => parseDate(referenceDate.value) ?? new Date());
+const layoutLabel = computed(() => viewOptions.find((item) => item.value === layout.value)?.label ?? layout.value);
+
+const calendarTitle = computed(() => {
+    const base = calendarBaseDate.value;
+
+    if (layout.value === 'day') {
+        return new Intl.DateTimeFormat('pt-BR', {
+            weekday: 'long',
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+            timeZone: props.timezone,
+        }).format(base);
+    }
+
+    if (layout.value === 'week') {
+        const start = startOfWeek(base);
+        const end = addDays(start, 6);
+        const startLabel = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', timeZone: props.timezone }).format(start);
+        const endLabel = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', timeZone: props.timezone }).format(end);
+        return `${startLabel} - ${endLabel}`;
+    }
+
+    return new Intl.DateTimeFormat('pt-BR', {
+        month: 'long',
+        year: 'numeric',
+        timeZone: props.timezone,
+    }).format(base);
+});
+
+const calendarEvents = computed(() => {
+    return rows.value
+        .map((item) => {
+            const start = parseDateTime(item.starts_at);
+            const end = parseDateTime(item.ends_at);
+            if (!start || !end) {
+                return null;
+            }
+
+            return {
+                ...item,
+                start,
+                end,
+                date: toIsoDate(start),
+                start_label: `${pad2(start.getHours())}:${pad2(start.getMinutes())}`,
+                end_label: `${pad2(end.getHours())}:${pad2(end.getMinutes())}`,
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.start.getTime() - b.start.getTime());
+});
+
+const eventsByDate = computed(() => {
+    const buckets = new Map();
+    calendarEvents.value.forEach((item) => {
+        const current = buckets.get(item.date) ?? [];
+        current.push(item);
+        buckets.set(item.date, current);
+    });
+    return buckets;
+});
+
+const weekDays = computed(() => {
+    const start = startOfWeek(calendarBaseDate.value);
+    return Array.from({ length: 7 }, (_, index) => addDays(start, index));
+});
+
+const monthGridDays = computed(() => {
+    const base = new Date(calendarBaseDate.value.getTime());
+    base.setDate(1);
+    const start = startOfWeek(base);
+    return Array.from({ length: 42 }, (_, index) => addDays(start, index));
+});
+
+const daySlots = computed(() => Array.from({ length: 14 }, (_, index) => 7 + index));
+
+const eventsForDate = (date) => {
+    const key = typeof date === 'string' ? date : toIsoDate(date);
+    return eventsByDate.value.get(key) ?? [];
+};
+
+const shiftPeriod = (direction) => {
+    const base = calendarBaseDate.value;
+
+    if (layout.value === 'day') {
+        referenceDate.value = toIsoDate(addDays(base, direction));
+        applyFilters();
+        return;
+    }
+
+    if (layout.value === 'week') {
+        referenceDate.value = toIsoDate(addDays(base, direction * 7));
+        applyFilters();
+        return;
+    }
+
+    const next = new Date(base.getTime());
+    next.setMonth(next.getMonth() + direction);
+    referenceDate.value = toIsoDate(next);
+    applyFilters();
+};
+
+const setLayout = (value) => {
+    if (layout.value === value) return;
+    layout.value = value;
+    applyFilters();
+};
+
+const goToday = () => {
+    referenceDate.value = toIsoDate(new Date());
+    applyFilters();
+};
 
 const statsCards = computed(() => [
     { key: 'today', label: 'Visitas hoje', value: String(props.stats?.today ?? 0), icon: CalendarClock, tone: 'text-slate-700' },
@@ -130,9 +303,22 @@ const deleteForm = useForm({});
 const isEditing = computed(() => Boolean(editingAppointment.value?.id));
 
 const openCreate = () => {
+    openCreateAt(referenceDate.value);
+};
+
+const openCreateAt = (date, hour = 9) => {
     editingAppointment.value = null;
-    form.defaults(formDefaults());
+    const safeDate = String(date || referenceDate.value || toIsoDate(new Date()));
+    const startsAt = `${safeDate}T${pad2(hour)}:00`;
+    const endsAt = addMinutes(startsAt, 60);
+    form.defaults({
+        ...formDefaults(),
+        starts_at: startsAt,
+        ends_at: endsAt,
+    });
     form.reset();
+    form.starts_at = startsAt;
+    form.ends_at = endsAt;
     form.clearErrors();
     showModal.value = true;
 };
@@ -232,7 +418,6 @@ const statusLabel = (value) => {
                         />
                     </div>
                     <div class="veshop-toolbar-actions lg:justify-end">
-                        <input v-model="filterForm.date" type="date" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-700 sm:w-auto" @change="applyFilters">
                         <UiSelect v-model="filterForm.status" :options="statusFilterOptions" button-class="w-full sm:w-auto" @change="applyFilters" />
                         <button type="button" class="inline-flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto" @click="clearFilters">
                             <Filter class="h-3.5 w-3.5" />
@@ -254,61 +439,180 @@ const statusLabel = (value) => {
                     Cadastre pelo menos um serviço no catálogo para criar novos compromissos.
                 </div>
 
-                <div class="mt-3 flex justify-end">
-                    <TableViewToggle />
+                <div class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div class="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+                        <button
+                            v-for="option in viewOptions"
+                            :key="`layout-${option.value}`"
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition"
+                            :class="layout === option.value ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-white'"
+                            @click="setLayout(option.value)"
+                        >
+                            <component :is="option.icon" class="h-3.5 w-3.5" />
+                            {{ option.label }}
+                        </button>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" class="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50" @click="shiftPeriod(-1)">
+                            <ChevronLeft class="h-4 w-4" />
+                        </button>
+                        <button type="button" class="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50" @click="shiftPeriod(1)">
+                            <ChevronRight class="h-4 w-4" />
+                        </button>
+                        <input v-model="referenceDate" type="date" class="rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-700" @change="applyFilters">
+                        <button type="button" class="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="goToday">
+                            Hoje
+                        </button>
+                    </div>
                 </div>
 
-                <div class="mt-4 overflow-hidden rounded-xl border border-slate-200">
-                    <table class="min-w-full divide-y divide-slate-200 text-sm">
-                        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            <tr>
-                                <th class="px-4 py-3">Compromisso</th>
-                                <th class="px-4 py-3">Cliente</th>
-                                <th class="px-4 py-3">Serviço</th>
-                                <th class="px-4 py-3">Horário</th>
-                                <th class="px-4 py-3">Responsável</th>
-                                <th class="px-4 py-3">Status</th>
-                                <th class="px-4 py-3">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100 bg-white">
-                            <tr v-if="!rows.length">
-                                <td colspan="7" class="px-4 py-10 text-center text-sm text-slate-500">
-                                    Nenhum compromisso agendado para o filtro atual.
-                                </td>
-                            </tr>
-                            <tr v-for="appointment in rows" :key="appointment.id">
-                                <td class="px-4 py-3">
-                                    <p class="font-semibold text-slate-900">{{ appointment.title }}</p>
-                                    <p class="text-xs text-slate-500">{{ appointment.service_order_code || 'Sem OS' }}</p>
-                                </td>
-                                <td class="px-4 py-3 text-slate-700">{{ appointment.client_name }}</td>
-                                <td class="px-4 py-3 text-slate-700">{{ appointment.service_name || '-' }}</td>
-                                <td class="px-4 py-3 text-slate-700">{{ appointment.time_label }}</td>
-                                <td class="px-4 py-3 text-slate-700">{{ appointment.technician }}</td>
-                                <td class="px-4 py-3">
+                <div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Visão atual</p>
+                    <p class="text-sm font-semibold text-slate-800">{{ layoutLabel }}: {{ calendarTitle }}</p>
+                </div>
+
+                <div class="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+                    <template v-if="layout === 'month'">
+                        <div class="grid grid-cols-7 gap-2 border-b border-slate-100 pb-2 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            <span>Seg</span>
+                            <span>Ter</span>
+                            <span>Qua</span>
+                            <span>Qui</span>
+                            <span>Sex</span>
+                            <span>Sáb</span>
+                            <span>Dom</span>
+                        </div>
+                        <div class="mt-2 grid grid-cols-7 gap-2">
+                            <article
+                                v-for="day in monthGridDays"
+                                :key="`month-day-${toIsoDate(day)}`"
+                                class="rounded-lg border border-slate-200 bg-white p-2"
+                                :class="toIsoDate(day) === toIsoDate(new Date()) ? 'ring-1 ring-slate-900/20' : ''"
+                            >
+                                <div class="flex items-center justify-between gap-1">
+                                    <span class="text-xs font-semibold text-slate-700">{{ day.getDate() }}</span>
+                                    <button type="button" class="inline-flex h-5 w-5 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40" :disabled="!hasServices" @click="openCreateAt(toIsoDate(day))">
+                                        <Plus class="h-3 w-3" />
+                                    </button>
+                                </div>
+                                <div class="mt-1 space-y-1">
+                                    <button
+                                        v-for="event in eventsForDate(day).slice(0, 3)"
+                                        :key="`event-${event.id}`"
+                                        type="button"
+                                        class="block w-full truncate rounded-md px-1.5 py-1 text-left text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+                                        @click="openEdit(event)"
+                                    >
+                                        <span class="font-semibold">{{ event.start_label }}</span>
+                                        <span class="ml-1">{{ event.title }}</span>
+                                    </button>
+                                    <p v-if="eventsForDate(day).length > 3" class="text-[10px] font-semibold text-slate-500">
+                                        +{{ eventsForDate(day).length - 3 }} compromisso(s)
+                                    </p>
+                                </div>
+                            </article>
+                        </div>
+                    </template>
+
+                    <template v-else-if="layout === 'week'">
+                        <div class="grid gap-2 md:grid-cols-7">
+                            <article v-for="day in weekDays" :key="`week-day-${toIsoDate(day)}`" class="rounded-xl border border-slate-200 bg-slate-50 p-2">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="text-xs font-semibold text-slate-700">
+                                        {{ new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(day) }}
+                                    </span>
+                                    <button type="button" class="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40" :disabled="!hasServices" @click="openCreateAt(toIsoDate(day))">
+                                        <Plus class="h-3 w-3" />
+                                    </button>
+                                </div>
+                                <div class="mt-2 space-y-1">
+                                    <button
+                                        v-for="event in eventsForDate(day)"
+                                        :key="`week-event-${event.id}`"
+                                        type="button"
+                                        class="block w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left text-[11px] text-slate-700 hover:bg-slate-50"
+                                        @click="openEdit(event)"
+                                    >
+                                        <p class="font-semibold">{{ event.start_label }} - {{ event.end_label }}</p>
+                                        <p class="truncate">{{ event.title }}</p>
+                                    </button>
+                                    <p v-if="!eventsForDate(day).length" class="text-[11px] text-slate-500">Sem compromissos</p>
+                                </div>
+                            </article>
+                        </div>
+                    </template>
+
+                    <template v-else>
+                        <div class="space-y-2">
+                            <article v-for="hour in daySlots" :key="`day-slot-${hour}`" class="rounded-xl border border-slate-200 bg-slate-50 p-2">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="text-xs font-semibold text-slate-600">{{ pad2(hour) }}:00</span>
+                                    <button type="button" class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40" :disabled="!hasServices" @click="openCreateAt(referenceDate, hour)">
+                                        <Plus class="h-3 w-3" />
+                                        Novo
+                                    </button>
+                                </div>
+                                <div class="mt-2 space-y-1">
+                                    <button
+                                        v-for="event in eventsForDate(referenceDate).filter((item) => item.start.getHours() === hour)"
+                                        :key="`day-event-${event.id}`"
+                                        type="button"
+                                        class="block w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50"
+                                        @click="openEdit(event)"
+                                    >
+                                        <p class="font-semibold">{{ event.start_label }} - {{ event.end_label }} | {{ event.title }}</p>
+                                        <p class="truncate text-[11px] text-slate-500">{{ event.client_name }}</p>
+                                    </button>
+                                    <p v-if="!eventsForDate(referenceDate).filter((item) => item.start.getHours() === hour).length" class="text-[11px] text-slate-500">
+                                        Sem compromissos neste horário.
+                                    </p>
+                                </div>
+                            </article>
+                        </div>
+                    </template>
+                </div>
+                <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <h4 class="text-sm font-semibold text-slate-800">Compromissos do período</h4>
+                        <p class="text-xs text-slate-500">{{ rows.length }} registro(s)</p>
+                    </div>
+
+                    <div v-if="!rows.length" class="mt-2 rounded-lg border border-dashed border-slate-200 bg-white px-3 py-8 text-center text-sm text-slate-500">
+                        Nenhum compromisso encontrado para os filtros selecionados.
+                    </div>
+
+                    <div v-else class="mt-3 grid gap-2">
+                        <article v-for="appointment in rows" :key="`appointment-card-${appointment.id}`" class="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                            <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                    <p class="text-sm font-semibold text-slate-900">{{ appointment.title }}</p>
+                                    <p class="text-xs text-slate-500">
+                                        {{ appointment.time_label }} - {{ appointment.client_name }} - {{ appointment.service_name || 'Sem serviço' }}
+                                    </p>
+                                    <p class="text-[11px] text-slate-500">
+                                        {{ appointment.technician || 'Sem responsável' }} - {{ appointment.service_order_code || 'Sem OS' }}
+                                    </p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
                                     <span class="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
                                         {{ statusLabel(appointment.status) }}
                                     </span>
-                                </td>
-                                <td class="px-4 py-3">
-                                    <div class="flex items-center gap-2">
-                                        <button type="button" class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="openEdit(appointment)">
-                                            <Pencil class="h-3.5 w-3.5" />
-                                            Editar
-                                        </button>
-                                        <button type="button" class="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50" @click="openDeleteModal(appointment)">
-                                            <Trash2 class="h-3.5 w-3.5" />
-                                            Excluir
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                                    <button type="button" class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="openEdit(appointment)">
+                                        <Pencil class="h-3.5 w-3.5" />
+                                        Editar
+                                    </button>
+                                    <button type="button" class="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50" @click="openDeleteModal(appointment)">
+                                        <Trash2 class="h-3.5 w-3.5" />
+                                        Excluir
+                                    </button>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
                 </div>
 
-                <PaginationLinks :links="paginationLinks" :min-links="4" />
             </section>
         </section>
 

@@ -39,6 +39,7 @@ import clockIcon from '@iconify-icons/iconoir/clock';
 import walletIcon from '@iconify-icons/iconoir/wallet';
 import percentageCircleIcon from '@iconify-icons/iconoir/percentage-circle';
 import journalPageIcon from '@iconify-icons/iconoir/journal-page';
+import openBookIcon from '@iconify-icons/iconoir/open-book';
 import checkCircleIcon from '@iconify-icons/iconoir/check-circle';
 import calendarIcon from '@iconify-icons/iconoir/calendar';
 import notesIcon from '@iconify-icons/iconoir/notes';
@@ -99,6 +100,7 @@ const menuIconMap = {
     PieChart: percentageCircleIcon,
     Clock3: clockIcon,
     FileText: journalPageIcon,
+    BookOpen: openBookIcon,
     CircleCheckBig: checkCircleIcon,
     CalendarClock: calendarIcon,
     ReceiptText: notesIcon,
@@ -231,14 +233,22 @@ const userInitial = computed(() => {
     return safe ? safe.charAt(0).toUpperCase() : 'U';
 });
 
-const safeRoute = (name, fallback = '/') => {
+const safeRoute = (name, fallback = '/', params = undefined) => {
     if (typeof route !== 'function') return fallback;
 
     try {
-        return route(name);
+        return params !== undefined ? route(name, params) : route(name);
     } catch {
         return fallback;
     }
+};
+
+const resolveMenuHref = (link) => {
+    if (typeof link?.href === 'string' && link.href.trim() !== '') {
+        return link.href;
+    }
+
+    return safeRoute(link?.route, '#', link?.params);
 };
 
 const safeRouteCurrent = (pattern) => {
@@ -339,8 +349,21 @@ const hasEnabledModule = (required) => {
     return enabled.includes(String(required ?? '').trim().toLowerCase());
 };
 
+const hasAllowedNiche = (group) => {
+    const allowedNiches = Array.isArray(group?.niches)
+        ? group.niches.map((item) => String(item ?? '').trim().toLowerCase()).filter(Boolean)
+        : [];
+
+    if (!allowedNiches.length) {
+        return true;
+    }
+
+    return allowedNiches.includes(contractorNiche.value);
+};
+
 const filteredAdminMenuGroups = computed(() =>
     adminMenuGroups
+        .filter((group) => hasAllowedNiche(group))
         .filter((group) => hasEnabledModule(group.module))
         .map((group) => ({
             ...group,
@@ -916,7 +939,7 @@ const handleGlobalKeydown = (event) => {
                                 <Link
                                     v-for="link in collapsedLinks"
                                     :key="link.key"
-                                    :href="safeRoute(link.route, '#')"
+                                    :href="resolveMenuHref(link)"
                                     class="veshop-menu-collapsed-link"
                                     :class="isLinkActive(link) ? 'is-active' : ''"
                                     :title="link.label"
@@ -949,7 +972,7 @@ const handleGlobalKeydown = (event) => {
                                         <ul v-show="isGroupExpanded(group.key)" class="veshop-submenu">
                                             <li v-for="link in group.links" :key="link.key" class="veshop-submenu-item">
                                                 <Link
-                                                    :href="safeRoute(link.route, '#')"
+                                                    :href="resolveMenuHref(link)"
                                                     class="veshop-submenu-link"
                                                     :class="isLinkActive(link) ? 'is-active' : ''"
                                                 >
@@ -1104,7 +1127,7 @@ const handleGlobalKeydown = (event) => {
                             <Link
                                 v-for="link in mobileQuickLinks"
                                 :key="`mobile-${link.key}`"
-                                :href="safeRoute(link.route, '#')"
+                                :href="resolveMenuHref(link)"
                                 class="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold transition"
                                 :class="isLinkActive(link) ? 'text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
                                 :style="isLinkActive(link) ? activeMenuBackground : null"
@@ -1265,7 +1288,7 @@ const handleGlobalKeydown = (event) => {
                                             <ul v-show="isGroupExpanded(group.key)" class="veshop-submenu">
                                                 <li v-for="link in group.links" :key="link.key" class="veshop-submenu-item">
                                                     <Link
-                                                        :href="safeRoute(link.route, '#')"
+                                                        :href="resolveMenuHref(link)"
                                                         class="veshop-submenu-link"
                                                         :class="isLinkActive(link) ? 'is-active' : ''"
                                                         @click="closeSidebar"

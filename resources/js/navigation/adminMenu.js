@@ -18,6 +18,7 @@
         label: 'Cadastros',
         icon: 'Package',
         module: 'commercial',
+        niches: ['commercial'],
         links: [
             {
                 key: 'admin-products',
@@ -58,6 +59,7 @@
         label: 'Vendas e estoque',
         icon: 'ClipboardList',
         module: 'commercial',
+        niches: ['commercial'],
         links: [
             {
                 key: 'admin-pdv',
@@ -98,6 +100,7 @@
         label: 'Financeiro',
         icon: 'CircleDollarSign',
         module: 'finance',
+        niches: ['commercial'],
         links: [
             {
                 key: 'admin-finance',
@@ -120,7 +123,7 @@
     {
         key: 'administrativo',
         label: 'Administrativo',
-        icon: 'BookOpenCheck',
+        icon: 'Building2',
         module: 'reports',
         links: [
             {
@@ -134,19 +137,12 @@
         ],
     },
     {
-        key: 'services',
-        label: 'Serviços',
-        icon: 'Briefcase',
+        key: 'services-cadastros',
+        label: 'Cadastros',
+        icon: 'Package',
         module: 'services',
+        niches: ['services'],
         links: [
-            {
-                key: 'admin-services-overview',
-                label: 'Painel',
-                route: 'admin.services.index',
-                match: ['admin.services.index'],
-                icon: 'Clock3',
-                module: 'services',
-            },
             {
                 key: 'admin-services-clients',
                 label: 'Clientes',
@@ -161,6 +157,23 @@
                 route: 'admin.services.catalog',
                 match: ['admin.services.catalog'],
                 icon: 'FileText',
+                module: 'services',
+            },
+        ],
+    },
+    {
+        key: 'services-operacao',
+        label: 'Operação',
+        icon: 'ClipboardList',
+        module: 'services',
+        niches: ['services'],
+        links: [
+            {
+                key: 'admin-services-overview',
+                label: 'Painel',
+                route: 'admin.services.index',
+                match: ['admin.services.index'],
+                icon: 'Clock3',
                 module: 'services',
             },
             {
@@ -178,6 +191,24 @@
                 match: ['admin.services.schedule'],
                 icon: 'CalendarClock',
                 module: 'schedule',
+                params: { layout: 'month' },
+            },
+        ],
+    },
+    {
+        key: 'services-financeiro',
+        label: 'Financeiro',
+        icon: 'CircleDollarSign',
+        module: 'services',
+        niches: ['services'],
+        links: [
+            {
+                key: 'admin-services-finance',
+                label: 'Contas',
+                route: 'admin.finance.index',
+                match: ['admin.finance.index', 'admin.finance.payables', 'admin.finance.receivables', 'admin.finance.entries.*'],
+                icon: 'Banknote',
+                module: 'finance',
             },
             {
                 key: 'admin-services-accounting',
@@ -215,7 +246,7 @@
     {
         key: 'manuais',
         label: 'Manuais',
-        icon: 'FileText',
+        icon: 'BookOpen',
         links: [
             {
                 key: 'admin-manuals',
