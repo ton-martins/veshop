@@ -743,10 +743,16 @@ const destroyUser = () => {
                                     </td>
                                     <td class="px-4 py-3 text-sm text-slate-700">{{ user.role }}</td>
                                     <td class="px-4 py-3 text-sm text-slate-700">
-                                        <template v-if="user.contractors?.length">
-                                            {{ user.contractors.map((item) => item.name).join(', ') }}
-                                        </template>
-                                        <template v-else>Sem contratante</template>
+                                        <div v-if="user.contractors?.length" class="flex flex-wrap gap-1.5">
+                                            <span
+                                                v-for="contractor in user.contractors"
+                                                :key="`user-${user.id}-contractor-${contractor.id}`"
+                                                class="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-700"
+                                            >
+                                                {{ contractor.name }}
+                                            </span>
+                                        </div>
+                                        <span v-else class="text-xs text-slate-500">Sem contratante</span>
                                     </td>
                                     <td class="px-4 py-3">
                                         <span
