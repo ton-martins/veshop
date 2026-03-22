@@ -31,6 +31,7 @@ class ReportExportReadyNotification extends Notification
         return [
             'title' => 'Export ready',
             'message' => 'Your sales export is complete and available for download.',
+            'contractor_id' => (int) ($this->reportExport->contractor_id ?? 0),
             'target_url' => '/app/reports',
             'export_id' => (int) $this->reportExport->id,
             'download_url' => "/app/reports/exports/{$this->reportExport->id}/download",

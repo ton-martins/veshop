@@ -83,7 +83,7 @@ class HandleInertiaRequests extends Middleware
                 'checkout_manual' => fn () => $request->session()->get('checkout_manual'),
             ],
             'notifications' => fn () => $canExposeSensitiveContext
-                ? $this->resolveNotificationsSummary($authenticatedUser)
+                ? $this->resolveNotificationsSummary($authenticatedUser, $currentContractor)
                 : ['unread_count' => 0, 'items' => []],
             'contractorContext' => fn () => $canExposeSensitiveContext
                 ? $this->resolveContractorContext($request, $currentContractor)
@@ -148,7 +148,7 @@ class HandleInertiaRequests extends Middleware
     /**
      * @return array{unread_count: int, items: array<int, array<string, string|null>>}
      */
-    private function resolveNotificationsSummary(mixed $user): array
+    private function resolveNotificationsSummary(mixed $user, mixed $currentContractor = null): array
     {
         if (! $user) {
             return [
@@ -157,10 +157,21 @@ class HandleInertiaRequests extends Middleware
             ];
         }
 
+        $notificationsQuery = $user->notifications()->latest('created_at');
+        $unreadQuery = $user->unreadNotifications();
+
+        if (! $user->isMaster() && $currentContractor) {
+            $contractorId = (int) ($currentContractor->id ?? 0);
+
+            if ($contractorId > 0) {
+                $notificationsQuery->where('data->contractor_id', $contractorId);
+                $unreadQuery->where('data->contractor_id', $contractorId);
+            }
+        }
+
         return [
-            'unread_count' => (int) $user->unreadNotifications()->count(),
-            'items' => $user->notifications()
-                ->latest('created_at')
+            'unread_count' => (int) $unreadQuery->count(),
+            'items' => $notificationsQuery
                 ->limit(20)
                 ->get()
                 ->map(static function ($notification): array {

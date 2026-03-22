@@ -45,6 +45,7 @@ class OrderStatusNotification extends Notification implements ShouldQueue
         return [
             'title' => $this->title,
             'message' => $this->message,
+            'contractor_id' => (int) ($this->sale->contractor_id ?? 0),
             'order_id' => (int) $this->sale->id,
             'order_code' => (string) $this->sale->code,
             'order_status' => (string) $this->sale->status,
