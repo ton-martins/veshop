@@ -7,7 +7,9 @@ use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
 use App\Models\Contractor;
 use App\Models\ServiceCatalog;
 use App\Models\ServiceCategory;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -114,6 +116,55 @@ class ServiceCatalogController extends Controller
         ]);
     }
 
+    public function store(Request $request): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $payload = $this->validatePayload($request, $contractor);
+        $payload['contractor_id'] = $contractor->id;
+
+        ServiceCatalog::query()->create($payload);
+
+        return back()->with('status', 'Serviço cadastrado com sucesso.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validatePayload(Request $request, Contractor $contractor): array
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:180'],
+            'code' => [
+                'nullable',
+                'string',
+                'max:80',
+                Rule::unique('service_catalogs', 'code')
+                    ->where(static fn ($query) => $query->where('contractor_id', $contractor->id)),
+            ],
+            'description' => ['nullable', 'string', 'max:500'],
+            'service_category_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('service_categories', 'id')
+                    ->where(static fn ($query) => $query->where('contractor_id', $contractor->id)),
+            ],
+            'duration_minutes' => ['required', 'integer', 'min:5', 'max:1440'],
+            'base_price' => ['required', 'numeric', 'min:0'],
+            'is_active' => ['required', 'boolean'],
+        ]);
+
+        $code = trim((string) ($validated['code'] ?? ''));
+        $validated['code'] = $code === '' ? null : $code;
+
+        if (array_key_exists('description', $validated)) {
+            $description = trim((string) ($validated['description'] ?? ''));
+            $validated['description'] = $description === '' ? null : $description;
+        }
+
+        return $validated;
+    }
 }
 
 

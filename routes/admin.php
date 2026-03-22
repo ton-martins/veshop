@@ -113,7 +113,10 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
         Route::middleware('contractor.module:services')->prefix('services')->name('services.')->group(function (): void {
             Route::get('/', [ServiceOverviewController::class, 'index'])->name('index');
 
-            Route::middleware('contractor.module:services_catalog,services')->get('/catalog', [ServiceCatalogController::class, 'index'])->name('catalog');
+            Route::middleware('contractor.module:services_catalog,services')->group(function (): void {
+                Route::get('/catalog', [ServiceCatalogController::class, 'index'])->name('catalog');
+                Route::post('/catalog', [ServiceCatalogController::class, 'store'])->name('catalog.store');
+            });
 
             Route::middleware('contractor.module:service_orders')->group(function (): void {
                 Route::get('/orders', [ServiceOrderController::class, 'index'])->name('orders');
