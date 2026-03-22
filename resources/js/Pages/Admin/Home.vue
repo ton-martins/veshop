@@ -7,7 +7,7 @@ import PdvOverview from '@/Components/App/AdminOverview/PdvOverview.vue';
 import { useBranding } from '@/branding';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
-import { Briefcase, ClipboardList, Clock3, CircleDollarSign, ShoppingBag, Wallet } from 'lucide-vue-next';
+import { Briefcase, ClipboardList, Clock3, CircleDollarSign, ShoppingBag, Store, Wallet } from 'lucide-vue-next';
 
 const props = defineProps({
     overview: {
@@ -165,6 +165,40 @@ watch(
     { immediate: true },
 );
 
+const serviceTabs = computed(() => {
+    const tabs = [
+        { key: 'overview', label: 'Início', icon: Briefcase },
+    ];
+
+    if (hasModule('services_storefront')) {
+        tabs.push({ key: 'storefront', label: 'Loja virtual', icon: Store });
+    }
+
+    if (hasModule('pdv')) {
+        tabs.push({ key: 'pdv', label: 'PDV', icon: Wallet });
+    }
+
+    return tabs;
+});
+
+const serviceActiveTab = ref('overview');
+
+watch(
+    serviceTabs,
+    (tabs) => {
+        if (!tabs.length) {
+            serviceActiveTab.value = 'overview';
+            return;
+        }
+
+        const hasCurrent = tabs.some((tab) => tab.key === serviceActiveTab.value);
+        if (!hasCurrent) {
+            serviceActiveTab.value = tabs[0].key;
+        }
+    },
+    { immediate: true },
+);
+
 const asCurrency = (value) =>
     Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -220,6 +254,20 @@ const serviceStats = computed(() => {
 });
 
 const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
+const storefrontPublicUrl = computed(() => {
+    const slug = String(currentContractor.value?.slug ?? '').trim();
+    if (!slug) return '/';
+
+    if (typeof route === 'function') {
+        try {
+            return route('shop.show', { slug });
+        } catch {
+            return `/shop/${slug}`;
+        }
+    }
+
+    return `/shop/${slug}`;
+});
 </script>
 
 <template>
@@ -272,98 +320,157 @@ const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
             </template>
 
             <template v-else>
-                <div v-if="serviceStats.length" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <article v-for="stat in serviceStats" :key="stat.key" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div class="flex items-start justify-between gap-3">
-                            <div>
-                                <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
-                                <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
+                <div v-if="serviceTabs.length > 1" class="overview-tabs-shell">
+                    <div class="overview-tabs-track">
+                        <button
+                            v-for="tab in serviceTabs"
+                            :key="tab.key"
+                            type="button"
+                            class="overview-tab"
+                            :class="serviceActiveTab === tab.key ? 'is-active' : ''"
+                            @click="serviceActiveTab = tab.key"
+                        >
+                            <component :is="tab.icon" class="h-4 w-4" />
+                            {{ tab.label }}
+                        </button>
+                    </div>
+                </div>
+
+                <template v-if="serviceActiveTab === 'storefront'">
+                    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+                        <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                            <div class="space-y-2">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Loja virtual de serviços</p>
+                                <h2 class="text-base font-semibold text-slate-900">Canal público para agendamentos</h2>
+                                <p class="text-sm text-slate-600">
+                                    Configure o catálogo online e acompanhe os agendamentos recebidos pelo site.
+                                </p>
                             </div>
-                            <span class="veshop-stat-icon inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
-                                <component :is="stat.icon" class="h-4 w-4" />
-                            </span>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <Link
+                                    :href="route('admin.storefront.index')"
+                                    class="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                >
+                                    Configurar loja virtual
+                                </Link>
+                                <a
+                                    :href="storefrontPublicUrl"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="inline-flex items-center rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                                >
+                                    Abrir loja pública
+                                </a>
+                            </div>
                         </div>
-                    </article>
-                </div>
 
-                <div
-                    v-else
-                    class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
-                >
-                    Nenhum módulo de serviços habilitado para este contratante.
-                </div>
-
-                <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-                    <div class="flex flex-wrap items-center justify-between gap-3">
-                        <h2 class="text-sm font-semibold text-slate-900">{{ serviceTemplateCopy.queueTitle }}</h2>
-                        <div class="flex items-center gap-2">
-                            <Link
-                                v-if="canViewServiceOrders"
-                                :href="route('admin.services.orders')"
-                                class="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            >
-                                Ver OS
-                            </Link>
-                            <Link
-                                v-if="canViewServiceSchedule"
-                                :href="route('admin.services.schedule')"
-                                class="inline-flex items-center rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-                            >
-                                Ver agenda
-                            </Link>
+                        <div v-if="serviceStats.length" class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <article v-for="stat in serviceStats" :key="`storefront-stat-${stat.key}`" class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
+                                <p class="mt-1 text-xl font-bold text-slate-900">{{ stat.value }}</p>
+                            </article>
                         </div>
-                    </div>
+                    </section>
+                </template>
 
-                    <div v-if="canViewServiceOrders" class="mt-3 flex justify-end">
-                        <TableViewToggle />
-                    </div>
+                <template v-else-if="serviceActiveTab === 'pdv'">
+                    <PdvOverview :stats="props.overview?.commercial?.pdv ?? {}" />
+                </template>
 
-                    <div
-                        v-if="!canViewServiceOrders"
-                        class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
-                    >
-                        O módulo de ordens de serviço não está habilitado para este contratante.
-                    </div>
-
-                    <div v-else-if="serviceQueue.length" class="mt-4 overflow-hidden rounded-xl border border-slate-200">
-                        <table class="min-w-full divide-y divide-slate-200 text-sm">
-                            <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                <tr>
-                                    <th class="px-4 py-3">OS</th>
-                                    <th class="px-4 py-3">Cliente</th>
-                                    <th class="px-4 py-3">Serviço</th>
-                                    <th class="px-4 py-3">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-100 bg-white">
-                                <tr v-for="item in serviceQueue" :key="item.code">
-                                    <td class="px-4 py-3 font-semibold text-slate-900">{{ item.code }}</td>
-                                    <td class="px-4 py-3 text-slate-700">{{ item.customer }}</td>
-                                    <td class="px-4 py-3 text-slate-700">{{ item.service }}</td>
-                                    <td class="px-4 py-3">
-                                        <span
-                                            class="rounded-full px-2 py-1 text-[11px] font-semibold"
-                                            :class="item.status === 'Em execução'
-                                                ? 'bg-blue-100 text-blue-700'
-                                                : item.status === 'Triagem'
-                                                    ? 'bg-amber-100 text-amber-700'
-                                                    : 'bg-slate-200 text-slate-700'"
-                                        >
-                                            {{ item.status }}
-                                        </span>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+                <template v-else>
+                    <div v-if="serviceStats.length" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <article v-for="stat in serviceStats" :key="stat.key" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
+                                    <p class="mt-1 text-2xl font-bold text-slate-900">{{ stat.value }}</p>
+                                </div>
+                                <span class="veshop-stat-icon inline-flex h-9 w-9 items-center justify-center rounded-xl" :class="stat.tone">
+                                    <component :is="stat.icon" class="h-4 w-4" />
+                                </span>
+                            </div>
+                        </article>
                     </div>
 
                     <div
                         v-else
-                        class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
+                        class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
                     >
-                        {{ serviceTemplateCopy.queueEmpty }}
+                        Nenhum módulo de serviços habilitado para este contratante.
                     </div>
-                </section>
+
+                    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <h2 class="text-sm font-semibold text-slate-900">{{ serviceTemplateCopy.queueTitle }}</h2>
+                            <div class="flex items-center gap-2">
+                                <Link
+                                    v-if="canViewServiceOrders"
+                                    :href="route('admin.services.orders')"
+                                    class="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                >
+                                    Ver OS
+                                </Link>
+                                <Link
+                                    v-if="canViewServiceSchedule"
+                                    :href="route('admin.services.schedule')"
+                                    class="inline-flex items-center rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                                >
+                                    Ver agenda
+                                </Link>
+                            </div>
+                        </div>
+
+                        <div v-if="canViewServiceOrders" class="mt-3 flex justify-end">
+                            <TableViewToggle />
+                        </div>
+
+                        <div
+                            v-if="!canViewServiceOrders"
+                            class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
+                        >
+                            O módulo de ordens de serviço não está habilitado para este contratante.
+                        </div>
+
+                        <div v-else-if="serviceQueue.length" class="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                            <table class="min-w-full divide-y divide-slate-200 text-sm">
+                                <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    <tr>
+                                        <th class="px-4 py-3">OS</th>
+                                        <th class="px-4 py-3">Cliente</th>
+                                        <th class="px-4 py-3">Serviço</th>
+                                        <th class="px-4 py-3">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 bg-white">
+                                    <tr v-for="item in serviceQueue" :key="item.code">
+                                        <td class="px-4 py-3 font-semibold text-slate-900">{{ item.code }}</td>
+                                        <td class="px-4 py-3 text-slate-700">{{ item.customer }}</td>
+                                        <td class="px-4 py-3 text-slate-700">{{ item.service }}</td>
+                                        <td class="px-4 py-3">
+                                            <span
+                                                class="rounded-full px-2 py-1 text-[11px] font-semibold"
+                                                :class="item.status === 'Em execução'
+                                                    ? 'bg-blue-100 text-blue-700'
+                                                    : item.status === 'Triagem'
+                                                        ? 'bg-amber-100 text-amber-700'
+                                                        : 'bg-slate-200 text-slate-700'"
+                                            >
+                                                {{ item.status }}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div
+                            v-else
+                            class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
+                        >
+                            {{ serviceTemplateCopy.queueEmpty }}
+                        </div>
+                    </section>
+                </template>
             </template>
         </section>
     </AuthenticatedLayout>

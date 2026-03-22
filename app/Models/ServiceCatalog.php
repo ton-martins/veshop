@@ -20,6 +20,7 @@ class ServiceCatalog extends Model
         'name',
         'code',
         'description',
+        'image_url',
         'duration_minutes',
         'base_price',
         'is_active',

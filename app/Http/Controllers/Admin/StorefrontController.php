@@ -19,19 +19,19 @@ class StorefrontController extends Controller
 {
     use ResolvesCurrentContractor;
 
-    /**
-     * @var list<string>
-     */
-    private const TABS = ['vitrine', 'frete'];
+    private const TAB_STOREFRONT = 'vitrine';
+
+    private const TAB_SHIPPING = 'frete';
 
     public function edit(Request $request): Response
     {
         $contractor = $this->resolveCurrentContractor($request);
         abort_unless($contractor, 404, 'Contratante ativo nao encontrado.');
+        $supportsShipping = $contractor->niche() === Contractor::NICHE_COMMERCIAL;
 
         $settings = is_array($contractor->settings) ? $contractor->settings : [];
         $storefront = StorefrontSettings::normalize($contractor, $settings['shop_storefront'] ?? []);
-        $tab = $this->resolveTab($request);
+        $tab = $this->resolveTab($request, $supportsShipping);
         $shopShipping = is_array($settings['shop_shipping'] ?? null) ? $settings['shop_shipping'] : [];
 
         $products = Product::query()
@@ -57,6 +57,7 @@ class StorefrontController extends Controller
 
         return Inertia::render('Admin/Storefront/Index', [
             'initialTab' => $tab,
+            'supportsShipping' => $supportsShipping,
             'contractor' => [
                 'id' => (int) $contractor->id,
                 'name' => (string) $contractor->name,
@@ -84,11 +85,6 @@ class StorefrontController extends Controller
                     'label' => 'Serviços',
                     'description' => 'Foco em atendimentos, agenda e solicitações.',
                 ],
-                [
-                    'value' => StorefrontSettings::TEMPLATE_HYBRID,
-                    'label' => 'Híbrido',
-                    'description' => 'Produtos e serviços na mesma vitrine.',
-                ],
             ],
             'shop_url' => route('shop.show', ['slug' => $contractor->slug]),
         ]);
@@ -98,9 +94,16 @@ class StorefrontController extends Controller
     {
         $contractor = $this->resolveCurrentContractor($request);
         abort_unless($contractor, 404, 'Contratante ativo nao encontrado.');
+        $supportsShipping = $contractor->niche() === Contractor::NICHE_COMMERCIAL;
 
         $section = strtolower(trim((string) $request->input('section', 'storefront')));
         if ($section === 'shipping') {
+            if (! $supportsShipping) {
+                throw ValidationException::withMessages([
+                    'shipping' => 'Configuracao de frete disponivel apenas para contratantes do nicho comercio.',
+                ]);
+            }
+
             return $this->updateShippingSection($request, $contractor);
         }
 
@@ -369,15 +372,17 @@ class StorefrontController extends Controller
         }
     }
 
-    private function resolveTab(Request $request): string
+    private function resolveTab(Request $request, bool $supportsShipping): string
     {
+        if (! $supportsShipping) {
+            return self::TAB_STOREFRONT;
+        }
+
         $tab = trim((string) $request->string('tab')->toString());
 
-        return in_array($tab, self::TABS, true)
+        return in_array($tab, [self::TAB_STOREFRONT, self::TAB_SHIPPING], true)
             ? $tab
-            : 'vitrine';
+            : self::TAB_STOREFRONT;
     }
 
 }
-
-

@@ -81,6 +81,8 @@ class HandleInertiaRequests extends Middleware
                 'status' => fn () => $request->session()->get('status'),
                 'checkout_payment' => fn () => $request->session()->get('checkout_payment'),
                 'checkout_manual' => fn () => $request->session()->get('checkout_manual'),
+                'service_booking_whatsapp_url' => fn () => $request->session()->get('service_booking_whatsapp_url'),
+                'service_booking_whatsapp_message' => fn () => $request->session()->get('service_booking_whatsapp_message'),
             ],
             'notifications' => fn () => $canExposeSensitiveContext
                 ? $this->resolveNotificationsSummary($authenticatedUser, $currentContractor)

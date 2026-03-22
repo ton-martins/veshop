@@ -10,8 +10,6 @@ class StorefrontSettings
 
     public const TEMPLATE_SERVICES = 'servicos';
 
-    public const TEMPLATE_HYBRID = 'hibrido';
-
     /**
      * @return list<string>
      */
@@ -20,7 +18,6 @@ class StorefrontSettings
         return [
             self::TEMPLATE_COMMERCE,
             self::TEMPLATE_SERVICES,
-            self::TEMPLATE_HYBRID,
         ];
     }
 
@@ -212,7 +209,6 @@ class StorefrontSettings
     {
         return match ($template) {
             self::TEMPLATE_SERVICES => "Agende serviços em {$brandName}",
-            self::TEMPLATE_HYBRID => "Compre e contrate em {$brandName}",
             default => "Compre em {$brandName}",
         };
     }
@@ -220,8 +216,7 @@ class StorefrontSettings
     private static function defaultHeroSubtitle(string $template): string
     {
         return match ($template) {
-            self::TEMPLATE_SERVICES => 'Atendimento rápido, qualidade e praticidade para seu dia a dia.',
-            self::TEMPLATE_HYBRID => 'Produtos e serviços no mesmo lugar, com pedido simples e seguro.',
+            self::TEMPLATE_SERVICES => "Atendimento rápido, qualidade e praticidade para seu dia a dia.",
             default => 'Confira ofertas e finalize seu pedido direto pela loja virtual.',
         };
     }
@@ -229,8 +224,7 @@ class StorefrontSettings
     private static function defaultHeroCtaLabel(string $template): string
     {
         return match ($template) {
-            self::TEMPLATE_SERVICES => 'Ver serviços',
-            self::TEMPLATE_HYBRID => 'Explorar catálogo',
+            self::TEMPLATE_SERVICES => "Ver serviços",
             default => 'Explorar produtos',
         };
     }
@@ -239,30 +233,29 @@ class StorefrontSettings
     {
         return $template === self::TEMPLATE_SERVICES
             ? 'Destaques da semana'
-            : 'Promoções da semana';
+            : "Promoções da semana";
     }
 
     private static function defaultPromotionsSubtitle(string $template): string
     {
         return $template === self::TEMPLATE_SERVICES
-            ? 'Serviços selecionados para agilizar seu atendimento.'
-            : 'Ofertas selecionadas para você comprar com economia.';
+            ? "Serviços selecionados para agilizar seu atendimento."
+            : "Ofertas selecionadas para você comprar com economia.";
     }
 
     private static function defaultCatalogTitle(string $template): string
     {
         return match ($template) {
-            self::TEMPLATE_SERVICES => 'Catálogo de serviços',
-            self::TEMPLATE_HYBRID => 'Catálogo completo',
-            default => 'Catálogo de produtos',
+            self::TEMPLATE_SERVICES => "Catálogo de serviços",
+            default => "Catálogo de produtos",
         };
     }
 
     private static function defaultCatalogSubtitle(string $template): string
     {
         return $template === self::TEMPLATE_SERVICES
-            ? 'Escolha o serviço ideal e solicite atendimento.'
-            : 'Busque por categoria, compare preços e monte seu carrinho.';
+            ? "Escolha o serviço ideal e solicite atendimento."
+            : "Busque por categoria, compare preços e monte seu carrinho.";
     }
 
     private static function normalizeText(mixed $value, string $fallback = '', int $maxLength = 255): string

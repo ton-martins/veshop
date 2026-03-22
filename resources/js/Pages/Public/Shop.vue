@@ -166,7 +166,6 @@ const storefrontPromotionsSubtitle = computed(() => storefront.value.promotions.
 const storefrontCatalogTitle = computed(() => {
     if (storefront.value.catalog.title) return storefront.value.catalog.title;
     if (storefront.value.template === 'servicos') return 'Catálogo de serviços';
-    if (storefront.value.template === 'hibrido') return 'Catálogo completo';
     return 'Catálogo de produtos';
 });
 const storefrontCatalogSubtitle = computed(() =>

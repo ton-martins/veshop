@@ -173,6 +173,9 @@ Route::middleware(['shop.auth', 'shop.contractor', 'shop.verified'])->group(func
     Route::post('/shop/{slug}/checkout', [PublicShopController::class, 'checkout'])
         ->name('shop.checkout');
 
+    Route::post('/shop/{slug}/servicos/agendar', [PublicShopController::class, 'bookService'])
+        ->name('shop.services.book');
+
     Route::get('/shop/{slug}/checkout/pagamento/{sale}', [PublicShopController::class, 'checkoutPaymentStatus'])
         ->whereNumber('sale')
         ->name('shop.checkout.payment.status');

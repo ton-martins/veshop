@@ -17,8 +17,8 @@ use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\ClientController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ServiceCatalogController;
+use App\Http\Controllers\Admin\ServiceCategoryController;
 use App\Http\Controllers\Admin\ServiceOrderController;
-use App\Http\Controllers\Admin\ServiceOverviewController;
 use App\Http\Controllers\Admin\ServiceScheduleController;
 use App\Http\Controllers\Admin\SupplierController;
 use Illuminate\Support\Facades\Route;
@@ -37,7 +37,7 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
             Route::get('/branding', [ContractorBrandingController::class, 'edit'])->name('branding.index');
             Route::put('/branding', [ContractorBrandingController::class, 'update'])->name('branding.update');
         });
-        Route::middleware('contractor.module:checkout')->group(function (): void {
+        Route::middleware('contractor.module:checkout,services_storefront')->group(function (): void {
             Route::get('/storefront', [StorefrontController::class, 'edit'])->name('storefront.index');
             Route::put('/storefront', [StorefrontController::class, 'update'])->name('storefront.update');
         });
@@ -111,11 +111,19 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
         });
 
         Route::middleware('contractor.module:services')->prefix('services')->name('services.')->group(function (): void {
-            Route::get('/', [ServiceOverviewController::class, 'index'])->name('index');
+            Route::get('/', static function () {
+                return redirect()->route('admin.home');
+            })->name('index');
 
             Route::middleware('contractor.module:services_catalog,services')->group(function (): void {
+                Route::get('/categories', [ServiceCategoryController::class, 'index'])->name('categories');
+                Route::post('/categories', [ServiceCategoryController::class, 'store'])->name('categories.store');
+                Route::put('/categories/{serviceCategory}', [ServiceCategoryController::class, 'update'])->name('categories.update');
+                Route::delete('/categories/{serviceCategory}', [ServiceCategoryController::class, 'destroy'])->name('categories.destroy');
                 Route::get('/catalog', [ServiceCatalogController::class, 'index'])->name('catalog');
                 Route::post('/catalog', [ServiceCatalogController::class, 'store'])->name('catalog.store');
+                Route::put('/catalog/{serviceCatalog}', [ServiceCatalogController::class, 'update'])->name('catalog.update');
+                Route::delete('/catalog/{serviceCatalog}', [ServiceCatalogController::class, 'destroy'])->name('catalog.destroy');
             });
 
             Route::middleware('contractor.module:service_orders')->group(function (): void {
@@ -132,7 +140,7 @@ Route::middleware(['auth', '2fa', 'verified', 'role:admin'])
                 Route::delete('/schedule/{serviceAppointment}', [ServiceScheduleController::class, 'destroy'])->name('schedule.destroy');
             });
 
-            Route::middleware('contractor.module:finance,tasks,documents')->group(function (): void {
+            Route::middleware('contractor.module:tasks')->group(function (): void {
                 Route::get('/accounting', [AccountingController::class, 'index'])->name('accounting');
             });
 

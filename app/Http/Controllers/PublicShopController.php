@@ -13,10 +13,16 @@ use App\Models\ProductVariation;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SalePayment;
+use App\Models\ServiceAppointment;
+use App\Models\ServiceCatalog;
+use App\Models\ServiceCategory;
+use App\Models\ServiceOrder;
 use App\Models\ShopCustomer;
 use App\Models\ShopCustomerFavorite;
+use App\Notifications\ServiceBookingCreatedNotification;
 use App\Support\PaymentFeeSnapshot;
 use App\Support\StorefrontSettings;
+use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -24,7 +30,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -36,6 +44,25 @@ class PublicShopController extends Controller
     public function show(string $slug): Response
     {
         $contractor = $this->resolveActiveContractorBySlug($slug);
+        $settings = is_array($contractor->settings) ? $contractor->settings : [];
+        $storefront = StorefrontSettings::normalize($contractor, $settings['shop_storefront'] ?? []);
+
+        if (
+            $contractor->niche() === Contractor::NICHE_SERVICES
+            || ($storefront['template'] ?? StorefrontSettings::defaultTemplate($contractor)) === StorefrontSettings::TEMPLATE_SERVICES
+        ) {
+            $catalog = $this->resolveServiceCatalogPayload($contractor);
+
+            return Inertia::render('Public/ServiceShop', [
+                'contractor' => $this->toContractorPayload($contractor),
+                'storefront' => $storefront,
+                'categories' => $catalog['categories'],
+                'services' => $catalog['services'],
+                'shop_auth' => $this->resolveShopAuthPayload($contractor),
+                'shop_account' => $this->resolveShopAccountPayload($contractor),
+                'bookings' => $this->resolveServiceBookingsPayload($contractor),
+            ]);
+        }
 
         $products = Product::query()
             ->where('contractor_id', $contractor->id)
@@ -139,6 +166,130 @@ class PublicShopController extends Controller
         ]);
     }
 
+    public function bookService(Request $request, string $slug): RedirectResponse
+    {
+        $contractor = $this->resolveActiveContractorBySlug($slug);
+        $shopCustomer = $this->resolveCurrentShopCustomerForContractor($contractor);
+
+        if (! $shopCustomer) {
+            throw ValidationException::withMessages([
+                'booking' => 'Faça login para agendar um serviço.',
+            ]);
+        }
+
+        if ($contractor->requiresEmailVerification() && ! $shopCustomer->hasVerifiedEmail()) {
+            throw ValidationException::withMessages([
+                'booking' => 'Confirme seu e-mail para concluir o agendamento.',
+            ]);
+        }
+
+        $validated = $request->validate([
+            'service_catalog_id' => [
+                'required',
+                'integer',
+                Rule::exists('service_catalogs', 'id')->where(
+                    static fn ($query) => $query->where('contractor_id', $contractor->id)->where('is_active', true)
+                ),
+            ],
+            'scheduled_for' => ['required', 'date', 'after:now'],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        /** @var ServiceCatalog|null $service */
+        $service = ServiceCatalog::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->where('id', (int) $validated['service_catalog_id'])
+            ->first();
+
+        if (! $service) {
+            throw ValidationException::withMessages([
+                'service_catalog_id' => 'Serviço inválido para este catálogo.',
+            ]);
+        }
+
+        $scheduledFor = Carbon::parse((string) $validated['scheduled_for']);
+        $durationMinutes = max(15, (int) ($service->duration_minutes ?? 60));
+        $endsAt = $scheduledFor->copy()->addMinutes($durationMinutes);
+
+        $client = $this->resolveOrCreateCheckoutClient($contractor, [
+            'customer_name' => (string) $shopCustomer->name,
+            'customer_email' => (string) $shopCustomer->email,
+            'customer_phone' => (string) $shopCustomer->phone,
+            'shipping_city' => (string) $shopCustomer->city,
+            'shipping_state' => (string) $shopCustomer->state,
+        ], $shopCustomer);
+
+        if ($client && (int) ($shopCustomer->client_id ?? 0) !== (int) $client->id) {
+            $shopCustomer->client_id = $client->id;
+            $shopCustomer->save();
+        }
+
+        $createdOrderId = null;
+
+        DB::transaction(function () use ($contractor, $shopCustomer, $validated, $service, $scheduledFor, $endsAt, $client, &$createdOrderId): void {
+            $order = ServiceOrder::query()->create([
+                'contractor_id' => $contractor->id,
+                'client_id' => $client?->id,
+                'service_catalog_id' => $service->id,
+                'code' => $this->generateServiceOrderCode($contractor),
+                'title' => 'Agendamento online - '.$service->name,
+                'description' => trim((string) ($validated['notes'] ?? '')) ?: null,
+                'scheduled_for' => $scheduledFor,
+                'due_at' => $endsAt,
+                'status' => ServiceOrder::STATUS_OPEN,
+                'priority' => 'normal',
+                'assigned_to_name' => null,
+                'estimated_amount' => (float) $service->base_price,
+                'final_amount' => (float) $service->base_price,
+                'metadata' => [
+                    'channel' => 'public_service_shop',
+                    'shop_customer_id' => (int) $shopCustomer->id,
+                    'customer_name' => (string) $shopCustomer->name,
+                    'customer_email' => (string) $shopCustomer->email,
+                    'customer_phone' => (string) ($shopCustomer->phone ?? ''),
+                ],
+            ]);
+            $createdOrderId = (int) $order->id;
+
+            ServiceAppointment::query()->create([
+                'contractor_id' => $contractor->id,
+                'service_order_id' => $order->id,
+                'client_id' => $client?->id,
+                'service_catalog_id' => $service->id,
+                'title' => 'Agendamento online - '.$service->name,
+                'starts_at' => $scheduledFor,
+                'ends_at' => $endsAt,
+                'status' => ServiceAppointment::STATUS_SCHEDULED,
+                'location' => 'Online',
+                'notes' => trim((string) ($validated['notes'] ?? '')) ?: null,
+            ]);
+        });
+
+        $createdOrder = $createdOrderId > 0
+            ? ServiceOrder::query()
+                ->where('contractor_id', $contractor->id)
+                ->where('id', $createdOrderId)
+                ->with([
+                    'contractor:id,slug,phone,settings',
+                    'service:id,name',
+                    'client:id,name',
+                ])
+                ->first()
+            : null;
+
+        $whatsappPayload = $this->resolveServiceBookingWhatsappPayload($contractor, $createdOrder ?? null);
+
+        if ($createdOrder) {
+            $this->notifyServiceBookingCreated($contractor, $createdOrder, $whatsappPayload['url'] ?? null);
+        }
+
+        return back()
+            ->with('status', 'Agendamento enviado com sucesso.')
+            ->with('service_booking_whatsapp_url', $whatsappPayload['url'] ?? null)
+            ->with('service_booking_whatsapp_message', $whatsappPayload['message'] ?? null);
+    }
+
     public function checkout(StoreShopCheckoutRequest $request, string $slug): RedirectResponse
     {
         $contractor = $this->resolveActiveContractorBySlug($slug);
@@ -172,7 +323,7 @@ class PublicShopController extends Controller
                 ->first();
 
             if ($existingSale) {
-                return back()->with('status', 'Pedido ja recebido. Estamos processando sua solicitacao.');
+                return back()->with('status', 'Pedido já recebido. Estamos processando sua solicitação.');
             }
         }
 
@@ -515,7 +666,7 @@ class PublicShopController extends Controller
                 throw $exception;
             }
 
-            return back()->with('status', 'Pedido ja recebido. Estamos processando sua solicitacao.');
+            return back()->with('status', 'Pedido já recebido. Estamos processando sua solicitação.');
         }
 
         $checkoutPayment = null;
@@ -675,6 +826,154 @@ class PublicShopController extends Controller
             'variations' => $variations,
             'has_variations' => $hasVariations,
         ];
+    }
+
+    /**
+     * @return array{categories: array<int, array<string, mixed>>, services: array<int, array<string, mixed>>}
+     */
+    private function resolveServiceCatalogPayload(Contractor $contractor): array
+    {
+        $categories = ServiceCategory::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->withCount([
+                'services as services_count' => static fn ($query) => $query->where('is_active', true),
+            ])
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(static fn (ServiceCategory $category): array => [
+                'id' => (int) $category->id,
+                'name' => (string) $category->name,
+                'services_count' => (int) ($category->services_count ?? 0),
+            ])
+            ->values()
+            ->all();
+
+        $fallbackImage = $this->normalizePublicAssetUrl($contractor->brand_avatar_url ?: $contractor->brand_logo_url);
+
+        $services = ServiceCatalog::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->with('category:id,name')
+            ->orderByDesc('updated_at')
+            ->orderBy('name')
+            ->get([
+                'id',
+                'service_category_id',
+                'name',
+                'code',
+                'description',
+                'image_url',
+                'duration_minutes',
+                'base_price',
+            ])
+            ->map(function (ServiceCatalog $service) use ($fallbackImage): array {
+                $duration = max(15, (int) ($service->duration_minutes ?? 60));
+
+                return [
+                    'id' => (int) $service->id,
+                    'service_category_id' => $service->service_category_id ? (int) $service->service_category_id : null,
+                    'category_name' => $service->category?->name ? (string) $service->category->name : 'Serviço',
+                    'name' => (string) $service->name,
+                    'code' => (string) ($service->code ?? ''),
+                    'description' => trim((string) ($service->description ?? '')),
+                    'duration_minutes' => $duration,
+                    'duration_label' => $duration >= 60
+                        ? rtrim(rtrim(number_format($duration / 60, 1, ',', '.'), '0'), ',').'h'
+                        : $duration.' min',
+                    'base_price' => round((float) $service->base_price, 2),
+                    'rating' => 5.0,
+                    'reviews_label' => 'Novos atendimentos',
+                    'coupon_label' => '5% OFF no primeiro agendamento',
+                    'image_url' => $this->normalizePublicAssetUrl((string) ($service->image_url ?? '')) ?: $fallbackImage,
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'categories' => $categories,
+            'services' => $services,
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function resolveServiceBookingsPayload(Contractor $contractor): array
+    {
+        $customer = $this->resolveCurrentShopCustomerForContractor($contractor);
+        if (! $customer) {
+            return [];
+        }
+
+        if ($contractor->requiresEmailVerification() && ! $customer->hasVerifiedEmail()) {
+            return [];
+        }
+
+        return ServiceOrder::query()
+            ->where('contractor_id', $contractor->id)
+            ->where(function ($query) use ($customer): void {
+                $query->where('metadata->shop_customer_id', (int) $customer->id);
+
+                if ($customer->client_id) {
+                    $query->orWhere('client_id', $customer->client_id);
+                }
+            })
+            ->with([
+                'service:id,name,duration_minutes',
+                'appointments:id,service_order_id,starts_at,ends_at,status',
+            ])
+            ->orderByDesc('scheduled_for')
+            ->orderByDesc('id')
+            ->limit(80)
+            ->get()
+            ->map(fn (ServiceOrder $order): array => $this->toServiceBookingPayload($order))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function toServiceBookingPayload(ServiceOrder $order): array
+    {
+        $appointment = $order->appointments
+            ->sortByDesc(static fn (ServiceAppointment $item) => (string) ($item->starts_at ?? $item->created_at))
+            ->first();
+        $statusMeta = $this->resolveServiceOrderStatusMeta((string) $order->status);
+        $scheduled = $order->scheduled_for ?: $appointment?->starts_at;
+        $endsAt = $appointment?->ends_at;
+
+        return [
+            'id' => (int) $order->id,
+            'code' => (string) $order->code,
+            'title' => (string) $order->title,
+            'service_name' => $order->service?->name ? (string) $order->service->name : 'Serviço',
+            'scheduled_for' => $scheduled ? $scheduled->format('Y-m-d\\TH:i') : null,
+            'scheduled_label' => $scheduled ? $scheduled->format('d/m/Y H:i') : 'Horário a confirmar',
+            'ends_at' => $endsAt ? $endsAt->format('Y-m-d\\TH:i') : null,
+            'status' => $statusMeta,
+            'estimated_amount' => round((float) ($order->estimated_amount ?? 0), 2),
+            'final_amount' => round((float) ($order->final_amount ?? 0), 2),
+            'notes' => trim((string) ($order->description ?? '')),
+        ];
+    }
+
+    /**
+     * @return array{value: string, label: string, tone: string}
+     */
+    private function resolveServiceOrderStatusMeta(string $status): array
+    {
+        return match ($status) {
+            ServiceOrder::STATUS_OPEN => ['value' => $status, 'label' => 'Agendado', 'tone' => 'bg-amber-100 text-amber-700'],
+            ServiceOrder::STATUS_IN_PROGRESS => ['value' => $status, 'label' => 'Em atendimento', 'tone' => 'bg-blue-100 text-blue-700'],
+            ServiceOrder::STATUS_WAITING => ['value' => $status, 'label' => 'Aguardando', 'tone' => 'bg-slate-100 text-slate-700'],
+            ServiceOrder::STATUS_DONE => ['value' => $status, 'label' => 'Concluído', 'tone' => 'bg-emerald-100 text-emerald-700'],
+            ServiceOrder::STATUS_CANCELLED => ['value' => $status, 'label' => 'Cancelado', 'tone' => 'bg-rose-100 text-rose-700'],
+            default => ['value' => $status, 'label' => 'Em andamento', 'tone' => 'bg-slate-100 text-slate-700'],
+        };
     }
 
     private function normalizePublicAssetUrl(?string $value): ?string
@@ -942,6 +1241,94 @@ class PublicShopController extends Controller
     }
 
     /**
+     * @return array{url: string|null, message: string|null}
+     */
+    private function resolveServiceBookingWhatsappPayload(Contractor $contractor, ?ServiceOrder $order): array
+    {
+        if (! $order) {
+            return [
+                'url' => null,
+                'message' => null,
+            ];
+        }
+
+        $message = $this->buildServiceBookingWhatsappMessage($order);
+        $whatsappPhone = $this->normalizeWhatsappPhone($contractor->phone);
+        $whatsappUrl = $whatsappPhone !== null
+            ? 'https://wa.me/'.$whatsappPhone.'?text='.rawurlencode($message)
+            : null;
+
+        return [
+            'url' => $whatsappUrl,
+            'message' => $message,
+        ];
+    }
+
+    private function buildServiceBookingWhatsappMessage(ServiceOrder $order): string
+    {
+        $serviceName = trim((string) ($order->service?->name ?? $order->title));
+        $clientName = trim((string) ($order->client?->name ?? data_get($order->metadata, 'customer_name', '')));
+        $scheduledFor = $order->scheduled_for?->format('d/m/Y H:i') ?? 'A confirmar';
+
+        $lines = [
+            "Olá! Acabei de enviar o agendamento {$order->code}.",
+        ];
+
+        if ($serviceName !== '') {
+            $lines[] = "Serviço: {$serviceName}.";
+        }
+
+        if ($clientName !== '') {
+            $lines[] = "Cliente: {$clientName}.";
+        }
+
+        $lines[] = "Data e hora: {$scheduledFor}.";
+
+        return implode("\n", $lines);
+    }
+
+    private function notifyServiceBookingCreated(Contractor $contractor, ServiceOrder $order, ?string $whatsappUrl): void
+    {
+        $order->loadMissing([
+            'contractor:id,slug,settings',
+            'service:id,name',
+            'client:id,name',
+        ]);
+
+        $title = 'Novo agendamento recebido';
+        $serviceName = trim((string) ($order->service?->name ?? $order->title));
+        $customerName = trim((string) ($order->client?->name ?? data_get($order->metadata, 'customer_name', '')));
+        $messageParts = [
+            "Agendamento {$order->code} registrado",
+        ];
+
+        if ($serviceName !== '') {
+            $messageParts[] = "serviço {$serviceName}";
+        }
+
+        if ($customerName !== '') {
+            $messageParts[] = "cliente {$customerName}";
+        }
+
+        $message = implode(' • ', $messageParts).'.';
+        $targetUrl = '/app/services/orders';
+
+        $recipients = $contractor->users()
+            ->where('role', 'admin')
+            ->where('is_active', true)
+            ->get();
+
+        if ($recipients->isEmpty()) {
+            return;
+        }
+
+        Notification::send(
+            $recipients,
+            new ServiceBookingCreatedNotification($order, $title, $message, $targetUrl, $whatsappUrl),
+        );
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     private function resolveManualCheckoutPayload(Contractor $contractor, Sale $sale): ?array
@@ -1189,6 +1576,20 @@ class PublicShopController extends Controller
             $code = 'PED-'.now()->format('Ymd-His').'-'.str_pad((string) random_int(0, 999), 3, '0', STR_PAD_LEFT);
 
             $exists = Sale::query()
+                ->where('contractor_id', $contractor->id)
+                ->where('code', $code)
+                ->exists();
+        } while ($exists);
+
+        return $code;
+    }
+
+    private function generateServiceOrderCode(Contractor $contractor): string
+    {
+        do {
+            $code = 'SVC-'.now()->format('Ymd-His').'-'.str_pad((string) random_int(0, 999), 3, '0', STR_PAD_LEFT);
+
+            $exists = ServiceOrder::query()
                 ->where('contractor_id', $contractor->id)
                 ->where('code', $code)
                 ->exists();

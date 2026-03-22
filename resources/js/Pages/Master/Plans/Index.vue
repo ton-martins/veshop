@@ -55,6 +55,24 @@ const businessTypeLabels = {
     general_services: 'Serviços gerais',
 };
 
+const businessTypesByNiche = {
+    commercial: ['store', 'confectionery'],
+    services: ['barbershop', 'auto_electric', 'mechanic', 'accounting', 'general_services'],
+};
+
+const businessTypesForNiche = (niche) => {
+    const safeNiche = normalizeNiche(niche);
+    return businessTypesByNiche[safeNiche] ?? [];
+};
+
+const defaultBusinessTypeForNiche = (niche) => businessTypesForNiche(niche)[0] ?? '';
+
+const normalizeBusinessTypeForNiche = (niche, value) => {
+    const allowed = businessTypesForNiche(niche);
+    const safe = String(value ?? '').trim().toLowerCase();
+    return allowed.includes(safe) ? safe : (allowed[0] ?? '');
+};
+
 const normalizeScope = (value) => {
     const safe = String(value ?? '').trim().toLowerCase();
     return knownScopes.includes(safe) ? safe : 'specific';
@@ -201,6 +219,11 @@ const resolveModuleCodes = (niche, codes, withDefaults = false) => {
 
 const normalizePlan = (plan, index) => {
     const niche = normalizeNiche(plan?.niche ?? defaultNiche.value);
+    const moduleBusinessType = normalizeBusinessTypeForNiche(
+        niche,
+        plan?.module_business_type ?? defaultBusinessTypeForNiche(niche)
+    );
+
     return {
         id: plan?.id ?? null,
         temp_id: plan?.id ? `plan-${plan.id}-${index}` : tempId('draft'),
@@ -220,6 +243,7 @@ const normalizePlan = (plan, index) => {
         tier_rank: Number(plan?.tier_rank ?? index + 1),
         features: normalizeFeatures(plan?.features, plan?.features_text),
         module_codes: resolveModuleCodes(niche, plan?.module_codes, true),
+        module_business_type: moduleBusinessType,
         is_active: Boolean(plan?.is_active ?? true),
         is_featured: Boolean(plan?.is_featured ?? false),
         show_on_landing: Boolean(plan?.show_on_landing ?? false),
@@ -292,6 +316,14 @@ const sortedModules = (modules) => {
 
 const groupedModulesForPlan = (plan) => {
     const modules = sortedModules(modulesForPlan(plan));
+    const selectedBusinessType = normalizeBusinessTypeForNiche(plan.niche, plan.module_business_type);
+    const specificModules = modules.filter((module) => {
+        if (module.scope !== 'specific') return false;
+        const businessTypes = Array.isArray(module.business_types) ? module.business_types : [];
+        if (!businessTypes.length) return true;
+
+        return businessTypes.includes(selectedBusinessType);
+    });
 
     return [
         {
@@ -310,9 +342,16 @@ const groupedModulesForPlan = (plan) => {
             key: 'specific',
             title: 'Módulos por tipo de negócio',
             description: 'Recursos específicos para tipos de negócio do nicho.',
-            modules: modules.filter((module) => module.scope === 'specific'),
+            modules: specificModules,
         },
-    ].filter((group) => group.modules.length > 0);
+    ].filter((group) => group.key === 'specific' || group.modules.length > 0);
+};
+
+const businessTypeOptionsForPlan = (plan) => {
+    return businessTypesForNiche(plan?.niche).map((businessType) => ({
+        value: businessType,
+        label: labelForBusinessType(businessType),
+    }));
 };
 
 const moduleBusinessTypeLabels = (module) => {
@@ -543,6 +582,7 @@ const restoreDefaultModules = (plan) => {
 const onPlanNicheChange = (plan, value) => {
     const nextNiche = normalizeNiche(value);
     plan.niche = nextNiche;
+    plan.module_business_type = normalizeBusinessTypeForNiche(nextNiche, plan.module_business_type);
     plan.module_codes = resolveModuleCodes(nextNiche, plan.module_codes, true);
 };
 
@@ -559,6 +599,9 @@ const modulesModalGroups = computed(() => {
 });
 
 const openModulesModal = (plan) => {
+    if (plan) {
+        plan.module_business_type = normalizeBusinessTypeForNiche(plan.niche, plan.module_business_type);
+    }
     modulesModalPlanId.value = plan?.temp_id ?? '';
     modulesModalOpen.value = modulesModalPlanId.value !== '';
 };
@@ -764,12 +807,24 @@ const closeModulesModal = () => {
                 </div>
 
                 <div v-if="modulesModalPlan && modulesModalGroups.length" class="space-y-4">
+                    <section class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-600">Tipo de negócio</p>
+                        <p class="mt-1 text-[11px] text-slate-500">
+                            Os módulos específicos abaixo são filtrados conforme o tipo de negócio selecionado.
+                        </p>
+                        <UiSelect
+                            v-model="modulesModalPlan.module_business_type"
+                            :options="businessTypeOptionsForPlan(modulesModalPlan)"
+                            button-class="mt-2 w-full text-sm"
+                        />
+                    </section>
+
                     <section v-for="group in modulesModalGroups" :key="`module-group-${group.key}`" class="space-y-2">
                         <div>
                             <p class="text-xs font-semibold uppercase tracking-wide text-slate-600">{{ group.title }}</p>
                             <p class="text-[11px] text-slate-500">{{ group.description }}</p>
                         </div>
-                        <div class="grid gap-2 sm:grid-cols-2">
+                        <div v-if="group.modules.length" class="grid gap-2 sm:grid-cols-2">
                             <label v-for="module in group.modules" :key="`module-modal-${modulesModalPlan.temp_id}-${module.code}`" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
                                 <span class="flex items-start gap-2">
                                     <input type="checkbox" class="mt-0.5 rounded border-slate-300" :checked="isModuleSelected(modulesModalPlan, module.code)" @change="toggleModule(modulesModalPlan, module.code)">
@@ -785,6 +840,9 @@ const closeModulesModal = () => {
                                 </span>
                             </label>
                         </div>
+                        <p v-else class="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-500">
+                            Nenhum módulo específico disponível para este tipo de negócio.
+                        </p>
                     </section>
                 </div>
 

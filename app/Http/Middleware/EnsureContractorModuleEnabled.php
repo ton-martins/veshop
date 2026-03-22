@@ -114,6 +114,7 @@ class EnsureContractorModuleEnabled
             'services_catalog',
             'service_orders',
             'schedule',
+            'services_storefront',
             'workshop',
             'tasks',
             'documents' => [Contractor::MODULE_SERVICES],

@@ -2,13 +2,16 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
+use App\Http\Controllers\Controller;
 use App\Models\Contractor;
 use App\Models\ServiceCatalog;
 use App\Models\ServiceCategory;
+use App\Services\ProductImageProcessor;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -17,9 +20,11 @@ class ServiceCatalogController extends Controller
 {
     use ResolvesCurrentContractor;
 
-    /**
-     * Display a listing of service catalogs.
-     */
+    public function __construct(
+        private readonly ProductImageProcessor $imageProcessor,
+    ) {
+    }
+
     public function index(Request $request): Response
     {
         $contractor = $this->resolveCurrentContractor($request);
@@ -56,20 +61,7 @@ class ServiceCatalogController extends Controller
             ->orderBy('name')
             ->paginate(10)
             ->withQueryString()
-            ->through(static function (ServiceCatalog $service): array {
-                return [
-                    'id' => $service->id,
-                    'name' => $service->name,
-                    'code' => $service->code,
-                    'description' => $service->description,
-                    'service_category_id' => $service->service_category_id,
-                    'category_name' => $service->category?->name,
-                    'duration_minutes' => (int) $service->duration_minutes,
-                    'base_price' => (float) $service->base_price,
-                    'is_active' => (bool) $service->is_active,
-                    'status_label' => $service->is_active ? 'Ativo' : 'Inativo',
-                ];
-            });
+            ->through(fn (ServiceCatalog $service): array => $this->toServicePayload($service));
 
         $totalServices = ServiceCatalog::query()
             ->where('contractor_id', $contractor->id)
@@ -123,16 +115,43 @@ class ServiceCatalogController extends Controller
 
         $payload = $this->validatePayload($request, $contractor);
         $payload['contractor_id'] = $contractor->id;
+        $payload = $this->resolveImagePayload($request, $contractor, null, $payload);
 
         ServiceCatalog::query()->create($payload);
 
         return back()->with('status', 'Serviço cadastrado com sucesso.');
     }
 
+    public function update(Request $request, ServiceCatalog $serviceCatalog): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $serviceCatalog = $this->resolveOwnedService($contractor, $serviceCatalog);
+        $payload = $this->validatePayload($request, $contractor, (int) $serviceCatalog->id);
+        $payload = $this->resolveImagePayload($request, $contractor, $serviceCatalog, $payload);
+
+        $serviceCatalog->fill($payload)->save();
+
+        return back()->with('status', 'Serviço atualizado com sucesso.');
+    }
+
+    public function destroy(Request $request, ServiceCatalog $serviceCatalog): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $serviceCatalog = $this->resolveOwnedService($contractor, $serviceCatalog);
+        $this->deleteServiceImage($contractor, $serviceCatalog->image_url);
+        $serviceCatalog->delete();
+
+        return back()->with('status', 'Serviço removido com sucesso.');
+    }
+
     /**
      * @return array<string, mixed>
      */
-    private function validatePayload(Request $request, Contractor $contractor): array
+    private function validatePayload(Request $request, Contractor $contractor, ?int $ignoreServiceId = null): array
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:180'],
@@ -141,9 +160,13 @@ class ServiceCatalogController extends Controller
                 'string',
                 'max:80',
                 Rule::unique('service_catalogs', 'code')
-                    ->where(static fn ($query) => $query->where('contractor_id', $contractor->id)),
+                    ->where(static fn ($query) => $query->where('contractor_id', $contractor->id))
+                    ->ignore($ignoreServiceId),
             ],
             'description' => ['nullable', 'string', 'max:500'],
+            'image_url' => ['nullable', 'string', 'max:2048'],
+            'image_file' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
+            'remove_image' => ['nullable', 'boolean'],
             'service_category_id' => [
                 'nullable',
                 'integer',
@@ -163,8 +186,149 @@ class ServiceCatalogController extends Controller
             $validated['description'] = $description === '' ? null : $description;
         }
 
+        if (array_key_exists('image_url', $validated)) {
+            $imageUrl = trim((string) ($validated['image_url'] ?? ''));
+            $validated['image_url'] = $imageUrl === '' ? null : $imageUrl;
+        }
+
         return $validated;
     }
-}
 
+    private function resolveOwnedService(Contractor $contractor, ServiceCatalog $serviceCatalog): ServiceCatalog
+    {
+        abort_unless((int) $serviceCatalog->contractor_id === (int) $contractor->id, 404);
+
+        return $serviceCatalog;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function resolveImagePayload(
+        Request $request,
+        Contractor $contractor,
+        ?ServiceCatalog $serviceCatalog,
+        array $data
+    ): array {
+        $currentImageUrl = $serviceCatalog?->image_url;
+        $currentStoragePath = $this->normalizeServiceStoragePath($contractor, $currentImageUrl);
+        $removeImage = (bool) ($data['remove_image'] ?? false);
+        $submittedImageUrl = trim((string) ($data['image_url'] ?? ''));
+        $uploadedImage = $request->file('image_file');
+
+        if ($uploadedImage instanceof UploadedFile) {
+            if ($currentStoragePath) {
+                $this->deleteServiceImage($contractor, $currentStoragePath);
+            }
+
+            $processed = $this->imageProcessor->processAndStore($uploadedImage, $contractor, 'services/catalog');
+            $data['image_url'] = $processed['url'];
+        } elseif ($removeImage) {
+            if ($currentStoragePath) {
+                $this->deleteServiceImage($contractor, $currentStoragePath);
+            }
+            $data['image_url'] = null;
+        } elseif ($submittedImageUrl !== '') {
+            $submittedStoragePath = $this->normalizeServiceStoragePath($contractor, $submittedImageUrl);
+
+            if (! $submittedStoragePath && $currentStoragePath) {
+                $this->deleteServiceImage($contractor, $currentStoragePath);
+            } elseif (
+                $submittedStoragePath &&
+                $currentStoragePath &&
+                $submittedStoragePath !== $currentStoragePath
+            ) {
+                $this->deleteServiceImage($contractor, $currentStoragePath);
+            }
+        } elseif ($serviceCatalog) {
+            $data['image_url'] = $serviceCatalog->image_url;
+        }
+
+        unset($data['image_file'], $data['remove_image']);
+
+        return $data;
+    }
+
+    private function normalizeServiceStoragePath(Contractor $contractor, mixed $value): ?string
+    {
+        $raw = trim((string) ($value ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        $path = parse_url($raw, PHP_URL_PATH);
+        $candidate = is_string($path) && $path !== '' ? $path : $raw;
+
+        if (str_starts_with($candidate, '/storage/')) {
+            $candidate = substr($candidate, strlen('/storage/'));
+        } elseif (str_starts_with($candidate, 'storage/')) {
+            $candidate = substr($candidate, strlen('storage/'));
+        }
+
+        $candidate = ltrim($candidate, '/');
+        if ($candidate === '') {
+            return null;
+        }
+
+        $prefix = "contractors/{$contractor->id}/services/catalog/";
+        if (! str_starts_with($candidate, $prefix)) {
+            return null;
+        }
+
+        return $candidate;
+    }
+
+    private function deleteServiceImage(Contractor $contractor, mixed $value): void
+    {
+        $path = $this->normalizeServiceStoragePath($contractor, $value);
+        if (! $path) {
+            return;
+        }
+
+        if (Storage::disk('public')->exists($path)) {
+            Storage::disk('public')->delete($path);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function toServicePayload(ServiceCatalog $service): array
+    {
+        return [
+            'id' => $service->id,
+            'name' => $service->name,
+            'code' => $service->code,
+            'description' => $service->description,
+            'image_url' => $this->normalizePublicAssetUrl($service->image_url),
+            'service_category_id' => $service->service_category_id,
+            'category_name' => $service->category?->name,
+            'duration_minutes' => (int) $service->duration_minutes,
+            'base_price' => (float) $service->base_price,
+            'is_active' => (bool) $service->is_active,
+            'status_label' => $service->is_active ? 'Ativo' : 'Inativo',
+        ];
+    }
+
+    private function normalizePublicAssetUrl(?string $value): ?string
+    {
+        if (! $value) {
+            return null;
+        }
+
+        $path = parse_url($value, PHP_URL_PATH);
+        $normalized = is_string($path) && $path !== '' ? $path : $value;
+
+        if (str_starts_with($normalized, '/storage/')) {
+            return $normalized;
+        }
+
+        if (str_starts_with($normalized, 'storage/')) {
+            return '/'.ltrim($normalized, '/');
+        }
+
+        return $value;
+    }
+}
 

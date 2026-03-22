@@ -6,6 +6,7 @@ import { Store, Truck } from 'lucide-vue-next';
 
 const props = defineProps({
     initialTab: { type: String, default: 'vitrine' },
+    supportsShipping: { type: Boolean, default: true },
     contractor: { type: Object, default: () => ({}) },
     storefront: { type: Object, default: () => ({}) },
     shopShipping: { type: Object, default: () => ({}) },
@@ -17,19 +18,24 @@ const props = defineProps({
 const page = usePage();
 const statusMessage = computed(() => page.props.flash?.status ?? null);
 
-const tabs = [
+const allTabs = [
     { key: 'vitrine', label: 'Vitrine', icon: Store },
     { key: 'frete', label: 'Frete', icon: Truck },
 ];
-const allowedTabs = new Set(tabs.map((tab) => tab.key));
-const activeTab = ref(allowedTabs.has(props.initialTab) ? props.initialTab : 'vitrine');
+const tabs = computed(() => allTabs.filter((tab) => props.supportsShipping || tab.key !== 'frete'));
+const allowedTabs = computed(() => new Set(tabs.value.map((tab) => tab.key)));
+const resolveTabKey = (tab) => (allowedTabs.value.has(tab) ? tab : 'vitrine');
+const activeTab = ref(resolveTabKey(props.initialTab));
 
-watch(() => props.initialTab, (tab) => {
-    activeTab.value = allowedTabs.has(tab) ? tab : 'vitrine';
-});
+watch(
+    () => [props.initialTab, props.supportsShipping],
+    () => {
+        activeTab.value = resolveTabKey(props.initialTab);
+    },
+);
 
 const setActiveTab = (tab) => {
-    if (!allowedTabs.has(tab)) return;
+    if (!allowedTabs.value.has(tab)) return;
     activeTab.value = tab;
 
     if (typeof window !== 'undefined') {
@@ -242,7 +248,7 @@ const submitShipping = () => {
                 </div>
             </form>
 
-            <form v-else class="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" @submit.prevent="submitShipping">
+            <form v-else-if="activeTab === 'frete' && props.supportsShipping" class="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" @submit.prevent="submitShipping">
                 <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                     <span>Permitir retirada na loja</span>
                     <input v-model="shippingForm.shipping_pickup_enabled" type="checkbox" class="rounded border-slate-300">
