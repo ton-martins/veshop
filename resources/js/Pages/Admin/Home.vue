@@ -327,15 +327,6 @@ const serviceQuickLinks = computed(() => {
         });
     }
 
-    if (canViewServiceStorefront.value) {
-        links.push({
-            key: 'storefront',
-            label: 'Configurar loja virtual',
-            href: route('admin.storefront.index'),
-            tone: 'primary',
-        });
-    }
-
     return links;
 });
 
@@ -405,6 +396,12 @@ const storefrontPublicUrl = computed(() => {
             </template>
 
             <template v-else>
+                <CatalogBanner
+                    v-if="showCatalogBanner"
+                    :contractor-name="contractorName"
+                    :catalog-url="catalogUrl"
+                />
+
                 <div v-if="serviceTabs.length > 1" class="overview-tabs-shell">
                     <div class="overview-tabs-track">
                         <button
