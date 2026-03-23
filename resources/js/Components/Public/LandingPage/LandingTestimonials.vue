@@ -1,23 +1,23 @@
 <script setup>
 const metrics = [
-    { value: '99,9%', label: 'Estabilidade da operacao' },
+    { value: '99,9%', label: 'Estabilidade da operação' },
     { value: '3x', label: 'Mais visibilidade gerencial' },
-    { value: '48h', label: 'Implantacao assistida inicial' },
+    { value: '48h', label: 'Implantação assistida inicial' },
 ];
 
 const testimonials = [
     {
-        quote: 'A experiencia no Veshop deixou nossa operacao mais previsivel e profissional.',
+        quote: 'A experiência no Veshop deixou nossa operação mais previsível e profissional.',
         author: 'Mariana Souza',
         role: 'Diretora comercial',
     },
     {
-        quote: 'Unificamos loja e servicos com clareza operacional real.',
+        quote: 'Unificamos loja e serviços com clareza operacional real.',
         author: 'Carlos Menezes',
-        role: 'Gestor de operacoes',
+        role: 'Gestor de operações',
     },
     {
-        quote: 'Fluxo rapido e dados confiaveis para decidir no dia a dia.',
+        quote: 'Fluxo rápido e dados confiáveis para decidir no dia a dia.',
         author: 'Rafael Lima',
         role: 'CEO',
     },
@@ -45,7 +45,7 @@ const initials = (name) => {
                     </div>
                     <div class="section-title-border mt-3 m-0"></div>
                     <h2 class="proof-title">
-                        Empresas escolhem o Veshop para gestao com consistencia.
+                        Empresas escolhem o Veshop para gestão com consistência.
                     </h2>
                 </div>
                 <div class="col-lg-5">
