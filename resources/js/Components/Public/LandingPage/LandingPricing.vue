@@ -417,16 +417,47 @@ const topFeatures = (plan) => {
 .plan-card {
     width: 100%;
     border: 1px solid rgba(214, 255, 223, 0.2) !important;
-    background: rgba(8, 36, 44, 0.68);
+    background: linear-gradient(165deg, rgba(13, 55, 64, 0.94) 0%, rgba(8, 35, 44, 0.92) 58%, rgba(5, 24, 31, 0.95) 100%);
     box-shadow: 0 18px 30px -24px rgba(2, 12, 10, 0.9) !important;
     border-radius: 20px;
-    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.plan-card::before {
+    content: '';
+    position: absolute;
+    inset: -42% 20% auto -28%;
+    height: 220px;
+    pointer-events: none;
+    background: radial-gradient(circle at center, rgba(156, 225, 168, 0.26) 0%, rgba(156, 225, 168, 0) 72%);
+    z-index: 0;
+}
+
+.plan-card::after {
+    content: '';
+    position: absolute;
+    inset: auto -16% -38% 14%;
+    height: 170px;
+    pointer-events: none;
+    background: radial-gradient(circle at center, rgba(69, 195, 153, 0.2) 0%, rgba(69, 195, 153, 0) 74%);
+    z-index: 0;
+}
+
+.plan-card.border-success {
+    background: linear-gradient(165deg, rgba(18, 64, 58, 0.96) 0%, rgba(9, 45, 40, 0.94) 58%, rgba(5, 28, 25, 0.96) 100%);
+    border-color: rgba(191, 246, 204, 0.36) !important;
 }
 
 .plan-card:hover {
     transform: translateY(-4px);
     box-shadow: 0 24px 36px -24px rgba(2, 12, 10, 0.95) !important;
     border-color: rgba(214, 255, 223, 0.3) !important;
+}
+
+.plan-card.border-success:hover {
+    border-color: rgba(191, 246, 204, 0.52) !important;
 }
 
 .plan-card .text-primary {
@@ -454,6 +485,8 @@ const topFeatures = (plan) => {
 
 .plan-card .card-body,
 .plan-card .card-footer {
+    position: relative;
+    z-index: 1;
     word-break: break-word;
 }
 

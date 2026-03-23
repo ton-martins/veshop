@@ -10,9 +10,9 @@ import { Link } from '@inertiajs/vue3';
                 <div class="col-lg-9">
                     <article class="cta-box text-center">
                         <p class="cta-eyebrow">Pronto para elevar o padrão?</p>
-                        <h2 class="cta-title">Leve o Veshop para sua operação com implantação orientada a resultado.</h2>
+                        <h2 class="cta-title">Leve a gestão da sua empresa para outro nível.</h2>
                         <p class="cta-subtitle">
-                            Fluxo enxuto e arquitetura preparada para crescer com o seu negócio.
+                            Fluxo enxuto e arquitetura modular para você crescer.
                         </p>
                         <div class="cta-actions">
                             <Link :href="route('login')" class="btn cta-btn cta-btn-primary">
