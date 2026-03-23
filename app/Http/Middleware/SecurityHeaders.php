@@ -22,7 +22,8 @@ class SecurityHeaders
             return $response;
         }
 
-        $this->setHeaderIfMissing($response, 'X-Frame-Options', 'DENY');
+        $allowSameOriginFrame = $this->shouldAllowSameOriginFrame($request);
+        $this->setHeaderIfMissing($response, 'X-Frame-Options', $allowSameOriginFrame ? 'SAMEORIGIN' : 'DENY');
         $this->setHeaderIfMissing($response, 'X-Content-Type-Options', 'nosniff');
         $this->setHeaderIfMissing($response, 'Referrer-Policy', 'strict-origin-when-cross-origin');
         $this->setHeaderIfMissing($response, 'Permissions-Policy', "camera=(), microphone=(), geolocation=()");
@@ -30,7 +31,7 @@ class SecurityHeaders
         $this->setHeaderIfMissing($response, 'Cross-Origin-Opener-Policy', 'same-origin');
         $this->setHeaderIfMissing($response, 'Cross-Origin-Resource-Policy', 'same-origin');
         $this->setHeaderIfMissing($response, 'Access-Control-Expose-Headers', 'X-Inertia, X-Inertia-Location, X-Inertia-Version');
-        $csp = $this->resolveContentSecurityPolicy();
+        $csp = $this->resolveContentSecurityPolicy($allowSameOriginFrame);
         $this->setHeaderIfMissing(
             $response,
             'Content-Security-Policy',
@@ -106,11 +107,15 @@ class SecurityHeaders
             && array_key_exists('version', $payload);
     }
 
-    private function resolveContentSecurityPolicy(): string
+    private function resolveContentSecurityPolicy(bool $allowSameOriginFrame = false): string
     {
         $policy = (string) config('security.headers.csp');
         if ($policy === '') {
             return $policy;
+        }
+
+        if ($allowSameOriginFrame) {
+            $policy = $this->replaceCspDirective($policy, 'frame-ancestors', "'self'");
         }
 
         if (! app()->isLocal()) {
@@ -135,6 +140,35 @@ class SecurityHeaders
         $origin = $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
 
         return $this->appendCspSource($policy, 'script-src', $origin);
+    }
+
+    private function shouldAllowSameOriginFrame(Request $request): bool
+    {
+        return $request->routeIs('admin.services.accounting.documents.versions.download')
+            && ! $request->boolean('download');
+    }
+
+    private function replaceCspDirective(string $policy, string $directive, string $value): string
+    {
+        $chunks = array_values(array_filter(array_map('trim', explode(';', $policy))));
+        $directivePrefix = $directive.' ';
+        $updated = false;
+
+        foreach ($chunks as $index => $chunk) {
+            if (! str_starts_with($chunk, $directivePrefix)) {
+                continue;
+            }
+
+            $chunks[$index] = $directivePrefix.trim($value);
+            $updated = true;
+            break;
+        }
+
+        if (! $updated) {
+            $chunks[] = $directivePrefix.trim($value);
+        }
+
+        return implode('; ', $chunks).';';
     }
 
     private function appendCspSource(string $policy, string $directive, string $source): string
