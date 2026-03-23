@@ -53,10 +53,13 @@ class PublicShopService
             || ($storefront['template'] ?? StorefrontSettings::defaultTemplate($contractor)) === StorefrontSettings::TEMPLATE_SERVICES
         ) {
             $catalog = $this->resolveServiceCatalogPayload($contractor);
+            $storefrontPayload = $this->resolveServiceStorefrontPayload($contractor, collect($catalog['services'] ?? []));
+            $storeAvailability = $this->resolveStoreAvailabilityPayload($contractor, $storefrontPayload);
 
             return Inertia::render('Public/ServiceShop', [
                 'contractor' => $this->toContractorPayload($contractor),
-                'storefront' => $storefront,
+                'storefront' => $storefrontPayload,
+                'store_availability' => $storeAvailability,
                 'categories' => $catalog['categories'],
                 'services' => $catalog['services'],
                 'shop_auth' => $this->resolveShopAuthPayload($contractor),
@@ -138,12 +141,15 @@ class PublicShopService
             ->map(fn (Product $product): array => $this->toProductPayload($product))
             ->values()
             ->all();
+        $storefrontPayload = $this->resolveStorefrontPayload($contractor, $products);
+        $storeAvailability = $this->resolveStoreAvailabilityPayload($contractor, $storefrontPayload);
 
         return Inertia::render('Public/Shop', [
             'contractor' => $this->toContractorPayload($contractor),
             'categories' => $categories,
             'products' => $productsPayload,
-            'storefront' => $this->resolveStorefrontPayload($contractor, $products),
+            'storefront' => $storefrontPayload,
+            'store_availability' => $storeAvailability,
             'payment_methods' => $this->resolveCheckoutPaymentMethods($contractor),
             'shipping_config' => $this->resolveShippingConfigPayload($contractor),
             'shop_auth' => $this->resolveShopAuthPayload($contractor),
@@ -171,6 +177,7 @@ class PublicShopService
     {
         $contractor = $this->resolveActiveContractorBySlug($slug);
         $shopCustomer = $this->resolveCurrentShopCustomerForContractor($contractor);
+        $storeAvailability = $this->resolveStoreAvailabilityPayload($contractor);
 
         if (! $shopCustomer) {
             throw ValidationException::withMessages([
@@ -181,6 +188,12 @@ class PublicShopService
         if ($contractor->requiresEmailVerification() && ! $shopCustomer->hasVerifiedEmail()) {
             throw ValidationException::withMessages([
                 'booking' => 'Confirme seu e-mail para concluir o agendamento.',
+            ]);
+        }
+
+        if (! (bool) ($storeAvailability['can_book'] ?? true)) {
+            throw ValidationException::withMessages([
+                'booking' => (string) ($storeAvailability['message'] ?? 'Agendamentos indisponíveis no momento.'),
             ]);
         }
 
@@ -209,7 +222,17 @@ class PublicShopService
             ]);
         }
 
-        $scheduledFor = Carbon::parse((string) $validated['scheduled_for']);
+        $timezone = $this->resolveContractorTimezone($contractor);
+        $scheduledFor = Carbon::parse((string) $validated['scheduled_for'], $timezone);
+        $businessHours = is_array($storeAvailability['business_hours'] ?? null)
+            ? $storeAvailability['business_hours']
+            : StorefrontSettings::normalizeBusinessHours([]);
+        $hoursCheck = $this->validateDateTimeAgainstBusinessHours($scheduledFor, $businessHours);
+        if (! (bool) ($hoursCheck['allowed'] ?? false)) {
+            throw ValidationException::withMessages([
+                'scheduled_for' => (string) ($hoursCheck['message'] ?? 'Escolha um horário dentro do funcionamento da loja.'),
+            ]);
+        }
         $durationMinutes = max(15, (int) ($service->duration_minutes ?? 60));
         $endsAt = $scheduledFor->copy()->addMinutes($durationMinutes);
 
@@ -294,6 +317,7 @@ class PublicShopService
     public function checkout(StoreShopCheckoutRequest $request, string $slug): RedirectResponse
     {
         $contractor = $this->resolveActiveContractorBySlug($slug);
+        $storeAvailability = $this->resolveStoreAvailabilityPayload($contractor);
         $data = $request->validated();
         $shopCustomer = $this->resolveCurrentShopCustomerForContractor($contractor);
         $idempotencyKey = $this->resolveCheckoutIdempotencyKey($request, $data);
@@ -307,6 +331,12 @@ class PublicShopService
         if ($contractor->requiresEmailVerification() && ! $shopCustomer->hasVerifiedEmail()) {
             throw ValidationException::withMessages([
                 'order' => 'Confirme seu e-mail para finalizar o pedido.',
+            ]);
+        }
+
+        if (! (bool) ($storeAvailability['can_checkout'] ?? true)) {
+            throw ValidationException::withMessages([
+                'order' => (string) ($storeAvailability['message'] ?? 'Loja indisponível no momento para novos pedidos.'),
             ]);
         }
 
@@ -900,6 +930,39 @@ class PublicShopService
     }
 
     /**
+     * @param  Collection<int, array<string, mixed>>  $services
+     * @return array<string, mixed>
+     */
+    private function resolveServiceStorefrontPayload(Contractor $contractor, Collection $services): array
+    {
+        $settings = is_array($contractor->settings) ? $contractor->settings : [];
+        $storefront = StorefrontSettings::normalize($contractor, $settings['shop_storefront'] ?? []);
+
+        $availableServiceIds = $services
+            ->map(static fn (array $service): int => (int) ($service['id'] ?? 0))
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->values()
+            ->all();
+
+        $availableIdMap = array_flip($availableServiceIds);
+
+        $promotionIds = collect($storefront['promotions']['service_ids'] ?? [])
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => isset($availableIdMap[$id]))
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($promotionIds === []) {
+            $promotionIds = array_slice($availableServiceIds, 0, 8);
+        }
+
+        $storefront['promotions']['service_ids'] = $promotionIds;
+
+        return $storefront;
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     private function resolveServiceBookingsPayload(Contractor $contractor): array
@@ -1091,6 +1154,211 @@ class PublicShopService
         $storefront['promotions']['product_ids'] = $promotionIds;
 
         return $storefront;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $storefront
+     * @return array<string, mixed>
+     */
+    private function resolveStoreAvailabilityPayload(Contractor $contractor, ?array $storefront = null): array
+    {
+        $normalizedStorefront = is_array($storefront)
+            ? StorefrontSettings::normalize($contractor, $storefront)
+            : StorefrontSettings::normalize(
+                $contractor,
+                (is_array($contractor->settings) ? $contractor->settings['shop_storefront'] ?? [] : [])
+            );
+
+        $timezone = $this->resolveContractorTimezone($contractor);
+        $now = Carbon::now($timezone);
+        $businessHours = StorefrontSettings::normalizeBusinessHours($normalizedStorefront['business_hours'] ?? []);
+        $todayKey = $this->resolveBusinessDayKey($now);
+        $todayHours = is_array($businessHours[$todayKey] ?? null)
+            ? $businessHours[$todayKey]
+            : ['enabled' => false, 'open' => '00:00', 'close' => '23:59'];
+
+        $storeOnline = (bool) ($normalizedStorefront['store_online'] ?? true);
+        $isOpenNow = $storeOnline && $this->isTimeWithinWindow($now, $todayHours);
+        $nextOpen = $this->resolveNextOpeningFromHours($businessHours, $now);
+
+        $statusLabel = 'Aberto agora';
+        $message = '';
+
+        if (! $storeOnline) {
+            $statusLabel = 'Loja em manutenção';
+            $message = trim((string) ($normalizedStorefront['offline_message'] ?? ''))
+                ?: 'Loja temporariamente indisponível. Tente novamente mais tarde.';
+        } elseif (! $isOpenNow) {
+            $statusLabel = 'Fechado agora';
+            $message = $nextOpen
+                ? "Loja fechada no momento. {$nextOpen['label']}."
+                : 'Loja fechada no momento.';
+        }
+
+        return [
+            'store_online' => $storeOnline,
+            'is_open_now' => $isOpenNow,
+            'can_checkout' => $storeOnline && $isOpenNow,
+            'can_book' => $storeOnline,
+            'message' => $message,
+            'status_label' => $statusLabel,
+            'next_open_label' => $nextOpen['label'] ?? null,
+            'timezone' => $timezone,
+            'current_day' => $todayKey,
+            'current_time' => $now->format('H:i'),
+            'business_hours' => $businessHours,
+        ];
+    }
+
+    /**
+     * @param  array<string, array{enabled: bool, open: string, close: string}>  $businessHours
+     * @return array{allowed: bool, message: string}
+     */
+    private function validateDateTimeAgainstBusinessHours(Carbon $dateTime, array $businessHours): array
+    {
+        $dayKey = $this->resolveBusinessDayKey($dateTime);
+        $dayLabel = $this->resolveBusinessDayLabel($dayKey);
+        $dayHours = is_array($businessHours[$dayKey] ?? null)
+            ? $businessHours[$dayKey]
+            : ['enabled' => false, 'open' => '00:00', 'close' => '23:59'];
+
+        if (! (bool) ($dayHours['enabled'] ?? false)) {
+            return [
+                'allowed' => false,
+                'message' => "Não há atendimento em {$dayLabel}.",
+            ];
+        }
+
+        $open = trim((string) ($dayHours['open'] ?? '00:00'));
+        $close = trim((string) ($dayHours['close'] ?? '23:59'));
+        if ($this->hourToMinutes($close) <= $this->hourToMinutes($open)) {
+            return [
+                'allowed' => false,
+                'message' => "Horário indisponível em {$dayLabel}.",
+            ];
+        }
+
+        if (! $this->isTimeWithinWindow($dateTime, $dayHours)) {
+            return [
+                'allowed' => false,
+                'message' => "Escolha um horário entre {$open} e {$close} em {$dayLabel}.",
+            ];
+        }
+
+        return [
+            'allowed' => true,
+            'message' => '',
+        ];
+    }
+
+    private function resolveContractorTimezone(Contractor $contractor): string
+    {
+        $fallback = (string) config('app.timezone', 'UTC');
+        if (! in_array($fallback, timezone_identifiers_list(), true)) {
+            $fallback = 'UTC';
+        }
+
+        $candidate = trim((string) ($contractor->timezone ?: ''));
+        if ($candidate === '') {
+            return $fallback;
+        }
+
+        return in_array($candidate, timezone_identifiers_list(), true)
+            ? $candidate
+            : $fallback;
+    }
+
+    /**
+     * @param  array{enabled: bool, open: string, close: string}  $dayHours
+     */
+    private function isTimeWithinWindow(Carbon $dateTime, array $dayHours): bool
+    {
+        if (! (bool) ($dayHours['enabled'] ?? false)) {
+            return false;
+        }
+
+        $openMinutes = $this->hourToMinutes((string) ($dayHours['open'] ?? '00:00'));
+        $closeMinutes = $this->hourToMinutes((string) ($dayHours['close'] ?? '23:59'));
+        if ($closeMinutes <= $openMinutes) {
+            return false;
+        }
+
+        $currentMinutes = ((int) $dateTime->format('H') * 60) + (int) $dateTime->format('i');
+
+        return $currentMinutes >= $openMinutes && $currentMinutes <= $closeMinutes;
+    }
+
+    /**
+     * @param  array<string, array{enabled: bool, open: string, close: string}>  $businessHours
+     * @return array{day_key: string, open: string, label: string}|null
+     */
+    private function resolveNextOpeningFromHours(array $businessHours, Carbon $fromDateTime): ?array
+    {
+        for ($offset = 0; $offset < 7; $offset++) {
+            $candidateDate = $fromDateTime->copy()->addDays($offset);
+            $dayKey = $this->resolveBusinessDayKey($candidateDate);
+            $dayHours = is_array($businessHours[$dayKey] ?? null)
+                ? $businessHours[$dayKey]
+                : ['enabled' => false, 'open' => '00:00', 'close' => '23:59'];
+
+            if (! (bool) ($dayHours['enabled'] ?? false)) {
+                continue;
+            }
+
+            $open = trim((string) ($dayHours['open'] ?? '00:00'));
+            $close = trim((string) ($dayHours['close'] ?? '23:59'));
+            if ($this->hourToMinutes($close) <= $this->hourToMinutes($open)) {
+                continue;
+            }
+
+            [$openHour, $openMinute] = explode(':', $open) + [0, 0];
+            $openingDateTime = $candidateDate->copy()->setTime((int) $openHour, (int) $openMinute);
+
+            if ($offset === 0 && $fromDateTime->greaterThanOrEqualTo($openingDateTime)) {
+                continue;
+            }
+
+            $dayLabel = $this->resolveBusinessDayLabel($dayKey);
+            $label = $offset === 0
+                ? "Abre hoje as {$open}"
+                : ($offset === 1
+                    ? "Abre amanhã as {$open}"
+                    : "Abre {$dayLabel} as {$open}");
+
+            return [
+                'day_key' => $dayKey,
+                'open' => $open,
+                'label' => $label,
+            ];
+        }
+
+        return null;
+    }
+
+    private function resolveBusinessDayKey(Carbon $dateTime): string
+    {
+        $key = strtolower($dateTime->englishDayOfWeek);
+
+        return array_key_exists($key, StorefrontSettings::BUSINESS_HOUR_DAYS)
+            ? $key
+            : 'monday';
+    }
+
+    private function resolveBusinessDayLabel(string $dayKey): string
+    {
+        return StorefrontSettings::BUSINESS_HOUR_DAYS[$dayKey] ?? 'Dia';
+    }
+
+    private function hourToMinutes(string $time): int
+    {
+        $safe = trim($time);
+        if (preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $safe) !== 1) {
+            return 0;
+        }
+
+        [$hour, $minute] = explode(':', $safe) + [0, 0];
+
+        return ((int) $hour * 60) + (int) $minute;
     }
 
     /**

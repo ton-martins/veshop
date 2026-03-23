@@ -862,6 +862,138 @@ class ShopCheckoutTest extends TestCase
         ]);
     }
 
+    public function test_checkout_is_blocked_when_store_is_offline(): void
+    {
+        $contractor = $this->createContractor('loja-offline-checkout');
+        $contractor->settings = array_replace((array) $contractor->settings, [
+            'shop_storefront' => [
+                'store_online' => false,
+                'offline_message' => 'Loja em manutenção.',
+            ],
+        ]);
+        $contractor->save();
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Caderno',
+            'sku' => 'CAD-001',
+            'sale_price' => 19.90,
+            'stock_quantity' => 20,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Offline',
+            'email' => 'cliente-offline@example.com',
+            'phone' => '71999990221',
+            'cep' => '41810-000',
+            'street' => 'Rua das Flores',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), [
+                'customer_name' => 'Cliente Offline',
+                'customer_phone' => '(71) 99999-0221',
+                'customer_email' => 'cliente-offline@example.com',
+                'items' => [
+                    ['product_id' => $product->id, 'quantity' => 1],
+                ],
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+        $response->assertSessionHasErrors('order');
+
+        $this->assertDatabaseMissing('sales', [
+            'contractor_id' => $contractor->id,
+            'shop_customer_id' => $shopCustomer->id,
+            'source' => Sale::SOURCE_CATALOG,
+        ]);
+    }
+
+    public function test_checkout_is_blocked_when_store_is_closed_by_business_hours(): void
+    {
+        $contractor = $this->createContractor('loja-fechada-checkout');
+        $contractor->settings = array_replace((array) $contractor->settings, [
+            'shop_storefront' => [
+                'store_online' => true,
+                'business_hours' => $this->closedBusinessHours(),
+            ],
+        ]);
+        $contractor->save();
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Agenda',
+            'sku' => 'AGD-001',
+            'sale_price' => 24.90,
+            'stock_quantity' => 20,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Horário',
+            'email' => 'cliente-horario@example.com',
+            'phone' => '71999990222',
+            'cep' => '41810-000',
+            'street' => 'Rua das Flores',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), [
+                'customer_name' => 'Cliente Horário',
+                'customer_phone' => '(71) 99999-0222',
+                'customer_email' => 'cliente-horario@example.com',
+                'items' => [
+                    ['product_id' => $product->id, 'quantity' => 1],
+                ],
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+        $response->assertSessionHasErrors('order');
+
+        $this->assertDatabaseMissing('sales', [
+            'contractor_id' => $contractor->id,
+            'shop_customer_id' => $shopCustomer->id,
+            'source' => Sale::SOURCE_CATALOG,
+        ]);
+    }
+
+    /**
+     * @return array<string, array{enabled: bool, open: string, close: string}>
+     */
+    private function closedBusinessHours(): array
+    {
+        return [
+            'monday' => ['enabled' => false, 'open' => '09:00', 'close' => '18:00'],
+            'tuesday' => ['enabled' => false, 'open' => '09:00', 'close' => '18:00'],
+            'wednesday' => ['enabled' => false, 'open' => '09:00', 'close' => '18:00'],
+            'thursday' => ['enabled' => false, 'open' => '09:00', 'close' => '18:00'],
+            'friday' => ['enabled' => false, 'open' => '09:00', 'close' => '18:00'],
+            'saturday' => ['enabled' => false, 'open' => '09:00', 'close' => '18:00'],
+            'sunday' => ['enabled' => false, 'open' => '09:00', 'close' => '18:00'],
+        ];
+    }
+
     private function createContractor(string $slug): Contractor
     {
         return Contractor::query()->create([

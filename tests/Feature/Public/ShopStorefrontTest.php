@@ -5,6 +5,8 @@ namespace Tests\Feature\Public;
 use App\Models\Category;
 use App\Models\Contractor;
 use App\Models\Product;
+use App\Models\ServiceCatalog;
+use App\Models\ServiceCategory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -186,6 +188,76 @@ class ShopStorefrontTest extends TestCase
                     && (int) ($child['products_count'] ?? 0) === 1
                     && (int) ($child['parent_id'] ?? 0) === (int) $parentCategory->id;
             })
+        );
+    }
+
+    public function test_public_service_shop_receives_featured_service_ids_from_storefront_settings(): void
+    {
+        $contractor = Contractor::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Serviço Destacado',
+            'email' => 'servico-destacado@example.com',
+            'slug' => 'servico-destacado',
+            'timezone' => 'America/Sao_Paulo',
+            'brand_name' => 'Serviço Destacado',
+            'brand_primary_color' => '#073341',
+            'settings' => [
+                'business_niche' => Contractor::NICHE_SERVICES,
+                'active_plan_name' => 'Pro',
+                'shop_storefront' => [
+                    'template' => 'servicos',
+                    'promotions' => [
+                        'title' => 'Destaques',
+                        'subtitle' => 'Serviços recomendados',
+                        'service_ids' => [],
+                    ],
+                ],
+            ],
+            'is_active' => true,
+        ]);
+
+        $category = ServiceCategory::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Atendimento',
+            'slug' => 'atendimento',
+            'description' => null,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $featuredService = ServiceCatalog::query()->create([
+            'contractor_id' => $contractor->id,
+            'service_category_id' => $category->id,
+            'name' => 'Serviço Premium',
+            'code' => 'SRV-001',
+            'description' => 'Descrição',
+            'duration_minutes' => 60,
+            'base_price' => 149.90,
+            'is_active' => true,
+        ]);
+
+        ServiceCatalog::query()->create([
+            'contractor_id' => $contractor->id,
+            'service_category_id' => $category->id,
+            'name' => 'Serviço Básico',
+            'code' => 'SRV-002',
+            'description' => 'Descrição',
+            'duration_minutes' => 30,
+            'base_price' => 79.90,
+            'is_active' => true,
+        ]);
+
+        $settings = (array) $contractor->settings;
+        $settings['shop_storefront']['promotions']['service_ids'] = [$featuredService->id];
+        $contractor->settings = $settings;
+        $contractor->save();
+
+        $response = $this->get(route('shop.show', ['slug' => $contractor->slug]));
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('Public/ServiceShop')
+            ->where('storefront.promotions.service_ids.0', $featuredService->id)
         );
     }
 

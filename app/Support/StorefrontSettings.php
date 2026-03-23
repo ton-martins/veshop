@@ -13,6 +13,19 @@ class StorefrontSettings
     public const TEMPLATE_SERVICES = 'servicos';
 
     /**
+     * @var array<string, string>
+     */
+    public const BUSINESS_HOUR_DAYS = [
+        'monday' => 'Segunda',
+        'tuesday' => 'Terça',
+        'wednesday' => 'Quarta',
+        'thursday' => 'Quinta',
+        'friday' => 'Sexta',
+        'saturday' => 'Sábado',
+        'sunday' => 'Domingo',
+    ];
+
+    /**
      * @return list<string>
      */
     public static function templates(): array
@@ -38,11 +51,18 @@ class StorefrontSettings
         $rawHero = is_array($settings['hero'] ?? null) ? $settings['hero'] : [];
         $rawPromotions = is_array($settings['promotions'] ?? null) ? $settings['promotions'] : [];
         $rawCatalog = is_array($settings['catalog'] ?? null) ? $settings['catalog'] : [];
+        $rawBusinessHours = is_array($settings['business_hours'] ?? null) ? $settings['business_hours'] : [];
 
         $defaultColor = self::normalizeHex((string) ($contractor->brand_primary_color ?? ''), '#073341');
 
         return [
             'template' => $template,
+            'store_online' => (bool) ($settings['store_online'] ?? true),
+            'offline_message' => self::normalizeText(
+                $settings['offline_message'] ?? null,
+                self::defaultOfflineMessage(),
+                240
+            ),
             'blocks' => [
                 'hero' => (bool) ($rawBlocks['hero'] ?? true),
                 'banners' => (bool) ($rawBlocks['banners'] ?? true),
@@ -80,6 +100,7 @@ class StorefrontSettings
                     220
                 ),
                 'product_ids' => self::normalizeProductIds($rawPromotions['product_ids'] ?? []),
+                'service_ids' => self::normalizeServiceIds($rawPromotions['service_ids'] ?? []),
             ],
             'catalog' => [
                 'title' => self::normalizeText(
@@ -93,6 +114,7 @@ class StorefrontSettings
                     220
                 ),
             ],
+            'business_hours' => self::normalizeBusinessHours($rawBusinessHours),
         ];
     }
 
@@ -175,22 +197,55 @@ class StorefrontSettings
      */
     public static function normalizeProductIds(mixed $raw): array
     {
-        if (! is_array($raw)) {
-            return [];
-        }
+        return self::normalizeIntegerIds($raw);
+    }
 
-        $ids = [];
+    /**
+     * @param  array<int, mixed>|mixed  $raw
+     * @return array<int, int>
+     */
+    public static function normalizeServiceIds(mixed $raw): array
+    {
+        return self::normalizeIntegerIds($raw);
+    }
 
-        foreach ($raw as $value) {
-            $id = (int) $value;
-            if ($id <= 0) {
-                continue;
+    /**
+     * @param  array<string, mixed>|mixed  $raw
+     * @return array<string, array{enabled: bool, open: string, close: string}>
+     */
+    public static function normalizeBusinessHours(mixed $raw): array
+    {
+        $items = is_array($raw) ? $raw : [];
+        $normalized = [];
+
+        foreach (self::businessHourDayKeys() as $day) {
+            $row = is_array($items[$day] ?? null) ? $items[$day] : [];
+            $open = self::normalizeHour($row['open'] ?? null, '00:00');
+            $close = self::normalizeHour($row['close'] ?? null, '23:59');
+
+            $openMinutes = self::timeToMinutes($open);
+            $closeMinutes = self::timeToMinutes($close);
+            if ($closeMinutes <= $openMinutes) {
+                $open = '00:00';
+                $close = '23:59';
             }
 
-            $ids[$id] = $id;
+            $normalized[$day] = [
+                'enabled' => (bool) ($row['enabled'] ?? true),
+                'open' => $open,
+                'close' => $close,
+            ];
         }
 
-        return array_values($ids);
+        return $normalized;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function businessHourDayKeys(): array
+    {
+        return array_keys(self::BUSINESS_HOUR_DAYS);
     }
 
     public static function normalizeHex(string $value, string $fallback): string
@@ -261,6 +316,11 @@ class StorefrontSettings
             : 'Busque por categoria, compare preços e monte seu carrinho.';
     }
 
+    private static function defaultOfflineMessage(): string
+    {
+        return 'Loja temporariamente indisponível. Tente novamente mais tarde.';
+    }
+
     private static function normalizeText(mixed $value, string $fallback = '', int $maxLength = 255): string
     {
         $text = trim((string) ($value ?? ''));
@@ -296,5 +356,46 @@ class StorefrontSettings
         }
 
         return '';
+    }
+
+    /**
+     * @param  array<int, mixed>|mixed  $raw
+     * @return array<int, int>
+     */
+    private static function normalizeIntegerIds(mixed $raw): array
+    {
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $ids = [];
+
+        foreach ($raw as $value) {
+            $id = (int) $value;
+            if ($id <= 0) {
+                continue;
+            }
+
+            $ids[$id] = $id;
+        }
+
+        return array_values($ids);
+    }
+
+    private static function normalizeHour(mixed $value, string $fallback): string
+    {
+        $hour = trim((string) ($value ?? ''));
+        if (preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $hour) !== 1) {
+            return $fallback;
+        }
+
+        return $hour;
+    }
+
+    private static function timeToMinutes(string $time): int
+    {
+        [$hour, $minute] = explode(':', $time) + [0, 0];
+
+        return ((int) $hour * 60) + (int) $minute;
     }
 }

@@ -28,6 +28,7 @@ const props = defineProps({
     categories: { type: Array, default: () => [] },
     products: { type: Array, default: () => [] },
     storefront: { type: Object, default: () => ({}) },
+    store_availability: { type: Object, default: () => ({}) },
     payment_methods: { type: Array, default: () => [] },
     shipping_config: { type: Object, default: () => ({}) },
     shop_auth: { type: Object, default: () => ({ authenticated: false, customer: null }) },
@@ -177,6 +178,22 @@ const searchPlaceholder = computed(() => (
         : 'Buscar produto, SKU ou categoria'
 ));
 const catalogItemLabel = computed(() => (storefront.value.template === 'servicos' ? 'serviço(s)' : 'produto(s)'));
+const storeAvailability = computed(() => {
+    const raw = props.store_availability ?? {};
+    const nextOpen = String(raw.next_open_label ?? '').trim();
+    const fallbackMessage = Boolean(raw.store_online ?? true)
+        ? (nextOpen ? `Loja fechada no momento. ${nextOpen}.` : 'Loja fechada no momento.')
+        : 'Loja temporariamente indisponível.';
+
+    return {
+        store_online: Boolean(raw.store_online ?? true),
+        is_open_now: Boolean(raw.is_open_now ?? true),
+        can_checkout: Boolean(raw.can_checkout ?? true),
+        message: String(raw.message ?? '').trim() || fallbackMessage,
+        status_label: String(raw.status_label ?? '').trim(),
+        next_open_label: nextOpen,
+    };
+});
 
 const promotionProducts = computed(() => {
     const available = props.products.filter((product) => Number(product.stock_quantity || 0) > 0);
@@ -1151,6 +1168,7 @@ watch(
 );
 
 const canSubmitCheckout = computed(() => {
+    if (!storeAvailability.value.can_checkout) return false;
     if (!isShopAuthenticated.value) return false;
     if (requiresEmailVerification.value && !isShopEmailVerified.value) return false;
     if (!isShopAddressComplete.value) return false;
@@ -1405,6 +1423,11 @@ const doShopLogout = () => {
 };
 
 const checkout = () => {
+    if (!storeAvailability.value.can_checkout) {
+        showUiFeedback(storeAvailability.value.message || 'Loja indisponível para finalizar pedidos agora.', 'warning');
+        return;
+    }
+
     if (!canSubmitCheckout.value) return;
 
     checkoutForm.clearErrors();
@@ -1600,6 +1623,14 @@ watch(cartOpen, (isOpen) => {
                 <p v-if="!checkoutManual.whatsapp_url && checkoutManual.contractor_phone" class="mt-2 text-xs text-amber-800">
                     Contato da loja: {{ checkoutManual.contractor_phone }}.
                 </p>
+            </section>
+
+            <section
+                v-if="!storeAvailability.can_checkout"
+                class="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 shadow-sm"
+            >
+                <p class="text-sm font-semibold">{{ storeAvailability.status_label || 'Loja temporariamente indisponível' }}</p>
+                <p class="mt-1 text-xs text-amber-800">{{ storeAvailability.message }}</p>
             </section>
 
             <section v-if="storefrontBlocks.hero" class="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -1943,6 +1974,12 @@ watch(cartOpen, (isOpen) => {
                         </div>
 
                         <div :class="cartMobileStep === 1 ? 'hidden md:block' : 'block'">
+                        <div
+                            v-if="!storeAvailability.can_checkout"
+                            class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700"
+                        >
+                            {{ storeAvailability.message }}
+                        </div>
                         <div
                             v-if="!isShopAuthenticated"
                             class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700"

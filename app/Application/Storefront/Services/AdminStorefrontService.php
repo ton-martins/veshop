@@ -5,6 +5,7 @@ namespace App\Application\Storefront\Services;
 use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
 use App\Models\Contractor;
 use App\Models\Product;
+use App\Models\ServiceCatalog;
 use App\Support\StorefrontSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -55,6 +56,26 @@ class AdminStorefrontService
             ->values()
             ->all();
 
+        $services = ServiceCatalog::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->orderByDesc('updated_at')
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+                'base_price',
+                'duration_minutes',
+            ])
+            ->map(static fn (ServiceCatalog $service): array => [
+                'id' => (int) $service->id,
+                'name' => (string) $service->name,
+                'base_price' => round((float) $service->base_price, 2),
+                'duration_minutes' => max(15, (int) ($service->duration_minutes ?? 60)),
+            ])
+            ->values()
+            ->all();
+
         return Inertia::render('Admin/Storefront/Index', [
             'initialTab' => $tab,
             'supportsShipping' => $supportsShipping,
@@ -74,6 +95,7 @@ class AdminStorefrontService
                 'estimated_days' => (int) ($shopShipping['estimated_days'] ?? 2),
             ],
             'products' => $products,
+            'services' => $services,
             'templates' => [
                 [
                     'value' => StorefrontSettings::TEMPLATE_COMMERCE,
@@ -114,6 +136,12 @@ class AdminStorefrontService
     {
         $validated = $request->validate([
             'template' => ['nullable', Rule::in(StorefrontSettings::templates())],
+            'store_online' => ['nullable', 'boolean'],
+            'offline_message' => ['nullable', 'string', 'max:240'],
+            'business_hours' => ['nullable', 'array'],
+            'business_hours.*.enabled' => ['nullable', 'boolean'],
+            'business_hours.*.open' => ['nullable', 'date_format:H:i'],
+            'business_hours.*.close' => ['nullable', 'date_format:H:i'],
             'hero_enabled' => ['required', 'boolean'],
             'hero_title' => ['nullable', 'string', 'max:120'],
             'hero_subtitle' => ['nullable', 'string', 'max:220'],
@@ -139,30 +167,53 @@ class AdminStorefrontService
             'promotions_subtitle' => ['nullable', 'string', 'max:220'],
             'promotion_product_ids' => ['nullable', 'array', 'max:24'],
             'promotion_product_ids.*' => ['integer'],
+            'promotion_service_ids' => ['nullable', 'array', 'max:24'],
+            'promotion_service_ids.*' => ['integer'],
             'categories_enabled' => ['required', 'boolean'],
             'catalog_enabled' => ['required', 'boolean'],
             'catalog_title' => ['nullable', 'string', 'max:80'],
             'catalog_subtitle' => ['nullable', 'string', 'max:220'],
         ]);
 
-        $requestedPromotionIds = StorefrontSettings::normalizeProductIds($validated['promotion_product_ids'] ?? []);
-        $validPromotionIds = Product::query()
+        $settings = is_array($contractor->settings) ? $contractor->settings : [];
+        $previousStorefront = StorefrontSettings::normalize($contractor, $settings['shop_storefront'] ?? []);
+
+        $requestedProductPromotionIds = StorefrontSettings::normalizeProductIds($validated['promotion_product_ids'] ?? []);
+        $validProductPromotionIds = Product::query()
             ->where('contractor_id', $contractor->id)
             ->where('is_active', true)
-            ->whereIn('id', $requestedPromotionIds)
+            ->whereIn('id', $requestedProductPromotionIds)
             ->pluck('id')
             ->map(static fn (mixed $value): int => (int) $value)
             ->values()
             ->all();
 
-        if (count($validPromotionIds) !== count($requestedPromotionIds)) {
+        if (count($validProductPromotionIds) !== count($requestedProductPromotionIds)) {
             throw ValidationException::withMessages([
-                'promotion_product_ids' => 'Selecione apenas itens ativos da loja atual.',
+                'promotion_product_ids' => 'Selecione apenas produtos ativos da loja atual.',
             ]);
         }
 
-        $settings = is_array($contractor->settings) ? $contractor->settings : [];
-        $previousStorefront = StorefrontSettings::normalize($contractor, $settings['shop_storefront'] ?? []);
+        $requestedServicePromotionIds = StorefrontSettings::normalizeServiceIds($validated['promotion_service_ids'] ?? []);
+        $validServicePromotionIds = ServiceCatalog::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->whereIn('id', $requestedServicePromotionIds)
+            ->pluck('id')
+            ->map(static fn (mixed $value): int => (int) $value)
+            ->values()
+            ->all();
+
+        if (count($validServicePromotionIds) !== count($requestedServicePromotionIds)) {
+            throw ValidationException::withMessages([
+                'promotion_service_ids' => 'Selecione apenas serviços ativos da loja atual.',
+            ]);
+        }
+
+        if (is_array($validated['business_hours'] ?? null)) {
+            $this->assertBusinessHoursRangeIntegrity($validated['business_hours']);
+        }
+
         $previousBannerPaths = collect($previousStorefront['banners'] ?? [])
             ->map(fn (array $banner): ?string => $this->normalizeStoragePathForContractor(
                 $banner['image_path'] ?? ($banner['image_url'] ?? null),
@@ -174,9 +225,23 @@ class AdminStorefrontService
 
         $processedBanners = $this->resolveSubmittedBanners($request, $validated, $contractor, $previousStorefront);
 
+        $storeOnline = array_key_exists('store_online', $validated)
+            ? (bool) $validated['store_online']
+            : (bool) ($previousStorefront['store_online'] ?? true);
+        $offlineMessage = isset($validated['offline_message'])
+            ? (string) $validated['offline_message']
+            : (string) ($previousStorefront['offline_message'] ?? '');
+        $businessHoursSource = is_array($validated['business_hours'] ?? null)
+            ? $validated['business_hours']
+            : ($previousStorefront['business_hours'] ?? []);
+        $normalizedBusinessHours = StorefrontSettings::normalizeBusinessHours($businessHoursSource);
+
         $settings['shop_storefront'] = StorefrontSettings::normalize($contractor, [
             'template' => $validated['template']
                 ?? ($previousStorefront['template'] ?? StorefrontSettings::defaultTemplate($contractor)),
+            'store_online' => $storeOnline,
+            'offline_message' => $offlineMessage,
+            'business_hours' => $normalizedBusinessHours,
             'blocks' => [
                 'hero' => (bool) $validated['hero_enabled'],
                 'banners' => (bool) $validated['banners_enabled'],
@@ -193,7 +258,8 @@ class AdminStorefrontService
             'promotions' => [
                 'title' => $validated['promotions_title'] ?? '',
                 'subtitle' => $validated['promotions_subtitle'] ?? '',
-                'product_ids' => $validPromotionIds,
+                'product_ids' => $validProductPromotionIds,
+                'service_ids' => $validServicePromotionIds,
             ],
             'catalog' => [
                 'title' => $validated['catalog_title'] ?? '',
@@ -331,6 +397,47 @@ class AdminStorefrontService
             $prepared,
             (string) ($contractor->brand_primary_color ?: '#073341')
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $businessHours
+     */
+    private function assertBusinessHoursRangeIntegrity(array $businessHours): void
+    {
+        foreach (StorefrontSettings::businessHourDayKeys() as $dayKey) {
+            $row = is_array($businessHours[$dayKey] ?? null) ? $businessHours[$dayKey] : [];
+            $enabled = (bool) ($row['enabled'] ?? true);
+            if (! $enabled) {
+                continue;
+            }
+
+            $open = trim((string) ($row['open'] ?? ''));
+            $close = trim((string) ($row['close'] ?? ''));
+            if ($open === '' || $close === '') {
+                throw ValidationException::withMessages([
+                    "business_hours.{$dayKey}" => 'Informe horário inicial e final para os dias ativos.',
+                ]);
+            }
+
+            $openMinutes = $this->timeToMinutes($open);
+            $closeMinutes = $this->timeToMinutes($close);
+            if ($closeMinutes <= $openMinutes) {
+                throw ValidationException::withMessages([
+                    "business_hours.{$dayKey}.close" => 'Horário final deve ser maior que o inicial.',
+                ]);
+            }
+        }
+    }
+
+    private function timeToMinutes(string $time): int
+    {
+        if (preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', trim($time)) !== 1) {
+            return 0;
+        }
+
+        [$hour, $minute] = explode(':', trim($time)) + [0, 0];
+
+        return ((int) $hour * 60) + (int) $minute;
     }
 
     private function normalizeStoragePathForContractor(mixed $value, Contractor $contractor): ?string
