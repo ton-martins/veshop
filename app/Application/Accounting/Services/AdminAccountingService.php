@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminAccountingService
 {
@@ -191,7 +192,7 @@ class AdminAccountingService
                 'notes' => $document->notes ? (string) $document->notes : '',
                 'checklist_items' => $this->normalizeChecklistPayload($document->checklist_items),
                 'versions' => $document->versions
-                    ->map(fn (AccountingDocumentVersion $version): array => $this->toDocumentVersionPayload($version))
+                    ->map(fn (AccountingDocumentVersion $version): array => $this->toDocumentVersionPayload($contractor, $version))
                     ->values()
                     ->all(),
             ])
@@ -636,6 +637,28 @@ class AdminAccountingService
         return back()->with('status', 'Nova versão de documento registrada com sucesso.');
     }
 
+    public function downloadDocumentVersion(Request $request, AccountingDocumentVersion $accountingDocumentVersion): StreamedResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+        $this->ensureAccountingBusinessType($contractor);
+        $version = $this->resolveOwnedDocumentVersion($contractor, $accountingDocumentVersion);
+
+        [$disk, $filePath] = $this->resolveDocumentVersionStorage($contractor, $version->file_path);
+        abort_unless($disk !== null && $filePath !== null, 404);
+
+        $fileName = trim((string) ($version->file_name ?? ''));
+        if ($fileName === '') {
+            $fileName = basename($filePath);
+        }
+
+        if ($request->boolean('download')) {
+            return Storage::disk($disk)->download($filePath, $fileName);
+        }
+
+        return Storage::disk($disk)->response($filePath, $fileName);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -1022,7 +1045,7 @@ class AdminAccountingService
         if ($uploadedFile instanceof UploadedFile) {
             $filePath = $uploadedFile->store(
                 "contractors/{$contractor->id}/services/accounting/documents",
-                'public'
+                'local'
             );
             $fileName = $uploadedFile->getClientOriginalName();
         }
@@ -1055,9 +1078,24 @@ class AdminAccountingService
 
     private function deleteDocumentVersionFile(Contractor $contractor, mixed $value): void
     {
+        $candidate = $this->normalizeDocumentStoragePath($value);
+        if ($candidate === '' || ! str_starts_with($candidate, "contractors/{$contractor->id}/")) {
+            return;
+        }
+
+        if (Storage::disk('local')->exists($candidate)) {
+            Storage::disk('local')->delete($candidate);
+        }
+        if (Storage::disk('public')->exists($candidate)) {
+            Storage::disk('public')->delete($candidate);
+        }
+    }
+
+    private function normalizeDocumentStoragePath(mixed $value): string
+    {
         $raw = trim((string) ($value ?? ''));
         if ($raw === '') {
-            return;
+            return '';
         }
 
         $path = parse_url($raw, PHP_URL_PATH);
@@ -1069,14 +1107,45 @@ class AdminAccountingService
             $candidate = substr($candidate, strlen('storage/'));
         }
 
-        $candidate = ltrim($candidate, '/');
+        return ltrim($candidate, '/');
+    }
+
+    /**
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function resolveDocumentVersionStorage(Contractor $contractor, mixed $value): array
+    {
+        $candidate = $this->normalizeDocumentStoragePath($value);
         if ($candidate === '' || ! str_starts_with($candidate, "contractors/{$contractor->id}/")) {
-            return;
+            return [null, null];
+        }
+
+        if (Storage::disk('local')->exists($candidate)) {
+            return ['local', $candidate];
         }
 
         if (Storage::disk('public')->exists($candidate)) {
-            Storage::disk('public')->delete($candidate);
+            if (! Storage::disk('local')->exists($candidate)) {
+                $stream = Storage::disk('public')->readStream($candidate);
+                if (is_resource($stream)) {
+                    try {
+                        Storage::disk('local')->writeStream($candidate, $stream);
+                    } finally {
+                        fclose($stream);
+                    }
+                }
+            }
+
+            if (Storage::disk('local')->exists($candidate)) {
+                Storage::disk('public')->delete($candidate);
+
+                return ['local', $candidate];
+            }
+
+            return ['public', $candidate];
         }
+
+        return [null, null];
     }
 
     private function registerTaskHistory(
@@ -1308,10 +1377,28 @@ class AdminAccountingService
     /**
      * @return array<string, mixed>
      */
-    private function toDocumentVersionPayload(AccountingDocumentVersion $version): array
+    private function toDocumentVersionPayload(Contractor $contractor, AccountingDocumentVersion $version): array
     {
         $filePath = trim((string) ($version->file_path ?? ''));
-        $fileUrl = $filePath !== '' ? '/storage/'.ltrim($filePath, '/') : null;
+        $resolvedDisk = null;
+
+        if ($filePath !== '') {
+            [$resolvedDisk, $resolvedPath] = $this->resolveDocumentVersionStorage($contractor, $filePath);
+            if ($resolvedPath !== null) {
+                $filePath = $resolvedPath;
+            }
+        }
+
+        $hasFile = $filePath !== '' && $resolvedDisk !== null;
+        $fileUrl = $hasFile
+            ? route('admin.services.accounting.documents.versions.download', ['accountingDocumentVersion' => $version->id])
+            : null;
+        $fileDownloadUrl = $hasFile
+            ? route('admin.services.accounting.documents.versions.download', [
+                'accountingDocumentVersion' => $version->id,
+                'download' => 1,
+            ])
+            : null;
 
         return [
             'id' => (int) $version->id,
@@ -1319,6 +1406,7 @@ class AdminAccountingService
             'file_name' => (string) ($version->file_name ?? ''),
             'file_path' => $filePath !== '' ? $filePath : null,
             'file_url' => $fileUrl,
+            'file_download_url' => $fileDownloadUrl,
             'uploaded_at' => optional($version->uploaded_at)?->format('d/m/Y H:i'),
             'notes' => (string) ($version->notes ?? ''),
             'created_by_user_id' => $version->created_by_user_id ? (int) $version->created_by_user_id : null,
@@ -1453,6 +1541,15 @@ class AdminAccountingService
         return $document;
     }
 
+    private function resolveOwnedDocumentVersion(Contractor $contractor, AccountingDocumentVersion $version): AccountingDocumentVersion
+    {
+        abort_unless((int) $version->contractor_id === (int) $contractor->id, 404);
+        $version->loadMissing('documentRequest:id,contractor_id');
+        abort_unless((int) ($version->documentRequest?->contractor_id ?? 0) === (int) $contractor->id, 404);
+
+        return $version;
+    }
+
     private function resolveOwnedClient(Contractor $contractor, Client $client): Client
     {
         abort_unless((int) $client->contractor_id === (int) $contractor->id, 404);
@@ -1520,3 +1617,4 @@ class AdminAccountingService
         ];
     }
 }
+

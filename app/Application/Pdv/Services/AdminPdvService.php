@@ -43,7 +43,7 @@ class AdminPdvService
                 $timezone = (string) config('app.timezone', 'America/Sao_Paulo');
             }
 
-            return redirect()->route('admin.services.pdv', [
+            return redirect()->route('admin.services.schedule', [
                 'layout' => 'day',
                 'reference_date' => now($timezone)->toDateString(),
             ]);

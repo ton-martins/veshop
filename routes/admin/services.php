@@ -31,7 +31,6 @@ Route::middleware('contractor.module:services')->prefix('services')->name('servi
     });
 
     Route::middleware('contractor.module:schedule')->group(function (): void {
-        Route::get('/pdv', [ServiceScheduleController::class, 'index'])->name('pdv');
         Route::get('/schedule', [ServiceScheduleController::class, 'index'])->name('schedule');
         Route::post('/schedule', [ServiceScheduleController::class, 'store'])->name('schedule.store');
         Route::put('/schedule/{serviceAppointment}', [ServiceScheduleController::class, 'update'])->name('schedule.update');
@@ -66,6 +65,7 @@ Route::middleware('contractor.module:services')->prefix('services')->name('servi
         Route::post('/accounting/documents', [AccountingController::class, 'storeDocument'])->name('accounting.documents.store');
         Route::put('/accounting/documents/{accountingDocumentRequest}', [AccountingController::class, 'updateDocument'])->name('accounting.documents.update');
         Route::delete('/accounting/documents/{accountingDocumentRequest}', [AccountingController::class, 'destroyDocument'])->name('accounting.documents.destroy');
+        Route::get('/accounting/documents/versions/{accountingDocumentVersion}/download', [AccountingController::class, 'downloadDocumentVersion'])->name('accounting.documents.versions.download');
         Route::post('/accounting/documents/{accountingDocumentRequest}/versions', [AccountingController::class, 'storeDocumentVersion'])->name('accounting.documents.versions.store');
     });
 });

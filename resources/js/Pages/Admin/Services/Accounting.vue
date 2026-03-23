@@ -321,6 +321,13 @@ const openFeeCreate = () => {
     feeModalOpen.value = true;
 };
 
+const closeFeeModal = () => {
+    feeModalOpen.value = false;
+    editingFee.value = null;
+    feeForm.clearErrors();
+    feeForm.reset();
+};
+
 const openFeeEdit = (entry) => {
     editingFee.value = entry;
     feeForm.client_id = entry.client_id ?? '';
@@ -342,6 +349,15 @@ const openObligationCreate = () => {
     obligationForm.status = props.obligationStatusOptions?.[0]?.value ?? 'pending';
     obligationForm.priority = props.priorityOptions?.[1]?.value ?? 'normal';
     obligationModalOpen.value = true;
+};
+
+const closeObligationModal = () => {
+    obligationModalOpen.value = false;
+    editingObligation.value = null;
+    obligationForm.clearErrors();
+    obligationForm.reset();
+    obligationForm.status = props.obligationStatusOptions?.[0]?.value ?? 'pending';
+    obligationForm.priority = props.priorityOptions?.[1]?.value ?? 'normal';
 };
 
 const openObligationEdit = (entry) => {
@@ -372,6 +388,19 @@ const openDocumentCreate = () => {
     documentModalOpen.value = true;
 };
 
+const closeDocumentModal = () => {
+    documentModalOpen.value = false;
+    editingDocument.value = null;
+    documentForm.clearErrors();
+    documentForm.reset();
+    documentForm.status = props.documentStatusOptions?.[0]?.value ?? 'pending';
+    documentForm.version_file = null;
+    documentForm.version_notes = '';
+    if (documentFormFileInput.value) {
+        documentFormFileInput.value.value = '';
+    }
+};
+
 const openDocumentEdit = (entry) => {
     editingDocument.value = entry;
     documentForm.client_id = entry.client_id ?? '';
@@ -394,10 +423,10 @@ const submitFee = () => {
     if (editingFee.value?.id) {
         feeForm.put(route('admin.services.accounting.fees.update', editingFee.value.id), {
             preserveScroll: true,
-            onSuccess: () => {
-                feeModalOpen.value = false;
-                editingFee.value = null;
-                feeForm.reset();
+            preserveState: true,
+            onSuccess: closeFeeModal,
+            onError: () => {
+                feeModalOpen.value = true;
             },
         });
         return;
@@ -405,9 +434,10 @@ const submitFee = () => {
 
     feeForm.post(route('admin.services.accounting.fees.store'), {
         preserveScroll: true,
-        onSuccess: () => {
-            feeModalOpen.value = false;
-            feeForm.reset();
+        preserveState: true,
+        onSuccess: closeFeeModal,
+        onError: () => {
+            feeModalOpen.value = true;
         },
     });
 };
@@ -416,10 +446,10 @@ const submitObligation = () => {
     if (editingObligation.value?.id) {
         obligationForm.put(route('admin.services.accounting.obligations.update', editingObligation.value.id), {
             preserveScroll: true,
-            onSuccess: () => {
-                obligationModalOpen.value = false;
-                editingObligation.value = null;
-                obligationForm.reset();
+            preserveState: true,
+            onSuccess: closeObligationModal,
+            onError: () => {
+                obligationModalOpen.value = true;
             },
         });
         return;
@@ -427,9 +457,10 @@ const submitObligation = () => {
 
     obligationForm.post(route('admin.services.accounting.obligations.store'), {
         preserveScroll: true,
-        onSuccess: () => {
-            obligationModalOpen.value = false;
-            obligationForm.reset();
+        preserveState: true,
+        onSuccess: closeObligationModal,
+        onError: () => {
+            obligationModalOpen.value = true;
         },
     });
 };
@@ -438,16 +469,11 @@ const submitDocument = () => {
     if (editingDocument.value?.id) {
         documentForm.put(route('admin.services.accounting.documents.update', editingDocument.value.id), {
             preserveScroll: true,
+            preserveState: true,
             forceFormData: true,
-            onSuccess: () => {
-                documentModalOpen.value = false;
-                editingDocument.value = null;
-                documentForm.reset();
-                documentForm.version_file = null;
-                documentForm.version_notes = '';
-                if (documentFormFileInput.value) {
-                    documentFormFileInput.value.value = '';
-                }
+            onSuccess: closeDocumentModal,
+            onError: () => {
+                documentModalOpen.value = true;
             },
         });
         return;
@@ -455,15 +481,11 @@ const submitDocument = () => {
 
     documentForm.post(route('admin.services.accounting.documents.store'), {
         preserveScroll: true,
+        preserveState: true,
         forceFormData: true,
-        onSuccess: () => {
-            documentModalOpen.value = false;
-            documentForm.reset();
-            documentForm.version_file = null;
-            documentForm.version_notes = '';
-            if (documentFormFileInput.value) {
-                documentFormFileInput.value.value = '';
-            }
+        onSuccess: closeDocumentModal,
+        onError: () => {
+            documentModalOpen.value = true;
         },
     });
 };
@@ -519,6 +541,7 @@ const openDocumentPreview = (entry) => {
         title: String(entry?.title ?? 'Documento'),
         file_name: String(latestVersion.file_name ?? 'Documento'),
         file_url: String(latestVersion.file_url ?? ''),
+        file_download_url: String(latestVersion.file_download_url ?? latestVersion.file_url ?? ''),
         uploaded_at: String(latestVersion.uploaded_at ?? ''),
     };
     documentPreviewModalOpen.value = true;
@@ -929,101 +952,140 @@ const statusLabel = (options, value) => {
             </section>
         </section>
 
-        <Modal :show="feeModalOpen" max-width="4xl" @close="feeModalOpen = false">
+        <Modal :show="feeModalOpen" max-width="4xl" @close="closeFeeModal">
             <div class="space-y-4 px-6 py-6 sm:px-8">
                 <h3 class="text-lg font-semibold text-slate-900">{{ editingFee ? 'Editar honorário' : 'Novo honorário' }}</h3>
+                <div
+                    v-if="Object.keys(feeForm.errors ?? {}).length"
+                    class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
+                >
+                    Revise os campos obrigatórios destacados para salvar o honorário.
+                </div>
                 <div class="grid gap-3 md:grid-cols-2">
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cliente</label>
                         <UiSelect v-model="feeForm.client_id" :options="clientOptions" button-class="mt-1 w-full text-sm" />
+                        <p v-if="feeForm.errors.client_id" class="mt-1 text-xs text-rose-600">{{ feeForm.errors.client_id }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Referência</label>
                         <input v-model="feeForm.reference_label" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="03/2026">
+                        <p v-if="feeForm.errors.reference_label" class="mt-1 text-xs text-rose-600">{{ feeForm.errors.reference_label }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Vencimento</label>
                         <input v-model="feeForm.due_date" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        <p v-if="feeForm.errors.due_date" class="mt-1 text-xs text-rose-600">{{ feeForm.errors.due_date }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
                         <UiSelect v-model="feeForm.status" :options="feeStatusOptions" button-class="mt-1 w-full text-sm" />
+                        <p v-if="feeForm.errors.status" class="mt-1 text-xs text-rose-600">{{ feeForm.errors.status }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor</label>
                         <BrlMoneyInput v-model="feeForm.amount" :allow-empty="false" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="R$ 0,00" />
+                        <p v-if="feeForm.errors.amount" class="mt-1 text-xs text-rose-600">{{ feeForm.errors.amount }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor pago</label>
                         <BrlMoneyInput v-model="feeForm.paid_amount" :allow-empty="false" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="R$ 0,00" />
+                        <p v-if="feeForm.errors.paid_amount" class="mt-1 text-xs text-rose-600">{{ feeForm.errors.paid_amount }}</p>
                     </div>
                 </div>
                 <div class="flex justify-end gap-2 border-t border-slate-100 pt-4">
-                    <button type="button" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="feeModalOpen = false">Cancelar</button>
-                    <button type="button" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800" @click="submitFee">Salvar</button>
+                    <button type="button" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="closeFeeModal">Cancelar</button>
+                    <button type="button" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" :disabled="feeForm.processing" @click="submitFee">
+                        {{ feeForm.processing ? 'Salvando...' : 'Salvar' }}
+                    </button>
                 </div>
             </div>
         </Modal>
 
-        <Modal :show="obligationModalOpen" max-width="4xl" @close="obligationModalOpen = false">
+        <Modal :show="obligationModalOpen" max-width="4xl" @close="closeObligationModal">
             <div class="space-y-4 px-6 py-6 sm:px-8">
                 <h3 class="text-lg font-semibold text-slate-900">{{ editingObligation ? 'Editar obrigação' : 'Nova obrigação' }}</h3>
+                <div
+                    v-if="Object.keys(obligationForm.errors ?? {}).length"
+                    class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
+                >
+                    Revise os campos obrigatórios destacados para salvar a obrigação.
+                </div>
                 <div class="grid gap-3 md:grid-cols-2">
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cliente</label>
                         <UiSelect v-model="obligationForm.client_id" :options="clientOptions" button-class="mt-1 w-full text-sm" />
+                        <p v-if="obligationForm.errors.client_id" class="mt-1 text-xs text-rose-600">{{ obligationForm.errors.client_id }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Título</label>
                         <input v-model="obligationForm.title" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        <p v-if="obligationForm.errors.title" class="mt-1 text-xs text-rose-600">{{ obligationForm.errors.title }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo</label>
                         <input v-model="obligationForm.obligation_type" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        <p v-if="obligationForm.errors.obligation_type" class="mt-1 text-xs text-rose-600">{{ obligationForm.errors.obligation_type }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Vencimento</label>
                         <input v-model="obligationForm.due_date" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        <p v-if="obligationForm.errors.due_date" class="mt-1 text-xs text-rose-600">{{ obligationForm.errors.due_date }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
                         <UiSelect v-model="obligationForm.status" :options="obligationStatusOptions" button-class="mt-1 w-full text-sm" />
+                        <p v-if="obligationForm.errors.status" class="mt-1 text-xs text-rose-600">{{ obligationForm.errors.status }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Prioridade</label>
                         <UiSelect v-model="obligationForm.priority" :options="priorityOptions" button-class="mt-1 w-full text-sm" />
+                        <p v-if="obligationForm.errors.priority" class="mt-1 text-xs text-rose-600">{{ obligationForm.errors.priority }}</p>
                     </div>
                 </div>
                 <div class="flex justify-end gap-2 border-t border-slate-100 pt-4">
-                    <button type="button" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="obligationModalOpen = false">Cancelar</button>
-                    <button type="button" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800" @click="submitObligation">Salvar</button>
+                    <button type="button" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="closeObligationModal">Cancelar</button>
+                    <button type="button" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" :disabled="obligationForm.processing" @click="submitObligation">
+                        {{ obligationForm.processing ? 'Salvando...' : 'Salvar' }}
+                    </button>
                 </div>
             </div>
         </Modal>
 
-        <Modal :show="documentModalOpen" max-width="4xl" @close="documentModalOpen = false">
+        <Modal :show="documentModalOpen" max-width="4xl" @close="closeDocumentModal">
             <div class="space-y-4 px-6 py-6 sm:px-8">
                 <h3 class="text-lg font-semibold text-slate-900">{{ editingDocument ? 'Editar documento' : 'Novo documento' }}</h3>
+                <div
+                    v-if="Object.keys(documentForm.errors ?? {}).length"
+                    class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
+                >
+                    Revise os campos obrigatórios destacados para salvar o documento.
+                </div>
                 <div class="grid gap-3 md:grid-cols-2">
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cliente</label>
                         <UiSelect v-model="documentForm.client_id" :options="clientOptions" button-class="mt-1 w-full text-sm" />
+                        <p v-if="documentForm.errors.client_id" class="mt-1 text-xs text-rose-600">{{ documentForm.errors.client_id }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Título</label>
                         <input v-model="documentForm.title" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        <p v-if="documentForm.errors.title" class="mt-1 text-xs text-rose-600">{{ documentForm.errors.title }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo</label>
                         <input v-model="documentForm.document_type" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        <p v-if="documentForm.errors.document_type" class="mt-1 text-xs text-rose-600">{{ documentForm.errors.document_type }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Prazo</label>
                         <input v-model="documentForm.due_date" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        <p v-if="documentForm.errors.due_date" class="mt-1 text-xs text-rose-600">{{ documentForm.errors.due_date }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
                         <UiSelect v-model="documentForm.status" :options="documentStatusOptions" button-class="mt-1 w-full text-sm" />
+                        <p v-if="documentForm.errors.status" class="mt-1 text-xs text-rose-600">{{ documentForm.errors.status }}</p>
                     </div>
                     <div class="md:col-span-2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Arquivo do documento</label>
@@ -1036,6 +1098,7 @@ const statusLabel = (options, value) => {
                         <p class="mt-1 text-[11px] text-slate-500">
                             Opcional. Envie PDF ou imagem para já anexar a primeira versão.
                         </p>
+                        <p v-if="documentForm.errors.version_file" class="mt-1 text-xs text-rose-600">{{ documentForm.errors.version_file }}</p>
                     </div>
                     <div class="md:col-span-2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Observações da versão</label>
@@ -1045,11 +1108,14 @@ const statusLabel = (options, value) => {
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                             placeholder="Ex.: Documento enviado pelo cliente em 22/03/2026"
                         />
+                        <p v-if="documentForm.errors.version_notes" class="mt-1 text-xs text-rose-600">{{ documentForm.errors.version_notes }}</p>
                     </div>
                 </div>
                 <div class="flex justify-end gap-2 border-t border-slate-100 pt-4">
-                    <button type="button" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="documentModalOpen = false">Cancelar</button>
-                    <button type="button" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800" @click="submitDocument">Salvar</button>
+                    <button type="button" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="closeDocumentModal">Cancelar</button>
+                    <button type="button" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" :disabled="documentForm.processing" @click="submitDocument">
+                        {{ documentForm.processing ? 'Salvando...' : 'Salvar' }}
+                    </button>
                 </div>
             </div>
         </Modal>
@@ -1138,8 +1204,8 @@ const statusLabel = (options, value) => {
                     <div v-else class="space-y-2 px-2 py-6 text-center">
                         <p class="text-sm text-slate-600">Pré-visualização indisponível para este formato.</p>
                         <a
-                            v-if="documentPreviewData?.file_url"
-                            :href="documentPreviewData.file_url"
+                            v-if="documentPreviewData?.file_download_url || documentPreviewData?.file_url"
+                            :href="documentPreviewData.file_download_url || documentPreviewData.file_url"
                             target="_blank"
                             rel="noopener noreferrer"
                             class="inline-flex items-center rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
@@ -1227,4 +1293,3 @@ const statusLabel = (options, value) => {
     color: #ffffff;
 }
 </style>
-

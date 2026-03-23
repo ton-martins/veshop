@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Application\Accounting\Services\AdminAccountingService;
 use App\Http\Controllers\Controller;
 use App\Models\AccountingDocumentRequest;
+use App\Models\AccountingDocumentVersion;
 use App\Models\AccountingFeeEntry;
 use App\Models\AccountingObligation;
 use App\Models\AccountingServiceTemplate;
@@ -12,6 +13,7 @@ use App\Models\Client;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AccountingController extends Controller
 {
@@ -112,5 +114,10 @@ class AccountingController extends Controller
     public function storeDocumentVersion(Request $request, AccountingDocumentRequest $accountingDocumentRequest): RedirectResponse
     {
         return $this->service->storeDocumentVersion($request, $accountingDocumentRequest);
+    }
+
+    public function downloadDocumentVersion(Request $request, AccountingDocumentVersion $accountingDocumentVersion): StreamedResponse
+    {
+        return $this->service->downloadDocumentVersion($request, $accountingDocumentVersion);
     }
 }

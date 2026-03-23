@@ -5,8 +5,8 @@ php artisan cache:clear
 php artisan config:clear
 php artisan route:clear
 php artisan view:clear
+npm run build
 php artisan serve
-npm run dev
 
 -- Teste local com build (simulando produção)
 

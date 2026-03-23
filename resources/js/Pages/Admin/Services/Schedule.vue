@@ -123,9 +123,30 @@ const resolveNowAtTimezone = (timezone) => {
 
 const nowTicker = ref(Date.now());
 let nowTickerTimer = null;
+const hourRangeStorageKey = 'veshop_services_schedule_hour_range';
+const startHour = ref('07');
+const endHour = ref('20');
 
 onMounted(() => {
     if (typeof window === 'undefined') return;
+
+    const storedRangeRaw = window.localStorage.getItem(hourRangeStorageKey);
+    if (storedRangeRaw) {
+        try {
+            const parsed = JSON.parse(storedRangeRaw);
+            const storedStart = Number.parseInt(String(parsed?.start ?? ''), 10);
+            const storedEnd = Number.parseInt(String(parsed?.end ?? ''), 10);
+            if (!Number.isNaN(storedStart)) {
+                startHour.value = pad2(Math.min(23, Math.max(0, storedStart)));
+            }
+            if (!Number.isNaN(storedEnd)) {
+                endHour.value = pad2(Math.min(23, Math.max(0, storedEnd)));
+            }
+        } catch {
+            // ignore invalid storage content
+        }
+    }
+
     nowTickerTimer = window.setInterval(() => {
         nowTicker.value = Date.now();
     }, 30000);
@@ -136,6 +157,26 @@ onBeforeUnmount(() => {
     window.clearInterval(nowTickerTimer);
     nowTickerTimer = null;
 });
+
+watch(
+    [startHour, endHour],
+    ([nextStartHour, nextEndHour]) => {
+        const parsedStart = Number.parseInt(String(nextStartHour ?? ''), 10);
+        const parsedEnd = Number.parseInt(String(nextEndHour ?? ''), 10);
+        const safeStart = Number.isNaN(parsedStart) ? 7 : Math.min(23, Math.max(0, parsedStart));
+        const safeEnd = Number.isNaN(parsedEnd) ? 20 : Math.min(23, Math.max(0, parsedEnd));
+
+        if (safeEnd < safeStart) {
+            endHour.value = pad2(safeStart);
+            return;
+        }
+
+        if (typeof window !== 'undefined') {
+            window.localStorage.setItem(hourRangeStorageKey, JSON.stringify({ start: safeStart, end: safeEnd }));
+        }
+    },
+    { immediate: true },
+);
 
 const nowAtTimezone = computed(() => {
     void nowTicker.value;
@@ -152,17 +193,6 @@ const filterForm = useForm({
 
 const layout = ref(props.filters?.layout ?? 'month');
 const referenceDate = ref(props.filters?.reference_date ?? toIsoDate(new Date()));
-const scheduleRouteName = computed(() => {
-    if (typeof route !== 'function') {
-        return 'admin.services.schedule';
-    }
-
-    try {
-        return route().current('admin.services.pdv') ? 'admin.services.pdv' : 'admin.services.schedule';
-    } catch {
-        return 'admin.services.schedule';
-    }
-});
 
 watch(
     () => props.filters,
@@ -177,7 +207,7 @@ watch(
 
 const applyFilters = () => {
     router.get(
-        route(scheduleRouteName.value),
+        route('admin.services.schedule'),
         {
             search: filterForm.search || undefined,
             status: filterForm.status || undefined,
@@ -281,7 +311,27 @@ const monthGridDays = computed(() => {
     return Array.from({ length: 42 }, (_, index) => addDays(start, index));
 });
 
-const daySlots = computed(() => Array.from({ length: 14 }, (_, index) => 7 + index));
+const hourOptions = computed(() =>
+    Array.from({ length: 24 }, (_, hour) => ({
+        value: pad2(hour),
+        label: `${pad2(hour)}:00`,
+    })),
+);
+const normalizedStartHour = computed(() => {
+    const parsed = Number.parseInt(String(startHour.value ?? '07'), 10);
+    if (Number.isNaN(parsed)) return 7;
+    return Math.min(23, Math.max(0, parsed));
+});
+const normalizedEndHour = computed(() => {
+    const parsed = Number.parseInt(String(endHour.value ?? '20'), 10);
+    if (Number.isNaN(parsed)) return 20;
+    return Math.min(23, Math.max(0, parsed));
+});
+const daySlots = computed(() => {
+    const start = normalizedStartHour.value;
+    const end = Math.max(start, normalizedEndHour.value);
+    return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+});
 const isCurrentMonthDate = (date) =>
     date.getFullYear() === calendarBaseDate.value.getFullYear()
     && date.getMonth() === calendarBaseDate.value.getMonth();
@@ -308,6 +358,12 @@ const canCreateAtHour = (date, hour) => {
 const eventsForDate = (date) => {
     const key = typeof date === 'string' ? date : toIsoDate(date);
     return eventsByDate.value.get(key) ?? [];
+};
+const eventsForSlot = (date, hour = null) => {
+    const events = eventsForDate(date);
+    if (hour === null) return events;
+
+    return events.filter((item) => item.start.getHours() === hour);
 };
 
 const shiftPeriod = (direction) => {
@@ -366,6 +422,59 @@ const statusFilterOptions = computed(() => ([
     { value: '', label: 'Todos os status' },
     ...(props.statusOptions ?? []),
 ]));
+const selectedSlotDate = ref('');
+const selectedSlotHour = ref(null);
+const showSlotModal = ref(false);
+const selectedSlotDateLabel = computed(() => {
+    const parsed = parseDate(selectedSlotDate.value);
+    if (!parsed) return '';
+
+    return new Intl.DateTimeFormat('pt-BR', {
+        weekday: 'long',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+    }).format(parsed);
+});
+const selectedSlotTitle = computed(() => {
+    if (selectedSlotHour.value === null) {
+        return `Compromissos de ${selectedSlotDateLabel.value}`;
+    }
+
+    return `Compromissos de ${selectedSlotDateLabel.value} às ${pad2(selectedSlotHour.value)}:00`;
+});
+const selectedSlotEvents = computed(() =>
+    eventsForSlot(selectedSlotDate.value, selectedSlotHour.value),
+);
+const canCreateForSelectedSlot = computed(() => {
+    if (selectedSlotHour.value === null) {
+        return canCreateAtDate(selectedSlotDate.value);
+    }
+
+    return canCreateAtHour(selectedSlotDate.value, selectedSlotHour.value);
+});
+
+const openSlotModal = (date, hour = null) => {
+    const safeDate = typeof date === 'string' ? date : toIsoDate(date);
+    selectedSlotDate.value = safeDate;
+    selectedSlotHour.value = Number.isInteger(hour) ? hour : null;
+    showSlotModal.value = true;
+};
+const closeSlotModal = () => {
+    showSlotModal.value = false;
+    selectedSlotDate.value = '';
+    selectedSlotHour.value = null;
+};
+const createFromSelectedSlot = () => {
+    if (!canCreateForSelectedSlot.value) return;
+
+    const hour = selectedSlotHour.value === null
+        ? Math.max(normalizedStartHour.value, nowAtTimezone.value.getHours())
+        : selectedSlotHour.value;
+
+    closeSlotModal();
+    openCreateAt(selectedSlotDate.value, hour);
+};
 
 const formDefaults = () => ({
     title: '',
@@ -591,18 +700,28 @@ const statusLabel = (value) => {
                 </div>
 
                 <div class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div class="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
-                        <button
-                            v-for="option in viewOptions"
-                            :key="`layout-${option.value}`"
-                            type="button"
-                            class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition"
-                            :class="layout === option.value ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-white'"
-                            @click="setLayout(option.value)"
-                        >
-                            <component :is="option.icon" class="h-3.5 w-3.5" />
-                            {{ option.label }}
-                        </button>
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <div class="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+                            <button
+                                v-for="option in viewOptions"
+                                :key="`layout-${option.value}`"
+                                type="button"
+                                class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition"
+                                :class="layout === option.value ? 'text-white' : 'text-slate-600 hover:bg-white'"
+                                :style="layout === option.value ? { background: 'var(--veshop-accent)' } : null"
+                                @click="setLayout(option.value)"
+                            >
+                                <component :is="option.icon" class="h-3.5 w-3.5" />
+                                {{ option.label }}
+                            </button>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Janela diária</p>
+                            <UiSelect v-model="startHour" :options="hourOptions" button-class="w-[96px] text-xs" />
+                            <span class="text-xs font-semibold text-slate-500">até</span>
+                            <UiSelect v-model="endHour" :options="hourOptions" button-class="w-[96px] text-xs" />
+                        </div>
                     </div>
 
                     <div class="flex flex-wrap items-center gap-2">
@@ -647,10 +766,14 @@ const statusLabel = (value) => {
                                 ]"
                             >
                                 <div class="flex items-center justify-between gap-1">
-                                    <span class="text-xs font-semibold text-slate-700">
+                                    <button
+                                        type="button"
+                                        class="text-xs font-semibold text-slate-700 transition hover:text-slate-900"
+                                        @click="openSlotModal(day)"
+                                    >
                                         {{ day.getDate() }}
                                         <span v-if="isTodayDate(day)" class="ml-1 rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] text-white">Hoje</span>
-                                    </span>
+                                    </button>
                                     <button type="button" class="inline-flex h-5 w-5 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40" :disabled="!canCreateAtDate(day)" @click="openCreateAt(toIsoDate(day))">
                                         <Plus class="h-3 w-3" />
                                     </button>
@@ -686,9 +809,13 @@ const statusLabel = (value) => {
                                 ]"
                             >
                                 <div class="flex items-center justify-between gap-2">
-                                    <span class="text-xs font-semibold text-slate-700">
+                                    <button
+                                        type="button"
+                                        class="text-xs font-semibold text-slate-700 transition hover:text-slate-900"
+                                        @click="openSlotModal(day)"
+                                    >
                                         {{ new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(day) }}
-                                    </span>
+                                    </button>
                                     <button type="button" class="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40" :disabled="!canCreateAtDate(day)" @click="openCreateAt(toIsoDate(day))">
                                         <Plus class="h-3 w-3" />
                                     </button>
@@ -714,7 +841,13 @@ const statusLabel = (value) => {
                         <div class="space-y-2">
                             <article v-for="hour in daySlots" :key="`day-slot-${hour}`" class="rounded-xl border border-slate-200 bg-slate-50 p-2">
                                 <div class="flex items-center justify-between gap-2">
-                                    <span class="text-xs font-semibold text-slate-600">{{ pad2(hour) }}:00</span>
+                                    <button
+                                        type="button"
+                                        class="text-xs font-semibold text-slate-600 transition hover:text-slate-900"
+                                        @click="openSlotModal(referenceDate, hour)"
+                                    >
+                                        {{ pad2(hour) }}:00
+                                    </button>
                                     <button type="button" class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40" :disabled="!canCreateAtHour(referenceDate, hour)" @click="openCreateAt(referenceDate, hour)">
                                         <Plus class="h-3 w-3" />
                                         Novo
@@ -781,6 +914,73 @@ const statusLabel = (value) => {
 
             </section>
         </section>
+
+        <Modal :show="showSlotModal" max-width="3xl" @close="closeSlotModal">
+            <div class="space-y-4 px-6 py-6 sm:px-8">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <h3 class="text-lg font-semibold text-slate-900">{{ selectedSlotTitle }}</h3>
+                        <p class="text-sm text-slate-500">
+                            Visualize os compromissos do período e abra o cadastro rapidamente.
+                        </p>
+                    </div>
+                    <button type="button" class="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="closeSlotModal">
+                        Fechar
+                    </button>
+                </div>
+
+                <div v-if="selectedSlotEvents.length" class="space-y-2">
+                    <article
+                        v-for="event in selectedSlotEvents"
+                        :key="`slot-event-${event.id}`"
+                        class="rounded-xl border border-slate-200 bg-white px-3 py-2"
+                    >
+                        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">{{ event.title }}</p>
+                                <p class="text-xs text-slate-500">
+                                    {{ event.start_label }} - {{ event.end_label }} | {{ event.client_name || 'Sem cliente' }}
+                                </p>
+                                <p class="text-[11px] text-slate-500">{{ event.service_name || 'Sem serviço' }}</p>
+                            </div>
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                @click="closeSlotModal(); openEdit(event)"
+                            >
+                                <Pencil class="h-3.5 w-3.5" />
+                                Editar
+                            </button>
+                        </div>
+                    </article>
+                </div>
+
+                <div
+                    v-else
+                    class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
+                >
+                    Nenhum compromisso encontrado para este período.
+                </div>
+
+                <div class="flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
+                    <button
+                        type="button"
+                        class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        @click="closeSlotModal"
+                    >
+                        Fechar
+                    </button>
+                    <button
+                        type="button"
+                        class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        :disabled="!hasServices || !canCreateForSelectedSlot"
+                        @click="createFromSelectedSlot"
+                    >
+                        Novo compromisso
+                    </button>
+                </div>
+            </div>
+        </Modal>
 
         <Modal :show="showModal" max-width="5xl" @close="closeModal">
             <div class="space-y-4 px-6 py-6 sm:px-8">

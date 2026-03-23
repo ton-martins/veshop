@@ -193,15 +193,6 @@
                 module: 'service_orders',
             },
             {
-                key: 'admin-services-pdv',
-                label: 'PDV',
-                route: 'admin.services.pdv',
-                match: ['admin.services.pdv'],
-                icon: 'ReceiptText',
-                module: 'schedule',
-                params: { layout: 'day' },
-            },
-            {
                 key: 'admin-services-schedule',
                 label: 'Agenda',
                 route: 'admin.services.schedule',
