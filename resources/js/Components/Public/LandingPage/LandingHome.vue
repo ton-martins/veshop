@@ -149,8 +149,8 @@ onBeforeUnmount(() => {
                     </span>
 
                     <h1 class="hero-title">
-                        Gestão de ponta,
-                        <span>sem ruído na operação.</span>
+                        Gestão de <span class="hero-title-highlight">ponta</span>,
+                        <span class="hero-title-line">sem ruído na operação.</span>
                     </h1>
 
                     <p class="hero-subtitle">
@@ -159,11 +159,11 @@ onBeforeUnmount(() => {
                     </p>
 
                     <div class="hero-actions">
-                        <Link :href="route('login')" class="btn hero-btn hero-btn-primary">
+                        <Link :href="route('login')" class="btn hero-btn hero-btn-primary veshop-landing-btn">
                             Entrar no Veshop
                             <i class="ri-arrow-right-up-line"></i>
                         </Link>
-                        <a href="#price" class="btn hero-btn hero-btn-secondary">
+                        <a href="#price" class="btn hero-btn hero-btn-secondary veshop-landing-btn">
                             Ver planos
                             <i class="ri-price-tag-3-line"></i>
                         </a>
@@ -287,11 +287,16 @@ onBeforeUnmount(() => {
     font-size: clamp(2rem, 4.2vw, 3.4rem);
     line-height: 1.1;
     letter-spacing: -0.02em;
+    font-weight: 800;
 }
 
-.hero-title span {
+.hero-title .hero-title-line {
     display: block;
-    color: #a8f0bb;
+    color: inherit;
+}
+
+.hero-title .hero-title-highlight {
+    color: #81d86f;
 }
 
 .hero-subtitle {

@@ -296,7 +296,7 @@ const topFeatures = (plan) => {
                                         <div class="card-footer bg-white border-0 pb-4">
                                             <a
                                                 href="/login"
-                                                class="btn w-100 fw-semibold"
+                                                class="btn w-100 fw-semibold veshop-landing-btn"
                                                 :class="plan.is_featured ? 'btn-success' : 'btn-primary'"
                                             >
                                                 Solicitar demonstração

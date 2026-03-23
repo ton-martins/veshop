@@ -33,7 +33,7 @@ const aboutImageUrl = computed(() => landingImages.value.about || '/landing/imag
                             com dados consistentes para decisão diária.
                         </p>
                         <div class="about-btn mt-4">
-                            <a href="#services" class="btn fw-semibold landing-cta-solid">
+                            <a href="#services" class="btn fw-semibold landing-cta-solid veshop-landing-btn">
                                 Conhecer módulos <i class="ri-arrow-right-line"></i>
                             </a>
                         </div>
@@ -65,51 +65,35 @@ const aboutImageUrl = computed(() => landingImages.value.about || '/landing/imag
 .photo-shell {
     position: relative;
     isolation: isolate;
-    padding: 14px;
+    padding: 0;
 }
 
 .photo-shell::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: 32px;
-    background: linear-gradient(145deg, rgba(166, 244, 188, 0.56) 0%, rgba(34, 114, 89, 0.46) 48%, rgba(6, 47, 42, 0.72) 100%);
-    z-index: -2;
+    display: none;
 }
 
 .photo-shell::after {
-    content: '';
-    position: absolute;
-    inset: 12px -10px -10px 12px;
-    border-radius: 30px;
-    border: 1px solid rgba(157, 227, 173, 0.35);
-    background: linear-gradient(150deg, rgba(7, 43, 38, 0.38), rgba(9, 58, 49, 0.22));
-    z-index: -3;
+    display: none;
 }
 
 .photo-shell-glow {
-    position: absolute;
-    inset: -12% -8% auto;
-    height: 72%;
-    border-radius: 32px;
-    background: radial-gradient(circle at center, rgba(129, 216, 111, 0.26) 0%, rgba(129, 216, 111, 0) 72%);
-    z-index: -1;
+    display: none;
 }
 
 .photo-shell-frame {
     position: relative;
-    border-radius: 26px;
+    border-radius: 0;
     padding: 0;
-    border: 1px solid rgba(202, 255, 218, 0.56);
+    border: 0;
     background: transparent;
-    box-shadow: 0 22px 36px -30px rgba(4, 24, 19, 0.52);
+    box-shadow: none;
 }
 
 .photo-image {
     width: 100%;
     height: 420px;
     object-fit: cover;
-    border-radius: 18px;
+    border-radius: 0;
 }
 
 .about-title p {
@@ -121,21 +105,6 @@ const aboutImageUrl = computed(() => landingImages.value.about || '/landing/imag
 
 .about-title h2 {
     color: #effff3 !important;
-}
-
-.about-btn .landing-cta-solid {
-    border: 1px solid #9ce1a8 !important;
-    background: #9ce1a8 !important;
-    color: #072016 !important;
-    border-radius: 10px;
-    box-shadow: 0 18px 24px -20px rgba(16, 62, 39, 0.48);
-}
-
-.about-btn .landing-cta-solid:hover,
-.about-btn .landing-cta-solid:focus {
-    border-color: #7fcb90 !important;
-    background: #7fcb90 !important;
-    color: #062214 !important;
 }
 
 @media (max-width: 991.98px) {

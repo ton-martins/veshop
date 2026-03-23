@@ -40,7 +40,7 @@ const whyChooseImageUrl = computed(() => landingImages.value.why_choose || '/lan
                     </div>
 
                     <div class="main-btn mt-4 d-flex">
-                        <a href="#contacts" class="btn fw-semibold landing-cta-solid">Falar com especialista</a>
+                        <a href="#contacts" class="btn fw-semibold landing-cta-solid veshop-landing-btn">Falar com especialista</a>
                     </div>
                 </div>
 
@@ -91,14 +91,14 @@ const whyChooseImageUrl = computed(() => landingImages.value.why_choose || '/lan
 }
 
 .advantage-item {
-    border-radius: 12px;
-    border: 1px solid rgba(214, 255, 223, 0.2);
-    background: rgba(214, 255, 223, 0.08);
-    padding: 0.68rem 0.74rem;
+    border-radius: 0;
+    border: 0;
+    background: transparent;
+    padding: 0.25rem 0;
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    box-shadow: 0 15px 24px -20px rgba(2, 12, 10, 0.88);
+    box-shadow: none;
 }
 
 .advantage-item i {
@@ -114,58 +114,40 @@ const whyChooseImageUrl = computed(() => landingImages.value.why_choose || '/lan
 .photo-shell {
     position: relative;
     isolation: isolate;
-    padding: 14px;
+    padding: 10px;
 }
 
 .photo-shell::before {
     content: '';
     position: absolute;
-    inset: 0;
-    border-radius: 32px;
-    background: linear-gradient(145deg, rgba(166, 244, 188, 0.56) 0%, rgba(34, 114, 89, 0.46) 48%, rgba(6, 47, 42, 0.72) 100%);
+    inset: 0 0 8px 8px;
+    border-radius: 28px;
+    border: 1px solid rgba(7, 51, 65, 0.2);
+    background: transparent;
     z-index: -2;
 }
 
 .photo-shell::after {
     content: '';
     position: absolute;
-    inset: 12px -10px -10px 12px;
-    border-radius: 30px;
-    border: 1px solid rgba(157, 227, 173, 0.35);
-    background: linear-gradient(150deg, rgba(7, 43, 38, 0.38), rgba(9, 58, 49, 0.22));
+    inset: 8px;
+    border-radius: 24px;
+    border: 1px solid rgba(7, 51, 65, 0.1);
+    background: transparent;
     z-index: -3;
 }
 
 .photo-shell-glow {
-    position: absolute;
-    inset: -12% -8% auto;
-    height: 72%;
-    border-radius: 32px;
-    background: radial-gradient(circle at center, rgba(129, 216, 111, 0.3) 0%, rgba(129, 216, 111, 0) 72%);
-    z-index: -1;
+    display: none;
 }
 
 .photo-shell-frame {
     position: relative;
-    border-radius: 26px;
-    padding: 10px;
-    border: 1px solid rgba(202, 255, 218, 0.48);
-    background: linear-gradient(156deg, rgba(8, 46, 40, 0.78), rgba(9, 61, 53, 0.56));
-    box-shadow: 0 28px 44px -34px rgba(4, 24, 19, 0.56);
-}
-
-.main-btn .landing-cta-solid {
-    border: 1px solid #9ce1a8 !important;
-    background: #9ce1a8 !important;
-    color: #072016 !important;
-    border-radius: 10px;
-}
-
-.main-btn .landing-cta-solid:hover,
-.main-btn .landing-cta-solid:focus {
-    border-color: #8bd299 !important;
-    background: #8bd299 !important;
-    color: #072016 !important;
+    border-radius: 22px;
+    padding: 8px;
+    border: 1px solid rgba(7, 51, 65, 0.16);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 253, 255, 0.94));
+    box-shadow: 0 18px 28px -24px rgba(20, 24, 34, 0.24);
 }
 
 .photo-image {

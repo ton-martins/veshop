@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 @php
     $component = $page['component'] ?? '';
-    $shouldGateRender = $component === 'Public/Landing' || str_starts_with($component, 'Auth/');
+    $shouldGateRender = $component === 'Public/Landing'
+        || str_starts_with($component, 'Public/Legal/')
+        || str_starts_with($component, 'Auth/');
     $publicStyleAssets = [
         '/landing/css/remixicon.css',
         '/landing/css/bootstrap.min.css',

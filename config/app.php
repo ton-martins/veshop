@@ -56,6 +56,8 @@ return [
 
     'force_https' => (bool) env('APP_FORCE_HTTPS', false),
 
+    'contact_number' => env('CONTACT_NUMBER', ''),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

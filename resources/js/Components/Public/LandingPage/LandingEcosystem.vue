@@ -105,21 +105,32 @@ const modules = [
 }
 
 .ecosystem-card:hover {
-    transform: translateY(-4px);
-    border-color: rgba(214, 255, 223, 0.34);
-    box-shadow: 0 24px 38px -30px rgba(2, 12, 10, 0.96);
+    transform: none;
+    border-color: rgba(214, 255, 223, 0.2);
+    box-shadow: 0 18px 34px -30px rgba(2, 12, 10, 0.9);
 }
 
 .ecosystem-icon {
-    width: 38px;
-    height: 38px;
-    border-radius: 11px;
+    width: auto;
+    height: auto;
+    border-radius: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(129, 216, 111, 0.24);
-    color: #e4ffe8;
-    font-size: 1.05rem;
+    background: transparent;
+    color: inherit;
+}
+
+.ecosystem-icon i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(129, 216, 111, 0.2);
+    color: #073341;
+    font-size: 1.1rem;
+    line-height: 1;
 }
 
 .ecosystem-card h3 {

@@ -94,10 +94,7 @@ const pageTitle = computed(() => `Política de Privacidade | ${brandName.value}`
     max-width: 100vw;
     overflow-x: hidden;
     overflow-x: clip;
-    background:
-        radial-gradient(60% 40% at 85% 0%, rgba(129, 216, 111, 0.2) 0%, rgba(129, 216, 111, 0) 72%),
-        radial-gradient(55% 45% at 8% 28%, rgba(52, 182, 130, 0.16) 0%, rgba(52, 182, 130, 0) 72%),
-        linear-gradient(180deg, #04161b 0%, #08242c 35%, #0a2f37 70%, #0d3942 100%);
+    background: linear-gradient(180deg, #f5fdff 0%, #f3f6f9 100%);
 }
 
 .legal-main {
@@ -109,14 +106,14 @@ const pageTitle = computed(() => `Política de Privacidade | ${brandName.value}`
     width: min(920px, 100%);
     margin: 0 auto;
     border-radius: 24px;
-    border: 1px solid rgba(214, 255, 223, 0.22);
-    background: rgba(214, 255, 223, 0.08);
-    box-shadow: 0 26px 44px -34px rgba(2, 12, 10, 0.92);
+    border: 1px solid rgba(7, 51, 65, 0.16);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 253, 255, 0.95) 100%);
+    box-shadow: 0 24px 38px -30px rgba(20, 24, 34, 0.3);
     padding: 1.6rem;
 }
 
 .legal-header {
-    border-bottom: 1px solid rgba(214, 255, 223, 0.2);
+    border-bottom: 1px solid rgba(7, 51, 65, 0.14);
     padding-bottom: 0.95rem;
 }
 
@@ -125,21 +122,21 @@ const pageTitle = computed(() => `Política de Privacidade | ${brandName.value}`
     font-size: 0.76rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #bff6cc;
-    font-weight: 700;
+    color: #073341;
+    font-weight: 600;
 }
 
 .legal-title {
     margin: 0.45rem 0 0;
-    color: #effff3;
+    color: #141822;
     font-size: clamp(1.4rem, 3vw, 2rem);
     line-height: 1.25;
-    font-weight: 700 !important;
+    font-weight: 400 !important;
 }
 
 .legal-updated {
     margin: 0.45rem 0 0;
-    color: rgba(232, 255, 239, 0.76);
+    color: #8797a7;
     font-size: 0.9rem;
 }
 
@@ -151,14 +148,14 @@ const pageTitle = computed(() => `Política de Privacidade | ${brandName.value}`
 
 .legal-content h2 {
     margin: 0;
-    color: #effff3;
+    color: #073341;
     font-size: 1.02rem;
-    font-weight: 700 !important;
+    font-weight: 600 !important;
 }
 
 .legal-content p {
     margin: 0.45rem 0 0;
-    color: rgba(232, 255, 239, 0.82);
+    color: #8797a7;
     font-size: 0.95rem;
     line-height: 1.6;
 }

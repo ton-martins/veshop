@@ -93,44 +93,40 @@ const workImageUrl = computed(() => landingImages.value.work || '/landing/images
 .photo-shell {
     position: relative;
     isolation: isolate;
-    padding: 14px;
+    padding: 10px;
 }
 
 .photo-shell::before {
     content: '';
     position: absolute;
-    inset: 0;
-    border-radius: 32px;
-    background: linear-gradient(145deg, rgba(166, 244, 188, 0.54) 0%, rgba(34, 114, 89, 0.42) 48%, rgba(6, 47, 42, 0.72) 100%);
+    inset: 0 0 8px 8px;
+    border-radius: 28px;
+    border: 1px solid rgba(7, 51, 65, 0.2);
+    background: transparent;
     z-index: -2;
 }
 
 .photo-shell::after {
     content: '';
     position: absolute;
-    inset: 12px -10px -10px 12px;
-    border-radius: 30px;
-    border: 1px solid rgba(157, 227, 173, 0.34);
-    background: linear-gradient(150deg, rgba(7, 43, 38, 0.36), rgba(9, 58, 49, 0.2));
+    inset: 8px;
+    border-radius: 24px;
+    border: 1px solid rgba(7, 51, 65, 0.1);
+    background: transparent;
     z-index: -3;
 }
 
 .photo-shell-glow {
-    position: absolute;
-    inset: -12% -8% auto;
-    height: 72%;
-    border-radius: 32px;
-    background: radial-gradient(circle at center, rgba(129, 216, 111, 0.3) 0%, rgba(129, 216, 111, 0) 72%);
-    z-index: -1;
+    display: none;
 }
 
 .photo-shell-frame {
     position: relative;
-    border-radius: 26px;
-    padding: 10px;
-    border: 1px solid rgba(202, 255, 218, 0.46);
-    background: linear-gradient(156deg, rgba(8, 46, 40, 0.8), rgba(9, 61, 53, 0.58));
-    box-shadow: 0 28px 44px -34px rgba(3, 18, 14, 0.62);
+    border-radius: 22px;
+    padding: 8px;
+    border: 1px solid rgba(7, 51, 65, 0.16);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 253, 255, 0.94));
+    box-shadow: 0 18px 28px -24px rgba(20, 24, 34, 0.24);
 }
 
 .photo-image {
@@ -152,31 +148,42 @@ const workImageUrl = computed(() => landingImages.value.work || '/landing/images
 }
 
 .icon-text {
-    border-radius: 18px;
-    border: 1px solid rgba(214, 255, 223, 0.2);
-    background: rgba(214, 255, 223, 0.08);
-    padding: 0.8rem;
+    border-radius: 0;
+    border: 0;
+    background: transparent;
+    padding: 0.35rem 0;
     height: 100%;
-    box-shadow: 0 16px 30px -24px rgba(2, 12, 10, 0.88);
-    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: none;
+    transition: none;
 }
 
 .icon-text:hover {
-    transform: translateY(-4px);
-    border-color: rgba(214, 255, 223, 0.34);
-    box-shadow: 0 22px 34px -24px rgba(2, 12, 10, 0.96);
+    transform: none;
+    border-color: transparent;
+    box-shadow: none;
 }
 
 .icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
+    width: auto;
+    height: auto;
+    border-radius: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(129, 216, 111, 0.26);
+    background: transparent;
+    color: inherit;
+}
+
+.icon i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(129, 216, 111, 0.2);
     color: #073341;
-    font-size: 1rem;
+    font-size: 1.1rem;
+    line-height: 1;
 }
 
 .icon-text h6 {

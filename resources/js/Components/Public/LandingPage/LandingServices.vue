@@ -3,25 +3,21 @@ const solutionCards = [
     {
         iconClass: 'ri-store-3-line',
         title: 'Operação comercial',
-        description: 'Fluxo para comércio com venda, pedidos e catálogo.',
         bullets: ['PDV para comércio', 'Produtos e categorias', 'Pedidos com status'],
     },
     {
         iconClass: 'ri-calendar-check-line',
         title: 'Operação de serviços',
-        description: 'Agenda e execução de atendimentos no dia a dia.',
         bullets: ['Agenda por data e horário', 'Serviços e categorias', 'Ordens de serviço'],
     },
     {
         iconClass: 'ri-bank-card-line',
         title: 'Financeiro integrado',
-        description: 'Controle financeiro do contratante em um painel único.',
         bullets: ['Contas a pagar e receber', 'Lançamentos e conciliação', 'Visão de caixa'],
     },
     {
         iconClass: 'ri-line-chart-line',
         title: 'Gestão e governança',
-        description: 'Camada de gestão para resultado e segurança operacional.',
         bullets: ['Relatórios operacionais', 'Acessos por perfil', 'Isolamento por contratante'],
     },
 ];
@@ -32,7 +28,7 @@ const solutionCards = [
         <div class="services-glow" aria-hidden="true"></div>
         <div class="container position-relative">
             <div class="row align-items-end justify-content-between g-3">
-                <div class="col-lg-7">
+                <div class="col-lg-8">
                     <div class="title-sm">
                         <span>Soluções por etapa</span>
                     </div>
@@ -43,11 +39,6 @@ const solutionCards = [
                         </h2>
                     </div>
                 </div>
-                <div class="col-lg-4">
-                    <p class="mb-0 services-copy-muted">
-                        Blocos objetivos, com foco apenas no que o Veshop entrega hoje.
-                    </p>
-                </div>
             </div>
 
             <div class="row mt-4 g-3">
@@ -57,7 +48,6 @@ const solutionCards = [
                             <i :class="item.iconClass"></i>
                         </span>
                         <h3>{{ item.title }}</h3>
-                        <p>{{ item.description }}</p>
                         <ul>
                             <li v-for="bullet in item.bullets" :key="bullet">
                                 <i class="ri-checkbox-circle-fill"></i>
@@ -93,10 +83,6 @@ const solutionCards = [
     pointer-events: none;
 }
 
-.services-copy-muted {
-    color: rgba(226, 255, 236, 0.76);
-}
-
 .service-title h2 {
     color: #effff3 !important;
 }
@@ -105,64 +91,68 @@ const solutionCards = [
     border: 1px solid rgba(210, 255, 223, 0.2);
     border-radius: 22px;
     background: rgba(212, 255, 224, 0.08);
-    padding: 1rem;
+    padding: 1.28rem;
     box-shadow: 0 18px 34px -28px rgba(2, 12, 10, 0.95);
     transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .solution-card:hover {
-    transform: translateY(-4px);
-    border-color: rgba(210, 255, 223, 0.34);
-    box-shadow: 0 24px 38px -28px rgba(2, 12, 10, 0.98);
+    transform: none;
+    border-color: rgba(210, 255, 223, 0.2);
+    box-shadow: 0 18px 34px -28px rgba(2, 12, 10, 0.95);
 }
 
 .solution-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 11px;
+    width: auto;
+    height: auto;
+    border-radius: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(129, 216, 111, 0.26);
-    color: #e4ffe8;
-    font-size: 1.15rem;
+    background: transparent;
+    color: inherit;
+}
+
+.solution-icon i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(129, 216, 111, 0.2);
+    color: #073341;
+    font-size: 1.1rem;
+    line-height: 1;
 }
 
 .solution-card h3 {
-    margin-top: 0.65rem;
+    margin-top: 0.8rem;
     margin-bottom: 0;
-    font-size: 1.06rem;
+    font-size: 1.18rem;
     color: #effff3;
     font-weight: 700;
 }
 
-.solution-card p {
-    margin-top: 0.45rem;
-    margin-bottom: 0;
-    color: rgba(229, 255, 237, 0.78);
-    font-size: 0.88rem;
-    line-height: 1.48;
-}
-
 .solution-card ul {
-    margin: 0.8rem 0 0;
+    margin: 0.95rem 0 0;
     padding: 0;
     list-style: none;
     display: grid;
-    gap: 0.45rem;
+    gap: 0.65rem;
 }
 
 .solution-card li {
     display: flex;
     align-items: flex-start;
-    gap: 0.38rem;
+    gap: 0.5rem;
     color: rgba(236, 255, 242, 0.86);
-    font-size: 0.84rem;
-    line-height: 1.45;
+    font-size: 0.95rem;
+    line-height: 1.4;
 }
 
 .solution-card li i {
     color: #9ce1a8;
-    margin-top: 0.1rem;
+    margin-top: 0.08rem;
+    font-size: 1.02rem;
 }
 </style>

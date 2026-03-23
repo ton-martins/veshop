@@ -15,10 +15,10 @@ import { Link } from '@inertiajs/vue3';
                             Fluxo enxuto e arquitetura modular para você crescer.
                         </p>
                         <div class="cta-actions">
-                            <Link :href="route('login')" class="btn cta-btn cta-btn-primary">
+                            <Link :href="route('login')" class="btn btn-success cta-btn cta-btn-request veshop-landing-btn">
                                 Entrar no Veshop
                             </Link>
-                            <a href="#price" class="btn cta-btn cta-btn-secondary">
+                            <a href="#price" class="btn btn-primary cta-btn cta-btn-contact veshop-landing-btn">
                                 Revisar planos
                             </a>
                         </div>
@@ -93,28 +93,28 @@ import { Link } from '@inertiajs/vue3';
     padding: 0.62rem 1rem;
 }
 
-.cta-btn-primary {
-    border: 1px solid #9ce1a8;
-    background: #9ce1a8;
-    color: #083423;
-}
-
-.cta-btn-primary:hover {
-    color: #083423;
-    background: #8bd299;
-    border-color: #8bd299;
-}
-
-.cta-btn-secondary {
-    border: 1px solid rgba(214, 255, 223, 0.34);
-    background: rgba(214, 255, 223, 0.12);
-    color: #eaffef;
-}
-
-.cta-btn-secondary:hover {
+.cta-btn-request {
+    border: none;
+    background: #81d86f;
     color: #ffffff;
-    background: rgba(214, 255, 223, 0.2);
-    border-color: rgba(214, 255, 223, 0.52);
+}
+
+.cta-btn-request:hover {
+    color: #ffffff;
+    background: #81d86f;
+    border-color: #81d86f;
+}
+
+.cta-btn-contact {
+    border: none;
+    background: #073341;
+    color: #ffffff;
+}
+
+.cta-btn-contact:hover {
+    color: #ffffff;
+    background: #073341;
+    border-color: #073341;
 }
 
 @media (max-width: 575.98px) {

@@ -91,6 +91,10 @@ class HandleInertiaRequests extends Middleware
                 ? $this->resolveContractorContext($request, $currentContractor)
                 : ['current' => null, 'available' => []],
             'systemBranding' => fn () => $this->resolveSystemBranding($request, $currentContractor),
+            'publicContact' => [
+                'phone' => (string) config('app.contact_number', ''),
+                'email' => (string) config('mail.mailers.smtp.username', env('MAIL_USERNAME', '')),
+            ],
         ];
     }
 
