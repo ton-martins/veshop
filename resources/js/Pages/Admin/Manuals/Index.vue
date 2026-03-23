@@ -1,14 +1,14 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { useBranding } from '@/branding';
-import { Head, usePage } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import {
-    Settings2,
-    CreditCard,
-    Package,
-    ShoppingBag,
-    ShieldCheck,
+    LayoutDashboard,
+    Globe2,
+    Layers3,
+    BriefcaseBusiness,
+    ClipboardCheck,
     CheckCircle2,
     CircleAlert,
     ExternalLink,
@@ -17,7 +17,41 @@ import {
 const props = defineProps({
     initialTab: {
         type: String,
-        default: 'settings',
+        default: 'overview',
+    },
+    manualContext: {
+        type: Object,
+        default: () => ({
+            contractor_name: 'Operação atual',
+            niche_label: 'Comércio',
+            business_type_label: 'Loja',
+            plan_name: 'Sem plano',
+            enabled_modules_count: 0,
+            group_counts: { global: 0, niche: 0, business: 0 },
+        }),
+    },
+    manualGroups: {
+        type: Object,
+        default: () => ({ global: [], niche: [], business: [] }),
+    },
+    operationChecklist: {
+        type: Object,
+        default: () => ({ essentials: [], niche: [], security: [] }),
+    },
+    businessPlaybook: {
+        type: Object,
+        default: () => ({
+            title: 'Playbook operacional',
+            summary: '',
+            daily: [],
+            weekly: [],
+            monthly: [],
+            alerts: [],
+        }),
+    },
+    quickLinks: {
+        type: Array,
+        default: () => [],
     },
 });
 
@@ -33,19 +67,18 @@ const manualStyles = computed(() => ({
     '--manual-tab-active-border': withAlpha(tabAccentColor.value, 0.28),
 }));
 
-const allowedTabs = new Set(['settings', 'finance', 'products', 'orders', 'best_practices']);
-const activeTab = ref(allowedTabs.has(props.initialTab) ? props.initialTab : 'settings');
+const allowedTabs = new Set(['overview', 'global_modules', 'niche_modules', 'business_modules', 'playbook']);
+const activeTab = ref(allowedTabs.has(props.initialTab) ? props.initialTab : 'overview');
 
 watch(
     () => props.initialTab,
     (tab) => {
-        activeTab.value = allowedTabs.has(tab) ? tab : 'settings';
+        activeTab.value = allowedTabs.has(tab) ? tab : 'overview';
     },
 );
 
 const setActiveTab = (tab) => {
-    if (!allowedTabs.has(tab)) return;
-    if (activeTab.value === tab) return;
+    if (!allowedTabs.has(tab) || activeTab.value === tab) return;
 
     activeTab.value = tab;
 
@@ -56,33 +89,52 @@ const setActiveTab = (tab) => {
     }
 };
 
-const tabs = [
-    { key: 'settings', label: 'Configurações', icon: Settings2 },
-    { key: 'finance', label: 'Financeiro', icon: CreditCard },
-    { key: 'products', label: 'Produtos', icon: Package },
-    { key: 'orders', label: 'Pedidos', icon: ShoppingBag },
-    { key: 'best_practices', label: 'Boas práticas', icon: ShieldCheck },
-];
+const tabs = computed(() => [
+    { key: 'overview', label: 'Visão geral', icon: LayoutDashboard },
+    { key: 'global_modules', label: `Módulos globais (${props.manualContext?.group_counts?.global ?? 0})`, icon: Globe2 },
+    { key: 'niche_modules', label: `Módulos do nicho (${props.manualContext?.group_counts?.niche ?? 0})`, icon: Layers3 },
+    { key: 'business_modules', label: `Tipo de negócio (${props.manualContext?.group_counts?.business ?? 0})`, icon: BriefcaseBusiness },
+    { key: 'playbook', label: 'Playbook', icon: ClipboardCheck },
+]);
 
-const mercadoPagoSteps = [
-    'Acesse o painel do Mercado Pago com a sua conta em mercadopago.com.br/developers.',
-    'Crie uma aplicação (se ainda não existir) e copie o Access Token da credencial de teste (TEST-...) ou produção (APP_USR-...).',
-    'No Veshop, vá em Contas > Pagamentos > Novo gateway.',
-    'Selecione o provedor Mercado Pago, informe um nome, marque Ativo e defina Sandbox conforme o token usado.',
-    'Cole o Access Token no campo "Access token Mercado Pago".',
-    'Crie um token forte para o webhook (32+ caracteres) e informe no campo "Token do webhook".',
-    'Salve o gateway e confira se o card mostra Token/Webhook como "configurado".',
-    'Crie uma forma de pagamento Pix vinculada ao gateway Mercado Pago e marque como ativa.',
-    'Na loja pública, finalize um pedido com Pix para validar a geração do QR Code e do código copia e cola.',
-];
+const moduleTabCatalog = {
+    global_modules: {
+        key: 'global',
+        title: 'Módulos globais da plataforma',
+        subtitle: 'Recursos transversais que sustentam segurança, controle e padronização da operação.',
+        empty: 'Não há módulos globais habilitados para este contratante.',
+    },
+    niche_modules: {
+        key: 'niche',
+        title: 'Módulos do nicho do contratante',
+        subtitle: 'Recursos base do nicho atual, com rotinas essenciais para o modelo de operação.',
+        empty: 'Não há módulos de nicho habilitados para este contratante.',
+    },
+    business_modules: {
+        key: 'business',
+        title: 'Módulos do tipo de negócio',
+        subtitle: 'Recursos específicos do tipo de negócio atual, com orientações práticas de execução.',
+        empty: 'Não há módulos específicos do tipo de negócio habilitados para este contratante.',
+    },
+};
 
-const mercadoPagoChecklist = [
-    'Gateway Mercado Pago ativo',
-    'Forma Pix vinculada ao gateway',
-    'Access token válido para o ambiente (sandbox/produção)',
-    'Token de webhook configurado no Veshop',
-    'Pedido de teste com status aguardando pagamento',
-];
+const currentModuleMeta = computed(() => moduleTabCatalog[activeTab.value] ?? null);
+const currentModuleItems = computed(() => {
+    if (!currentModuleMeta.value) return [];
+    return props.manualGroups?.[currentModuleMeta.value.key] ?? [];
+});
+
+const overviewCards = computed(() => [
+    { key: 'global', label: 'Módulos globais', value: props.manualContext?.group_counts?.global ?? 0 },
+    { key: 'niche', label: 'Módulos do nicho', value: props.manualContext?.group_counts?.niche ?? 0 },
+    { key: 'business', label: 'Módulos por tipo', value: props.manualContext?.group_counts?.business ?? 0 },
+]);
+
+const operationSections = computed(() => [
+    { key: 'essentials', title: 'Fundamentos da operação', items: props.operationChecklist?.essentials ?? [] },
+    { key: 'niche', title: 'Rotina do nicho', items: props.operationChecklist?.niche ?? [] },
+    { key: 'security', title: 'Segurança e controle', items: props.operationChecklist?.security ?? [] },
+]);
 </script>
 
 <template>
@@ -112,154 +164,221 @@ const mercadoPagoChecklist = [
             </div>
 
             <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-                <template v-if="activeTab === 'settings'">
-                    <h2 class="text-sm font-semibold text-slate-900">Configurações essenciais</h2>
-                    <p class="mt-1 text-sm text-slate-600">
-                        Use esta aba para validar os dados iniciais da sua operação antes de publicar a loja.
-                    </p>
+                <template v-if="activeTab === 'overview'">
+                    <div class="grid gap-3 lg:grid-cols-3">
+                        <article class="rounded-xl border border-slate-200 bg-slate-50 p-3 lg:col-span-2">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Contexto atual</p>
+                            <h2 class="mt-2 text-base font-semibold text-slate-900">
+                                {{ props.manualContext?.contractor_name || 'Operação atual' }}
+                            </h2>
+                            <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                                <span class="rounded-full border border-slate-200 bg-white px-2 py-1">
+                                    Nicho: {{ props.manualContext?.niche_label }}
+                                </span>
+                                <span class="rounded-full border border-slate-200 bg-white px-2 py-1">
+                                    Tipo: {{ props.manualContext?.business_type_label }}
+                                </span>
+                                <span class="rounded-full border border-slate-200 bg-white px-2 py-1">
+                                    Plano: {{ props.manualContext?.plan_name }}
+                                </span>
+                            </div>
+                            <p class="mt-3 text-sm text-slate-600">
+                                Esta central foi adaptada para os módulos habilitados do contratante e organiza as orientações por escopo:
+                                global, nicho e tipo de negócio.
+                            </p>
+                        </article>
 
-                    <div class="mt-4 grid gap-3 md:grid-cols-2">
-                        <article class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Loja virtual</p>
-                            <ul class="mt-2 space-y-1 text-sm text-slate-700">
-                                <li>• Nome da marca e cor principal definidos.</li>
-                                <li>• Endereço e canais de contato atualizados.</li>
-                                <li>• Métodos de entrega configurados.</li>
+                        <article class="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Módulos habilitados</p>
+                            <p class="mt-2 text-2xl font-bold text-emerald-800">{{ props.manualContext?.enabled_modules_count ?? 0 }}</p>
+                            <p class="mt-1 text-xs text-emerald-700">Base ativa para operação do contratante.</p>
+                        </article>
+                    </div>
+
+                    <div class="mt-4 grid gap-3 sm:grid-cols-3">
+                        <article v-for="item in overviewCards" :key="item.key" class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ item.label }}</p>
+                            <p class="mt-2 text-2xl font-bold text-slate-900">{{ item.value }}</p>
+                        </article>
+                    </div>
+
+                    <section class="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+                        <div class="flex items-center justify-between gap-3">
+                            <h3 class="text-sm font-semibold text-slate-900">Acessos rápidos</h3>
+                            <p class="text-xs text-slate-500">Atalhos para os módulos ativos</p>
+                        </div>
+                        <div v-if="props.quickLinks.length" class="mt-3 flex flex-wrap gap-2">
+                            <template v-for="quickLink in props.quickLinks" :key="`${quickLink.label}-${quickLink.href}`">
+                                <a
+                                    v-if="quickLink.external"
+                                    :href="quickLink.href"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                >
+                                    {{ quickLink.label }}
+                                    <ExternalLink class="h-3.5 w-3.5" />
+                                </a>
+                                <Link
+                                    v-else
+                                    :href="quickLink.href"
+                                    class="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                >
+                                    {{ quickLink.label }}
+                                </Link>
+                            </template>
+                        </div>
+                        <p v-else class="mt-3 text-sm text-slate-500">
+                            Nenhum atalho disponível para os módulos atuais.
+                        </p>
+                    </section>
+
+                    <section class="mt-4 space-y-3">
+                        <article
+                            v-for="section in operationSections"
+                            :key="section.key"
+                            class="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                        >
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ section.title }}</p>
+                            <ul class="mt-2 space-y-2 text-sm text-slate-700">
+                                <li v-for="item in section.items" :key="item" class="flex items-start gap-2">
+                                    <CheckCircle2 class="mt-0.5 h-4 w-4 text-emerald-600" />
+                                    <span>{{ item }}</span>
+                                </li>
                             </ul>
                         </article>
-                        <article class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Acesso e segurança</p>
-                            <ul class="mt-2 space-y-1 text-sm text-slate-700">
-                                <li>• E-mail de administrador validado.</li>
-                                <li>• 2FA habilitado para acesso ao painel.</li>
-                                <li>• Senha forte e sem compartilhamento.</li>
-                            </ul>
+                    </section>
+                </template>
+
+                <template v-else-if="currentModuleMeta">
+                    <h2 class="text-sm font-semibold text-slate-900">{{ currentModuleMeta.title }}</h2>
+                    <p class="mt-1 text-sm text-slate-600">{{ currentModuleMeta.subtitle }}</p>
+
+                    <div v-if="currentModuleItems.length" class="mt-4 space-y-4">
+                        <article
+                            v-for="module in currentModuleItems"
+                            :key="module.code"
+                            class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                        >
+                            <div class="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-slate-900">{{ module.name }}</h3>
+                                    <p class="mt-1 text-sm text-slate-600">{{ module.description }}</p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600">
+                                        {{ module.scope_label }}
+                                    </span>
+                                    <span
+                                        v-if="module.is_default"
+                                        class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700"
+                                    >
+                                        Essencial
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Objetivo operacional</p>
+                                <p class="mt-1 text-sm text-slate-700">{{ module.goal }}</p>
+                            </div>
+
+                            <div class="mt-3 grid gap-3 lg:grid-cols-2">
+                                <article class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Passo a passo</p>
+                                    <ol class="mt-2 space-y-2 text-sm text-slate-700">
+                                        <li v-for="(step, index) in module.steps" :key="`${module.code}-step-${index}`">
+                                            <span class="font-semibold text-slate-900">{{ index + 1 }}.</span>
+                                            <span class="ml-1">{{ step }}</span>
+                                        </li>
+                                    </ol>
+                                </article>
+
+                                <article class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Checklist</p>
+                                    <ul class="mt-2 space-y-2 text-sm text-slate-700">
+                                        <li v-for="item in module.checklist" :key="`${module.code}-check-${item}`" class="flex items-start gap-2">
+                                            <CheckCircle2 class="mt-0.5 h-4 w-4 text-emerald-600" />
+                                            <span>{{ item }}</span>
+                                        </li>
+                                    </ul>
+                                </article>
+                            </div>
+
+                            <div
+                                v-if="module.business_types?.length"
+                                class="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600"
+                            >
+                                <span class="font-semibold text-slate-700">Aplicável para:</span>
+                                {{ module.business_types.join(', ') }}
+                            </div>
+
+                            <div v-if="module.actions?.length" class="mt-3 flex flex-wrap items-center gap-2">
+                                <Link
+                                    v-for="action in module.actions"
+                                    :key="`${module.code}-${action.label}`"
+                                    :href="action.href"
+                                    class="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                >
+                                    {{ action.label }}
+                                </Link>
+                            </div>
                         </article>
+                    </div>
+
+                    <div
+                        v-else
+                        class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
+                    >
+                        {{ currentModuleMeta.empty }}
                     </div>
                 </template>
 
-                <template v-else-if="activeTab === 'finance'">
-                    <h2 class="text-sm font-semibold text-slate-900">Guia de integração Mercado Pago (PIX)</h2>
-                    <p class="mt-1 text-sm text-slate-600">
-                        Siga este passo a passo para ativar a cobrança PIX com QR Code e copia e cola.
-                    </p>
+                <template v-else>
+                    <h2 class="text-sm font-semibold text-slate-900">{{ props.businessPlaybook?.title }}</h2>
+                    <p class="mt-1 text-sm text-slate-600">{{ props.businessPlaybook?.summary }}</p>
 
-                    <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-emerald-800">
-                        <p class="font-semibold">Resultado esperado</p>
-                        <p class="mt-1">
-                            Ao finalizar um pedido com Pix, o sistema cria a cobrança no Mercado Pago e disponibiliza os dados de pagamento ao cliente.
-                        </p>
-                    </div>
-
-                    <ol class="mt-4 space-y-3 text-sm text-slate-700">
-                        <li
-                            v-for="(step, index) in mercadoPagoSteps"
-                            :key="`mp-step-${index}`"
-                            class="rounded-xl border border-slate-200 bg-slate-50 p-3"
-                        >
-                            <span class="font-semibold text-slate-900">{{ index + 1 }}.</span>
-                            <span class="ml-1">{{ step }}</span>
-                        </li>
-                    </ol>
-
-                    <div class="mt-4 grid gap-3 lg:grid-cols-2">
-                        <article class="rounded-xl border border-slate-200 p-3">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Checklist de validação</p>
+                    <div class="mt-4 grid gap-3 lg:grid-cols-3">
+                        <article class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rotina diária</p>
                             <ul class="mt-2 space-y-2 text-sm text-slate-700">
-                                <li
-                                    v-for="item in mercadoPagoChecklist"
-                                    :key="item"
-                                    class="flex items-start gap-2"
-                                >
+                                <li v-for="item in props.businessPlaybook?.daily || []" :key="`daily-${item}`" class="flex items-start gap-2">
                                     <CheckCircle2 class="mt-0.5 h-4 w-4 text-emerald-600" />
                                     <span>{{ item }}</span>
                                 </li>
                             </ul>
                         </article>
 
-                        <article class="rounded-xl border border-slate-200 p-3">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Dúvidas comuns</p>
+                        <article class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rotina semanal</p>
                             <ul class="mt-2 space-y-2 text-sm text-slate-700">
-                                <li class="flex items-start gap-2">
-                                    <CircleAlert class="mt-0.5 h-4 w-4 text-amber-600" />
-                                    <span>O token TEST-... funciona apenas em sandbox.</span>
-                                </li>
-                                <li class="flex items-start gap-2">
-                                    <CircleAlert class="mt-0.5 h-4 w-4 text-amber-600" />
-                                    <span>Se o token for inválido, o pedido não cria cobrança PIX.</span>
-                                </li>
-                                <li class="flex items-start gap-2">
-                                    <CircleAlert class="mt-0.5 h-4 w-4 text-amber-600" />
-                                    <span>Troque imediatamente o token se houver suspeita de exposição.</span>
+                                <li v-for="item in props.businessPlaybook?.weekly || []" :key="`weekly-${item}`" class="flex items-start gap-2">
+                                    <CheckCircle2 class="mt-0.5 h-4 w-4 text-emerald-600" />
+                                    <span>{{ item }}</span>
                                 </li>
                             </ul>
-                            <a
-                                href="https://www.mercadopago.com.br/developers/panel/app"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900"
-                            >
-                                Abrir documentação oficial
-                                <ExternalLink class="h-3.5 w-3.5" />
-                            </a>
                         </article>
-                    </div>
-                </template>
 
-                <template v-else-if="activeTab === 'products'">
-                    <h2 class="text-sm font-semibold text-slate-900">Cadastro de produtos</h2>
-                    <p class="mt-1 text-sm text-slate-600">
-                        Mantenha o catálogo organizado por categoria, SKU e estoque para evitar rupturas e erros no checkout.
-                    </p>
-
-                    <ul class="mt-4 space-y-2 text-sm text-slate-700">
-                        <li>• Use nome objetivo e descrição curta com benefícios.</li>
-                        <li>• Cadastre SKU único para cada item.</li>
-                        <li>• Atualize o estoque sempre que houver compra de fornecedor.</li>
-                        <li>• Revise preço de venda e margens periodicamente.</li>
-                    </ul>
-                </template>
-
-                <template v-else-if="activeTab === 'orders'">
-                    <h2 class="text-sm font-semibold text-slate-900">Fluxo de pedidos</h2>
-                    <p class="mt-1 text-sm text-slate-600">
-                        Acompanhe os pedidos em ordem de prioridade para reduzir atrasos e melhorar a experiência do cliente.
-                    </p>
-
-                    <div class="mt-4 grid gap-3 md:grid-cols-2">
                         <article class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Sequência recomendada</p>
-                            <ol class="mt-2 space-y-1 text-sm text-slate-700">
-                                <li>1. Confirmar pedido.</li>
-                                <li>2. Validar pagamento.</li>
-                                <li>3. Separar ou produzir.</li>
-                                <li>4. Entregar ou concluir.</li>
-                            </ol>
-                        </article>
-                        <article class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Alertas</p>
-                            <ul class="mt-2 space-y-1 text-sm text-slate-700">
-                                <li>• Pedidos sem confirmação por muito tempo.</li>
-                                <li>• Divergência entre valor do pedido e pagamento.</li>
-                                <li>• Itens sem saldo no estoque.</li>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rotina mensal</p>
+                            <ul class="mt-2 space-y-2 text-sm text-slate-700">
+                                <li v-for="item in props.businessPlaybook?.monthly || []" :key="`monthly-${item}`" class="flex items-start gap-2">
+                                    <CheckCircle2 class="mt-0.5 h-4 w-4 text-emerald-600" />
+                                    <span>{{ item }}</span>
+                                </li>
                             </ul>
                         </article>
                     </div>
-                </template>
 
-                <template v-else>
-                    <h2 class="text-sm font-semibold text-slate-900">Boas práticas operacionais</h2>
-                    <p class="mt-1 text-sm text-slate-600">
-                        Estas recomendações ajudam a manter segurança, consistência de dados e previsibilidade operacional.
-                    </p>
-
-                    <ul class="mt-4 space-y-2 text-sm text-slate-700">
-                        <li>• Trabalhe com rotina diária de conferência de pedidos e caixa.</li>
-                        <li>• Use padrão único para nomes de produtos e categorias.</li>
-                        <li>• Revise permissões e acessos do painel periodicamente.</li>
-                        <li>• Gere relatórios semanais para acompanhar performance.</li>
-                        <li>• Faça backup antes de mudanças críticas de configuração.</li>
-                    </ul>
+                    <article class="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Alertas operacionais</p>
+                        <ul class="mt-2 space-y-2 text-sm text-amber-800">
+                            <li v-for="item in props.businessPlaybook?.alerts || []" :key="`alert-${item}`" class="flex items-start gap-2">
+                                <CircleAlert class="mt-0.5 h-4 w-4 text-amber-600" />
+                                <span>{{ item }}</span>
+                            </li>
+                        </ul>
+                    </article>
                 </template>
             </section>
         </section>
@@ -320,3 +439,4 @@ const mercadoPagoChecklist = [
     color: #ffffff;
 }
 </style>
+
