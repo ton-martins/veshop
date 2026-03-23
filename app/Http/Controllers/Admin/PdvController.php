@@ -19,7 +19,7 @@ class PdvController extends Controller
         private readonly AdminPdvService $service,
     ) {}
 
-    public function index(Request $request): Response
+    public function index(Request $request): Response|RedirectResponse
     {
         return $this->service->index($request);
     }

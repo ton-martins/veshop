@@ -23,22 +23,3 @@ php artisan queue:retry all
 -- Observação
 
 Não use "php artisan optimize" no ambiente local.
-
-
-Abertura de empresa
-Categoria: Legalização e Societário
-
-Planejamento tributário mensal
-Categoria: Tributário
-
-Escrituração contábil e balancetes
-Categoria: Contabilidade mensal
-
-Folha de pagamento e eSocial
-Categoria: Departamento pessoal
-
-Regularização fiscal e parcelamentos
-Categoria: Fiscal e Obrigações
-
-BPO financeiro (contas a pagar/receber e fluxo de caixa)
-Categoria: Financeiro / BPO

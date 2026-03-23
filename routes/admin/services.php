@@ -31,6 +31,7 @@ Route::middleware('contractor.module:services')->prefix('services')->name('servi
     });
 
     Route::middleware('contractor.module:schedule')->group(function (): void {
+        Route::get('/pdv', [ServiceScheduleController::class, 'index'])->name('pdv');
         Route::get('/schedule', [ServiceScheduleController::class, 'index'])->name('schedule');
         Route::post('/schedule', [ServiceScheduleController::class, 'store'])->name('schedule.store');
         Route::put('/schedule/{serviceAppointment}', [ServiceScheduleController::class, 'update'])->name('schedule.update');

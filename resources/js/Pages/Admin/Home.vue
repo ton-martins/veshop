@@ -7,7 +7,7 @@ import PdvOverview from '@/Components/App/AdminOverview/PdvOverview.vue';
 import { useBranding } from '@/branding';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
-import { Briefcase, ClipboardList, Clock3, CircleDollarSign, ShoppingBag, Store, Wallet } from 'lucide-vue-next';
+import { Briefcase, ClipboardList, Clock3, CircleDollarSign, ShoppingBag, Store, Wallet, CalendarClock } from 'lucide-vue-next';
 
 const props = defineProps({
     overview: {
@@ -63,9 +63,7 @@ const activeOverviewTemplate = computed(() => {
         : 'commercial_store';
 });
 
-const isCommercialOverview = computed(() =>
-    activeOverviewTemplate.value.startsWith('commercial_') || contractorNiche.value === 'services',
-);
+const isCommercialOverview = computed(() => activeOverviewTemplate.value.startsWith('commercial_'));
 
 const serviceTemplateCopy = computed(() => {
     if (activeOverviewTemplate.value === 'services_accounting') {
@@ -217,8 +215,8 @@ const serviceTabs = computed(() => {
         tabs.push({ key: 'storefront', label: 'Loja virtual', icon: Store });
     }
 
-    if (hasModule('pdv')) {
-        tabs.push({ key: 'pdv', label: 'PDV', icon: Wallet });
+    if (hasModule('schedule')) {
+        tabs.push({ key: 'schedule', label: 'Agenda', icon: CalendarClock });
     }
 
     return tabs;
@@ -298,24 +296,7 @@ const serviceStats = computed(() => {
 });
 
 const serviceQueue = computed(() => props.overview?.services?.queue ?? []);
-const operationsOverviewStats = computed(() => {
-    if (contractorNiche.value !== 'services') {
-        return props.overview?.commercial?.operations ?? {};
-    }
-
-    const serviceStats = props.overview?.services?.stats ?? {};
-    const commercialStats = props.overview?.commercial?.operations ?? {};
-
-    return {
-        orders_today: Number(serviceStats.today ?? 0),
-        in_production: Number(serviceStats.open_orders ?? 0),
-        monthly_revenue: Number(serviceStats.revenue ?? 0),
-        clients: Number(commercialStats.clients ?? 0),
-        pending_quotes: Number(commercialStats.pending_quotes ?? 0),
-        deliveries_today: Number(commercialStats.deliveries_today ?? 0),
-        recent_orders: Array.isArray(commercialStats.recent_orders) ? commercialStats.recent_orders : [],
-    };
-});
+const operationsOverviewStats = computed(() => props.overview?.commercial?.operations ?? {});
 const serviceQuickLinks = computed(() => {
     const links = [];
 
@@ -443,7 +424,6 @@ const storefrontPublicUrl = computed(() => {
                 <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                     <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div class="space-y-2">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Visão geral de serviços</p>
                             <h2 class="text-base font-semibold text-slate-900">{{ serviceOverviewCopy.title }}</h2>
                             <p class="text-sm text-slate-600">{{ serviceOverviewCopy.subtitle }}</p>
                         </div>
@@ -467,7 +447,6 @@ const storefrontPublicUrl = computed(() => {
                     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
                         <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                             <div class="space-y-2">
-                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Loja virtual de serviços</p>
                                 <h2 class="text-base font-semibold text-slate-900">Canal público para agendamentos</h2>
                                 <p class="text-sm text-slate-600">
                                     Configure o catálogo online e acompanhe os agendamentos recebidos pelo site.
@@ -500,8 +479,30 @@ const storefrontPublicUrl = computed(() => {
                     </section>
                 </template>
 
-                <template v-else-if="serviceActiveTab === 'pdv'">
-                    <PdvOverview :stats="props.overview?.commercial?.pdv ?? {}" />
+                <template v-else-if="serviceActiveTab === 'schedule'">
+                    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+                        <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                            <div class="space-y-2">
+                                <h2 class="text-base font-semibold text-slate-900">Atendimento por agendamentos</h2>
+                                <p class="text-sm text-slate-600">
+                                    No nicho de serviços, o fluxo operacional substitui o PDV de produtos pela agenda de atendimentos.
+                                </p>
+                            </div>
+                            <Link
+                                :href="route('admin.services.schedule', { layout: 'day' })"
+                                class="inline-flex items-center rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                            >
+                                Abrir agenda do dia
+                            </Link>
+                        </div>
+
+                        <div v-if="serviceStats.length" class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <article v-for="stat in serviceStats" :key="`schedule-stat-${stat.key}`" class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
+                                <p class="mt-1 text-xl font-bold text-slate-900">{{ stat.value }}</p>
+                            </article>
+                        </div>
+                    </section>
                 </template>
 
                 <template v-else>

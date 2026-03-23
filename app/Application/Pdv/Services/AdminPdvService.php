@@ -32,10 +32,22 @@ class AdminPdvService
 {
     use ResolvesCurrentContractor;
 
-    public function index(Request $request): Response
+    public function index(Request $request): Response|RedirectResponse
     {
         $contractor = $this->resolveCurrentContractor($request);
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        if ($contractor->niche() === Contractor::NICHE_SERVICES) {
+            $timezone = trim((string) ($contractor->timezone ?: config('app.timezone', 'America/Sao_Paulo')));
+            if ($timezone === '') {
+                $timezone = (string) config('app.timezone', 'America/Sao_Paulo');
+            }
+
+            return redirect()->route('admin.services.pdv', [
+                'layout' => 'day',
+                'reference_date' => now($timezone)->toDateString(),
+            ]);
+        }
 
         $openCashSession = CashSession::query()
             ->where('contractor_id', $contractor->id)

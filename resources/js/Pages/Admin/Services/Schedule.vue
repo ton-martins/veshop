@@ -4,7 +4,7 @@ import Modal from '@/Components/Modal.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
     Calendar,
     CalendarClock,
@@ -91,6 +91,59 @@ const addMinutes = (datetimeLocal, minutes) => {
     parsed.setMinutes(parsed.getMinutes() + minutes);
     return toDateTimeLocal(parsed);
 };
+const resolveNowAtTimezone = (timezone) => {
+    try {
+        const formatter = new Intl.DateTimeFormat('sv-SE', {
+            timeZone: timezone || 'America/Sao_Paulo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+        });
+        const parts = formatter.formatToParts(new Date());
+        const values = {};
+        parts.forEach((part) => {
+            if (part.type !== 'literal') {
+                values[part.type] = part.value;
+            }
+        });
+        const parsed = new Date(`${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}`);
+        if (!Number.isNaN(parsed.getTime())) {
+            return parsed;
+        }
+    } catch {
+        // fallback below
+    }
+
+    return new Date();
+};
+
+const nowTicker = ref(Date.now());
+let nowTickerTimer = null;
+
+onMounted(() => {
+    if (typeof window === 'undefined') return;
+    nowTickerTimer = window.setInterval(() => {
+        nowTicker.value = Date.now();
+    }, 30000);
+});
+
+onBeforeUnmount(() => {
+    if (typeof window === 'undefined' || nowTickerTimer === null) return;
+    window.clearInterval(nowTickerTimer);
+    nowTickerTimer = null;
+});
+
+const nowAtTimezone = computed(() => {
+    void nowTicker.value;
+    return resolveNowAtTimezone(props.timezone);
+});
+
+const minimumStartDateTime = computed(() => toDateTimeLocal(nowAtTimezone.value));
+const minimumStartDate = computed(() => toIsoDate(nowAtTimezone.value));
 
 const filterForm = useForm({
     search: props.filters?.search ?? '',
@@ -99,6 +152,17 @@ const filterForm = useForm({
 
 const layout = ref(props.filters?.layout ?? 'month');
 const referenceDate = ref(props.filters?.reference_date ?? toIsoDate(new Date()));
+const scheduleRouteName = computed(() => {
+    if (typeof route !== 'function') {
+        return 'admin.services.schedule';
+    }
+
+    try {
+        return route().current('admin.services.pdv') ? 'admin.services.pdv' : 'admin.services.schedule';
+    } catch {
+        return 'admin.services.schedule';
+    }
+});
 
 watch(
     () => props.filters,
@@ -113,7 +177,7 @@ watch(
 
 const applyFilters = () => {
     router.get(
-        route('admin.services.schedule'),
+        route(scheduleRouteName.value),
         {
             search: filterForm.search || undefined,
             status: filterForm.status || undefined,
@@ -218,6 +282,28 @@ const monthGridDays = computed(() => {
 });
 
 const daySlots = computed(() => Array.from({ length: 14 }, (_, index) => 7 + index));
+const isCurrentMonthDate = (date) =>
+    date.getFullYear() === calendarBaseDate.value.getFullYear()
+    && date.getMonth() === calendarBaseDate.value.getMonth();
+const isTodayDate = (date) => toIsoDate(date) === minimumStartDate.value;
+const isPastDate = (date) => {
+    const parsed = typeof date === 'string' ? parseDate(date) : parseDate(toIsoDate(date));
+    const today = parseDate(minimumStartDate.value);
+    if (!parsed || !today) return false;
+    return parsed.getTime() < today.getTime();
+};
+const canCreateAtDate = (date) => hasServices.value && !isPastDate(date);
+const canCreateAtHour = (date, hour) => {
+    if (!canCreateAtDate(date)) return false;
+
+    const isoDate = typeof date === 'string' ? date : toIsoDate(date);
+    const slot = parseDateTime(`${isoDate}T${pad2(hour)}:00`);
+    const minimum = parseDateTime(minimumStartDateTime.value);
+
+    if (!slot || !minimum) return false;
+
+    return slot.getTime() >= minimum.getTime();
+};
 
 const eventsForDate = (date) => {
     const key = typeof date === 'string' ? date : toIsoDate(date);
@@ -252,7 +338,7 @@ const setLayout = (value) => {
 };
 
 const goToday = () => {
-    referenceDate.value = toIsoDate(new Date());
+    referenceDate.value = minimumStartDate.value;
     applyFilters();
 };
 
@@ -301,6 +387,52 @@ const appointmentToDelete = ref(null);
 const deleteForm = useForm({});
 
 const isEditing = computed(() => Boolean(editingAppointment.value?.id));
+const clampToMinimumStart = (datetimeLocal) => {
+    const candidate = parseDateTime(datetimeLocal);
+    const minimum = parseDateTime(minimumStartDateTime.value);
+    if (!candidate || !minimum) {
+        return minimumStartDateTime.value;
+    }
+
+    candidate.setSeconds(0, 0);
+    return candidate.getTime() < minimum.getTime()
+        ? minimumStartDateTime.value
+        : toDateTimeLocal(candidate);
+};
+const minimumEndDateTime = computed(() => {
+    const startsAt = parseDateTime(form.starts_at);
+    if (!startsAt) {
+        return addMinutes(minimumStartDateTime.value, 1);
+    }
+
+    if (isEditing.value) {
+        return addMinutes(toDateTimeLocal(startsAt), 1);
+    }
+
+    return addMinutes(clampToMinimumStart(toDateTimeLocal(startsAt)), 1);
+});
+
+watch(
+    () => form.starts_at,
+    (nextStartsAt) => {
+        if (!nextStartsAt) return;
+
+        if (!isEditing.value) {
+            const normalized = clampToMinimumStart(nextStartsAt);
+            if (normalized !== nextStartsAt) {
+                form.starts_at = normalized;
+                return;
+            }
+        }
+
+        const currentEndsAt = parseDateTime(form.ends_at);
+        const minimumEndsAt = parseDateTime(minimumEndDateTime.value);
+
+        if (!currentEndsAt || (minimumEndsAt && currentEndsAt.getTime() < minimumEndsAt.getTime())) {
+            form.ends_at = minimumEndDateTime.value;
+        }
+    },
+);
 
 const openCreate = () => {
     openCreateAt(referenceDate.value);
@@ -308,8 +440,8 @@ const openCreate = () => {
 
 const openCreateAt = (date, hour = 9) => {
     editingAppointment.value = null;
-    const safeDate = String(date || referenceDate.value || toIsoDate(new Date()));
-    const startsAt = `${safeDate}T${pad2(hour)}:00`;
+    const safeDate = String(date || referenceDate.value || minimumStartDate.value);
+    const startsAt = clampToMinimumStart(`${safeDate}T${pad2(hour)}:00`);
     const endsAt = addMinutes(startsAt, 60);
     form.defaults({
         ...formDefaults(),
@@ -347,6 +479,25 @@ const closeModal = () => {
 };
 
 const submitAppointment = () => {
+    form.clearErrors('starts_at', 'ends_at');
+
+    if (!isEditing.value) {
+        form.starts_at = clampToMinimumStart(form.starts_at || minimumStartDateTime.value);
+        const startsAt = parseDateTime(form.starts_at);
+        const minimum = parseDateTime(minimumStartDateTime.value);
+        if (!startsAt || !minimum || startsAt.getTime() < minimum.getTime()) {
+            form.setError('starts_at', 'Informe uma data e hora atual ou futura para o agendamento.');
+            return;
+        }
+    }
+
+    const endsAt = parseDateTime(form.ends_at);
+    const minimumEnd = parseDateTime(minimumEndDateTime.value);
+    if (!endsAt || !minimumEnd || endsAt.getTime() < minimumEnd.getTime()) {
+        form.setError('ends_at', 'O horário de término deve ser posterior ao início.');
+        return;
+    }
+
     if (isEditing.value) {
         form.put(route('admin.services.schedule.update', editingAppointment.value.id), {
             preserveScroll: true,
@@ -488,12 +639,19 @@ const statusLabel = (value) => {
                             <article
                                 v-for="day in monthGridDays"
                                 :key="`month-day-${toIsoDate(day)}`"
-                                class="rounded-lg border border-slate-200 bg-white p-2"
-                                :class="toIsoDate(day) === toIsoDate(new Date()) ? 'ring-1 ring-slate-900/20' : ''"
+                                class="min-h-[110px] rounded-lg border border-slate-200 p-2"
+                                :class="[
+                                    isCurrentMonthDate(day) ? 'bg-white' : 'bg-slate-50/70',
+                                    isPastDate(day) ? 'opacity-70' : '',
+                                    isTodayDate(day) ? 'ring-1 ring-slate-900/20' : '',
+                                ]"
                             >
                                 <div class="flex items-center justify-between gap-1">
-                                    <span class="text-xs font-semibold text-slate-700">{{ day.getDate() }}</span>
-                                    <button type="button" class="inline-flex h-5 w-5 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40" :disabled="!hasServices" @click="openCreateAt(toIsoDate(day))">
+                                    <span class="text-xs font-semibold text-slate-700">
+                                        {{ day.getDate() }}
+                                        <span v-if="isTodayDate(day)" class="ml-1 rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] text-white">Hoje</span>
+                                    </span>
+                                    <button type="button" class="inline-flex h-5 w-5 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40" :disabled="!canCreateAtDate(day)" @click="openCreateAt(toIsoDate(day))">
                                         <Plus class="h-3 w-3" />
                                     </button>
                                 </div>
@@ -518,12 +676,20 @@ const statusLabel = (value) => {
 
                     <template v-else-if="layout === 'week'">
                         <div class="grid gap-2 md:grid-cols-7">
-                            <article v-for="day in weekDays" :key="`week-day-${toIsoDate(day)}`" class="rounded-xl border border-slate-200 bg-slate-50 p-2">
+                            <article
+                                v-for="day in weekDays"
+                                :key="`week-day-${toIsoDate(day)}`"
+                                class="min-h-[170px] rounded-xl border border-slate-200 p-2"
+                                :class="[
+                                    isTodayDate(day) ? 'bg-white ring-1 ring-slate-900/20' : 'bg-slate-50',
+                                    isPastDate(day) ? 'opacity-70' : '',
+                                ]"
+                            >
                                 <div class="flex items-center justify-between gap-2">
                                     <span class="text-xs font-semibold text-slate-700">
                                         {{ new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(day) }}
                                     </span>
-                                    <button type="button" class="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40" :disabled="!hasServices" @click="openCreateAt(toIsoDate(day))">
+                                    <button type="button" class="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40" :disabled="!canCreateAtDate(day)" @click="openCreateAt(toIsoDate(day))">
                                         <Plus class="h-3 w-3" />
                                     </button>
                                 </div>
@@ -549,7 +715,7 @@ const statusLabel = (value) => {
                             <article v-for="hour in daySlots" :key="`day-slot-${hour}`" class="rounded-xl border border-slate-200 bg-slate-50 p-2">
                                 <div class="flex items-center justify-between gap-2">
                                     <span class="text-xs font-semibold text-slate-600">{{ pad2(hour) }}:00</span>
-                                    <button type="button" class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40" :disabled="!hasServices" @click="openCreateAt(referenceDate, hour)">
+                                    <button type="button" class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40" :disabled="!canCreateAtHour(referenceDate, hour)" @click="openCreateAt(referenceDate, hour)">
                                         <Plus class="h-3 w-3" />
                                         Novo
                                     </button>
@@ -659,12 +825,25 @@ const statusLabel = (value) => {
 
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Início</label>
-                        <input v-model="form.starts_at" type="datetime-local" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        <input
+                            v-model="form.starts_at"
+                            type="datetime-local"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            :min="isEditing ? null : minimumStartDateTime"
+                        >
+                        <p v-if="!isEditing" class="mt-1 text-[11px] text-slate-500">
+                            Disponível a partir de {{ minimumStartDateTime.replace('T', ' ') }}.
+                        </p>
                         <p v-if="form.errors.starts_at" class="mt-1 text-xs text-rose-600">{{ form.errors.starts_at }}</p>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Fim</label>
-                        <input v-model="form.ends_at" type="datetime-local" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        <input
+                            v-model="form.ends_at"
+                            type="datetime-local"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            :min="minimumEndDateTime"
+                        >
                         <p v-if="form.errors.ends_at" class="mt-1 text-xs text-rose-600">{{ form.errors.ends_at }}</p>
                     </div>
 

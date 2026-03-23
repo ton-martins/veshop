@@ -195,10 +195,11 @@
             {
                 key: 'admin-services-pdv',
                 label: 'PDV',
-                route: 'admin.pdv.index',
-                match: ['admin.pdv.*'],
+                route: 'admin.services.pdv',
+                match: ['admin.services.pdv'],
                 icon: 'ReceiptText',
-                module: 'pdv',
+                module: 'schedule',
+                params: { layout: 'day' },
             },
             {
                 key: 'admin-services-schedule',

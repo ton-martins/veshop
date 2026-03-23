@@ -12,6 +12,7 @@ use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -178,7 +179,7 @@ class AdminServiceScheduleService
         $contractor = $this->resolveCurrentContractor($request);
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
 
-        $data = $this->validatePayload($request, $contractor);
+        $data = $this->validatePayload($request, $contractor, null, true);
         $data['contractor_id'] = $contractor->id;
 
         ServiceAppointment::query()->create($data);
@@ -192,7 +193,7 @@ class AdminServiceScheduleService
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
 
         $serviceAppointment = $this->resolveOwnedAppointment($contractor, $serviceAppointment);
-        $serviceAppointment->fill($this->validatePayload($request, $contractor))->save();
+        $serviceAppointment->fill($this->validatePayload($request, $contractor, $serviceAppointment))->save();
 
         return back()->with('status', 'Compromisso atualizado com sucesso.');
     }
@@ -211,9 +212,14 @@ class AdminServiceScheduleService
     /**
      * @return array<string, mixed>
      */
-    private function validatePayload(Request $request, Contractor $contractor): array
+    private function validatePayload(
+        Request $request,
+        Contractor $contractor,
+        ?ServiceAppointment $currentAppointment = null,
+        bool $enforceFutureStart = false,
+    ): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'title' => ['required', 'string', 'max:180'],
             'service_order_id' => [
                 'nullable',
@@ -236,6 +242,27 @@ class AdminServiceScheduleService
             'location' => ['nullable', 'string', 'max:180'],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
+
+        $timezone = trim((string) ($contractor->timezone ?: config('app.timezone', 'America/Sao_Paulo')));
+        if ($timezone === '') {
+            $timezone = (string) config('app.timezone', 'America/Sao_Paulo');
+        }
+
+        $startsAt = Carbon::parse((string) $data['starts_at'], $timezone);
+        $now = now($timezone);
+
+        $currentStartsAt = $currentAppointment?->starts_at
+            ? Carbon::parse((string) $currentAppointment->starts_at, $timezone)
+            : null;
+        $isSameAsCurrent = $currentStartsAt !== null && $startsAt->equalTo($currentStartsAt);
+
+        if ($startsAt->lessThan($now) && ($enforceFutureStart || ! $isSameAsCurrent)) {
+            throw ValidationException::withMessages([
+                'starts_at' => 'Informe uma data e hora atual ou futura para o agendamento.',
+            ]);
+        }
+
+        return $data;
     }
 
     private function resolveOwnedAppointment(Contractor $contractor, ServiceAppointment $serviceAppointment): ServiceAppointment
