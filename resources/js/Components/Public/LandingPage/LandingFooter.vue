@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { useBranding } from '@/branding';
 
 const year = new Date().getFullYear();

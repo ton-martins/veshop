@@ -1,12 +1,12 @@
-<script setup>
+﻿<script setup>
 import { computed } from 'vue';
 import { useBranding } from '@/branding';
 
 const advantages = [
-    'Operações multi-tenant com gestão centralizada',
-    'Parametrização por segmento',
-    'Controle fiscal e contabil',
-    'Escalável para crescimento',
+    'Operação multi-tenant com gestão centralizada',
+    'Parametrização por segmento de negócio',
+    'Controle fiscal e contábil integrado',
+    'Escalável para crescimento seguro',
 ];
 
 const { landingImages } = useBranding();
@@ -14,9 +14,9 @@ const whyChooseImageUrl = computed(() => landingImages.value.why_choose || '/lan
 </script>
 
 <template>
-    <section class="section why-choose-section bg-light">
+    <section class="section why-choose-section landing-section-shell landing-section-light">
         <div class="container">
-            <div class="row align-items-center justify-content-between">
+            <div class="row align-items-center justify-content-between g-4">
                 <div class="col-lg-5">
                     <div class="title-sm">
                         <span>Por que escolher</span>
@@ -25,31 +25,33 @@ const whyChooseImageUrl = computed(() => landingImages.value.why_choose || '/lan
                     <div class="why-choose-title mt-4">
                         <h2 class="fw-semibold text-primary lh-base">ERP focado em resultado operacional</h2>
                         <p>
-                            Padronize processos, reduza retrabalho e acompanhe indicadores em tempo real.
-                            O Veshop ajuda a equipe a operar melhor no dia a dia.
+                            Padronize processos, reduza retrabalho e acompanhe indicadores em tempo real,
+                            com clareza para execução diária.
                         </p>
                     </div>
 
-                    <div class="row mt-4 g-4">
-                        <div v-for="item in advantages" :key="item" class="col-lg-6 col-6">
-                            <div class="d-flex align-items-center">
-                                <i class="ri-checkbox-blank-circle-fill text-success fs-4"></i>
-                                <h6 class="ms-3 m-0">{{ item }}</h6>
+                    <div class="row mt-4 g-3">
+                        <div v-for="item in advantages" :key="item" class="col-12 col-sm-6">
+                            <div class="advantage-item">
+                                <i class="ri-checkbox-circle-fill"></i>
+                                <h6 class="m-0">{{ item }}</h6>
                             </div>
                         </div>
-                        <div class="main-btn mt-5 mb-3 d-flex">
-                            <a href="#contacts" class="btn btn-primary fw-semibold">Falar com especialista</a>
-                        </div>
+                    </div>
+
+                    <div class="main-btn mt-4 d-flex">
+                        <a href="#contacts" class="btn fw-semibold landing-cta-solid">Falar com especialista</a>
                     </div>
                 </div>
 
                 <div class="col-lg-6">
-                    <div class="work-image-area">
-                        <div class="work-image-frame">
+                    <div class="photo-shell photo-shell-alt">
+                        <div class="photo-shell-glow" aria-hidden="true"></div>
+                        <div class="photo-shell-frame">
                             <img
                                 :src="whyChooseImageUrl"
                                 alt="Equipe analisando indicadores no Veshop"
-                                class="work-image"
+                                class="photo-image"
                             />
                         </div>
                     </div>
@@ -60,67 +62,123 @@ const whyChooseImageUrl = computed(() => landingImages.value.why_choose || '/lan
 </template>
 
 <style scoped>
-.work-section {
-    overflow: visible;
+.why-choose-section {
+    --next-section-bg: linear-gradient(180deg, #08242c 0%, #0b333c 100%);
+    position: relative;
+    background:
+        radial-gradient(64% 65% at 90% 10%, rgba(129, 216, 111, 0.2) 0%, rgba(129, 216, 111, 0) 72%),
+        radial-gradient(42% 46% at 10% 45%, rgba(52, 182, 130, 0.12) 0%, rgba(52, 182, 130, 0) 72%),
+        linear-gradient(180deg, #f7fbf8 0%, #eef5f1 100%);
 }
 
-.work-image-area {
-    position: relative;
-    overflow: visible;
+.why-choose-section .title-sm span {
+    color: #2f8b45;
 }
 
-.work-image-frame {
+.why-choose-section .section-title-border {
+    background: #5ac178;
+}
+
+.why-choose-title p {
+    margin-top: 0.9rem;
+    margin-bottom: 0;
+    color: rgba(30, 58, 48, 0.82);
+    line-height: 1.58;
+}
+
+.why-choose-title h2 {
+    color: #0f2b22 !important;
+}
+
+.advantage-item {
+    border-radius: 12px;
+    border: 1px solid rgba(48, 97, 71, 0.18);
+    background: rgba(255, 255, 255, 0.84);
+    padding: 0.68rem 0.74rem;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    box-shadow: 0 15px 24px -20px rgba(14, 50, 35, 0.36);
+}
+
+.advantage-item i {
+    color: #2f8b45;
+}
+
+.advantage-item h6 {
+    color: #16382c;
+    font-size: 0.88rem;
+    line-height: 1.4;
+}
+
+.photo-shell {
     position: relative;
-    padding: 16px;
-    border-radius: 32px;
-    background: #92e7a1;
-    box-shadow: 0 18px 40px rgba(107, 187, 32, 0.18);
     isolation: isolate;
+    padding: 14px;
 }
 
-/* bloco decorativo de trás */
-.work-image-frame::before {
-    content: "";
+.photo-shell::before {
+    content: '';
     position: absolute;
-    top: 18px;
-    left: 18px;
-    right: -14px;
-    bottom: -14px;
-    background: rgba(36, 129, 24, 0.18);
-    border-radius: 36px;
+    inset: 0;
+    border-radius: 32px;
+    background: linear-gradient(145deg, rgba(166, 244, 188, 0.56) 0%, rgba(34, 114, 89, 0.46) 48%, rgba(6, 47, 42, 0.72) 100%);
+    z-index: -2;
+}
+
+.photo-shell::after {
+    content: '';
+    position: absolute;
+    inset: 12px -10px -10px 12px;
+    border-radius: 30px;
+    border: 1px solid rgba(157, 227, 173, 0.35);
+    background: linear-gradient(150deg, rgba(7, 43, 38, 0.38), rgba(9, 58, 49, 0.22));
+    z-index: -3;
+}
+
+.photo-shell-glow {
+    position: absolute;
+    inset: -12% -8% auto;
+    height: 72%;
+    border-radius: 32px;
+    background: radial-gradient(circle at center, rgba(129, 216, 111, 0.3) 0%, rgba(129, 216, 111, 0) 72%);
     z-index: -1;
 }
 
-/* linha/borda decorativa extra */
-.work-image-frame::after {
-    content: "";
-    position: absolute;
-    top: -10px;
-    left: 10px;
-    right: -10px;
-    bottom: 10px;
-    border: 1px solid rgba(8, 103, 32, 0.12);
-    border-radius: 36px;
-    z-index: -1;
+.photo-shell-frame {
+    position: relative;
+    border-radius: 26px;
+    padding: 10px;
+    border: 1px solid rgba(202, 255, 218, 0.48);
+    background: linear-gradient(156deg, rgba(8, 46, 40, 0.78), rgba(9, 61, 53, 0.56));
+    box-shadow: 0 28px 44px -34px rgba(4, 24, 19, 0.56);
 }
 
-.work-image {
-    display: block;
+.main-btn .landing-cta-solid {
+    border: 1px solid #9ce1a8 !important;
+    background: #9ce1a8 !important;
+    color: #072016 !important;
+    border-radius: 10px;
+}
+
+.main-btn .landing-cta-solid:hover,
+.main-btn .landing-cta-solid:focus {
+    border-color: #8bd299 !important;
+    background: #8bd299 !important;
+    color: #072016 !important;
+}
+
+.photo-image {
     width: 100%;
     height: 420px;
     object-fit: cover;
     border-radius: 18px;
 }
 
-@media (max-width: 991px) {
-    .work-image {
+@media (max-width: 991.98px) {
+    .photo-image {
         height: auto;
-    }
-
-    .work-image-frame::before,
-    .work-image-frame::after {
-        display: none;
+        max-height: 430px;
     }
 }
 </style>
-

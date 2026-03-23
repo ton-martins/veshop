@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
@@ -206,7 +206,8 @@ const topFeatures = (plan) => {
 </script>
 
 <template>
-    <section class="section price-section position-relative z-1" id="price">
+    <section class="section price-section position-relative z-1 landing-section-shell" id="price">
+        <div class="price-glow" aria-hidden="true"></div>
         <div class="container">
             <div class="row align-items-center justify-content-center text-center">
                 <div class="col-lg-8">
@@ -215,9 +216,9 @@ const topFeatures = (plan) => {
                     </div>
                     <div class="section-title-border mt-3"></div>
                     <div class="price-title mt-4">
-                        <h2 class="fw-semibold text-primary">Planos segmentados por nicho</h2>
+                        <h2 class="fw-semibold text-primary">Planos por nicho de negócio</h2>
                         <p class="mt-3 text-muted mb-0">
-                            Selecione o nicho para visualizar apenas os planos correspondentes.
+                            Selecione o nicho para ver os planos disponíveis.
                         </p>
                     </div>
                 </div>
@@ -237,7 +238,7 @@ const topFeatures = (plan) => {
                             </span>
                             <div>
                                 <p class="mb-1 fw-bold text-dark">{{ section.label }}</p>
-                                <p class="mb-0 text-muted small">Clique para exibir os planos deste nicho</p>
+                                <p class="mb-0 text-muted small">Ver planos disponíveis</p>
                             </div>
                         </div>
                     </button>
@@ -316,17 +317,44 @@ const topFeatures = (plan) => {
                 </div>
             </div>
         </div>
-        <img src="/landing/images/Wave.svg" alt="" class="img-fluid w-100 shape z-n1" />
     </section>
 </template>
 
 <style scoped>
+.price-section {
+    --next-section-bg: linear-gradient(180deg, #f7fbf8 0%, #eef5f1 100%);
+    overflow: hidden;
+    background:
+        radial-gradient(70% 70% at 12% 18%, rgba(129, 216, 111, 0.26) 0%, rgba(129, 216, 111, 0) 72%),
+        radial-gradient(52% 52% at 88% 20%, rgba(62, 194, 139, 0.18) 0%, rgba(62, 194, 139, 0) 70%),
+        linear-gradient(180deg, #08242c 0%, #0a2f37 45%, #0c363f 100%);
+}
+
+.price-glow {
+    position: absolute;
+    width: clamp(460px, 58vw, 940px);
+    height: clamp(460px, 58vw, 940px);
+    border-radius: 999px;
+    right: -26%;
+    top: -56%;
+    background: radial-gradient(circle at center, rgba(129, 216, 111, 0.24) 0%, rgba(129, 216, 111, 0) 76%);
+    pointer-events: none;
+}
+
+.price-title h2 {
+    color: #effff3 !important;
+}
+
+.price-title p {
+    color: rgba(231, 255, 238, 0.78) !important;
+}
+
 .plan-tab-card {
-    border-radius: 18px;
+    border-radius: 22px;
     box-shadow: 0 14px 28px -24px rgba(2, 17, 22, 0.85);
-    background: #ffffff;
+    background: rgba(214, 255, 223, 0.08);
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-    border: 1px solid #e2e8f0;
+    border: 1px solid rgba(214, 255, 223, 0.2);
 }
 
 .plan-tab-card:hover {
@@ -335,8 +363,8 @@ const topFeatures = (plan) => {
 }
 
 .plan-tab-card.is-active {
-    border-color: #198754;
-    box-shadow: 0 22px 40px -30px rgba(25, 135, 84, 0.78);
+    border-color: rgba(156, 225, 168, 0.82);
+    box-shadow: 0 22px 40px -30px rgba(156, 225, 168, 0.56);
 }
 
 .plan-tab-icon {
@@ -346,22 +374,82 @@ const topFeatures = (plan) => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: #f1f5f9;
-    color: #0f172a;
+    background: rgba(214, 255, 223, 0.2);
+    color: #eaffef;
     font-size: 20px;
 }
 
 .plan-tab-card.is-active .plan-tab-icon {
-    background: #dcfce7;
-    color: #166534;
+    background: rgba(156, 225, 168, 0.28);
+    color: #edfff1;
+}
+
+.plan-tab-card .text-dark {
+    color: #effff3 !important;
+}
+
+.plan-tab-card .text-muted {
+    color: rgba(229, 255, 237, 0.72) !important;
 }
 
 .plan-section-shell {
     width: 100%;
+    border: 1px solid rgba(214, 255, 223, 0.2) !important;
+    background: rgba(214, 255, 223, 0.06);
+    box-shadow: 0 24px 38px -30px rgba(2, 12, 10, 0.95) !important;
+}
+
+.plan-section-shell .badge.text-bg-light {
+    background: rgba(214, 255, 223, 0.14) !important;
+    color: #eaffef !important;
+    border-color: rgba(214, 255, 223, 0.32) !important;
+}
+
+.plan-section-shell h3,
+.plan-section-shell .text-primary {
+    color: #effff3 !important;
+}
+
+.plan-section-shell .text-muted {
+    color: rgba(230, 255, 238, 0.78) !important;
 }
 
 .plan-card {
     width: 100%;
+    border: 1px solid rgba(214, 255, 223, 0.2) !important;
+    background: rgba(8, 36, 44, 0.68);
+    box-shadow: 0 18px 30px -24px rgba(2, 12, 10, 0.9) !important;
+    border-radius: 20px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.plan-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 24px 36px -24px rgba(2, 12, 10, 0.95) !important;
+    border-color: rgba(214, 255, 223, 0.3) !important;
+}
+
+.plan-card .text-primary {
+    color: #9ce1a8 !important;
+}
+
+.plan-card .text-success {
+    color: #bff6cc !important;
+}
+
+.plan-card .text-muted,
+.plan-card .small.text-muted {
+    color: rgba(229, 255, 237, 0.76) !important;
+}
+
+.plan-card .badge.text-bg-light {
+    background: rgba(214, 255, 223, 0.14) !important;
+    color: #eaffef !important;
+    border-color: rgba(214, 255, 223, 0.32) !important;
+}
+
+.plan-card .card-footer.bg-white {
+    background: transparent !important;
 }
 
 .plan-card .card-body,
@@ -381,13 +469,13 @@ const topFeatures = (plan) => {
 }
 
 .plan-feature-title {
-    color: #0f172a;
+    color: #effff3;
     font-weight: 600;
 }
 
 .plan-feature-description {
     margin-top: 0.1rem;
-    color: #64748b;
+    color: rgba(230, 255, 238, 0.72);
     font-size: 12px;
     line-height: 1.35;
 }

@@ -1,104 +1,125 @@
-<script setup>
+﻿<script setup>
 import { Link } from '@inertiajs/vue3';
 </script>
 
 <template>
-    <section class="cta-section py-5 z-1 cta-shell" id="contacts">
-        <div class="container">
-            <div class="row align-items-center justify-content-center">
-                <div class="col-lg-7">
-                    <div class="cta-title text-center">
-                        <h2 class="fw-semibold text-white lh-base">Leve a gestão do seu comércio para outro nível</h2>
-                        <p>Fale com nosso time e veja o Veshop funcionando na sua realidade.</p>
-                    </div>
-                    <div class="cta-btn">
-                        <Link :href="route('login')" class="btn btn-primary cta-action-btn">
-                            Entrar no painel
-                            <i class="ri-arrow-right-up-line"></i>
-                        </Link>
-                        <a href="#contacts" class="btn btn-success cta-action-btn">
-                            Agendar demonstração
-                            <i class="ri-play-circle-line"></i>
-                        </a>
-                    </div>
+    <section id="contacts" class="section cta-premium landing-section-shell">
+        <div class="cta-premium-glow" aria-hidden="true"></div>
+        <div class="container position-relative">
+            <div class="row justify-content-center">
+                <div class="col-lg-9">
+                    <article class="cta-box text-center">
+                        <p class="cta-eyebrow">Pronto para elevar o padrão?</p>
+                        <h2 class="cta-title">Leve o Veshop para sua operação com implantação orientada a resultado.</h2>
+                        <p class="cta-subtitle">
+                            Fluxo enxuto e arquitetura preparada para crescer com o seu negócio.
+                        </p>
+                        <div class="cta-actions">
+                            <Link :href="route('login')" class="btn cta-btn cta-btn-primary">
+                                Entrar no Veshop
+                            </Link>
+                            <a href="#price" class="btn cta-btn cta-btn-secondary">
+                                Revisar planos
+                            </a>
+                        </div>
+                    </article>
                 </div>
             </div>
         </div>
-
-        <div class="cta-glow cta-glow-right" aria-hidden="true"></div>
-        <div class="cta-glow cta-glow-left" aria-hidden="true"></div>
     </section>
 </template>
 
 <style scoped>
-.cta-shell {
+.cta-premium {
+    --next-section-bg: #04161b;
     position: relative;
     overflow: hidden;
+    background:
+        radial-gradient(65% 65% at 90% 10%, rgba(129, 216, 111, 0.24) 0%, rgba(129, 216, 111, 0) 72%),
+        linear-gradient(180deg, #08242c 0%, #0d3942 100%);
 }
 
-.cta-shell .container {
-    position: relative;
-    z-index: 2;
+.cta-premium-glow {
+    position: absolute;
+    width: clamp(380px, 48vw, 760px);
+    height: clamp(380px, 48vw, 760px);
+    border-radius: 999px;
+    right: -24%;
+    top: -52%;
+    background: radial-gradient(circle at center, rgba(129, 216, 111, 0.26) 0%, rgba(129, 216, 111, 0) 76%);
+    pointer-events: none;
 }
 
-.cta-btn {
-    margin-top: 24px;
+.cta-box {
+    border-radius: 26px;
+    border: 1px solid rgba(214, 255, 223, 0.24);
+    background: linear-gradient(180deg, rgba(214, 255, 223, 0.12) 0%, rgba(214, 255, 223, 0.06) 100%);
+    box-shadow: 0 28px 42px -36px rgba(2, 12, 10, 0.9);
+    padding: 1.55rem;
+}
+
+.cta-eyebrow {
+    margin: 0;
+    color: #b9f5c8;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.cta-title {
+    margin: 0.9rem 0 0;
+    color: #effff3;
+    font-size: clamp(1.44rem, 2.6vw, 2rem);
+    line-height: 1.3;
+}
+
+.cta-subtitle {
+    margin: 0.7rem 0 0;
+    color: rgba(234, 255, 241, 0.8);
+}
+
+.cta-actions {
+    margin-top: 1.1rem;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 12px;
+    gap: 0.65rem;
 }
 
-.cta-action-btn {
+.cta-btn {
     border-radius: 10px;
-    padding: 12px 18px;
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
+    font-weight: 700;
+    padding: 0.62rem 1rem;
 }
 
-.cta-glow {
-    position: absolute;
-    top: 0;
-    width: clamp(200px, 24vw, 340px);
-    height: clamp(200px, 24vw, 340px);
-    border-radius: 9999px;
-    pointer-events: none;
-    z-index: 1;
+.cta-btn-primary {
+    border: 1px solid #9ce1a8;
+    background: #9ce1a8;
+    color: #083423;
 }
 
-.cta-glow-right {
-    right: 0;
-    transform: translate(35%, -42%);
-    background: radial-gradient(circle at center, rgba(126, 211, 103, 0.22) 0%, rgba(126, 211, 103, 0) 76%);
+.cta-btn-primary:hover {
+    color: #083423;
+    background: #8bd299;
+    border-color: #8bd299;
 }
 
-.cta-glow-left {
-    left: 0;
-    transform: translate(-35%, -42%);
-    background: radial-gradient(circle at center, rgba(126, 211, 103, 0.18) 0%, rgba(126, 211, 103, 0) 76%);
+.cta-btn-secondary {
+    border: 1px solid rgba(214, 255, 223, 0.34);
+    background: rgba(214, 255, 223, 0.12);
+    color: #eaffef;
 }
 
-@media (max-width: 767.98px) {
-    .cta-glow {
-        width: clamp(150px, 36vw, 220px);
-        height: clamp(150px, 36vw, 220px);
-    }
-
-    .cta-glow-right {
-        transform: translate(45%, -44%);
-    }
-
-    .cta-glow-left {
-        transform: translate(-45%, -44%);
-    }
+.cta-btn-secondary:hover {
+    color: #ffffff;
+    background: rgba(214, 255, 223, 0.2);
+    border-color: rgba(214, 255, 223, 0.52);
 }
 
 @media (max-width: 575.98px) {
-    .cta-action-btn {
+    .cta-btn {
         width: 100%;
-        justify-content: center;
     }
 }
 </style>

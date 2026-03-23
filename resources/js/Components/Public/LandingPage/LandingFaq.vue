@@ -1,34 +1,34 @@
-<script setup>
+﻿<script setup>
 import { ref } from 'vue';
 
 const faqs = [
     {
-        id: 'faq-implantacao',
-        question: 'Em quanto tempo consigo implantar o Veshop?',
+        id: 'faq-teste',
+        question: 'Posso testar antes de contratar?',
         answer:
-            'A configuração inicial é guiada pelo nosso time. Em geral, os primeiros processos operacionais já podem ser usados em poucos dias.',
+            'Sim. Você pode validar a operação com apoio do time de implantação e ajustar o escopo antes da contratação definitiva.',
     },
     {
-        id: 'faq-multinicho',
-        question: 'O Veshop atende mais de um tipo de negócio?',
+        id: 'faq-fidelidade',
+        question: 'Os planos possuem fidelidade?',
         answer:
-            'Sim. O sistema permite parametrização por segmento e regras comerciais por empresa, filial e perfil de operação.',
+            'Os formatos de contratação variam por plano e porte da operação. No diagnóstico inicial apresentamos as condições com transparência.',
     },
     {
-        id: 'faq-fiscal',
-        question: 'O sistema possui recursos fiscais e relatórios?',
+        id: 'faq-integracoes',
+        question: 'O Veshop integra com ecommerce e marketplaces?',
         answer:
-            'Sim. O Veshop apoia emissão fiscal, rotinas de apuração e relatórios gerenciais para acompanhamento de vendas, estoque e financeiro.',
+            'Sim. O projeto foi desenhado para trabalhar com integrações de catálogo, pedidos, estoque, financeiro e rotinas comerciais.',
     },
     {
-        id: 'faq-suporte',
-        question: 'Como funciona o suporte e o treinamento?',
+        id: 'faq-multiempresa',
+        question: 'Posso usar o Veshop em mais de uma empresa?',
         answer:
-            'Você conta com onboarding consultivo, base de apoio e atendimento especializado para a evolução contínua da equipe.',
+            'Sim. A arquitetura multi-tenant permite operação por contratante com isolamento de dados e gestão centralizada para o grupo.',
     },
 ];
 
-const openedFaqId = ref('faq-multinicho');
+const openedFaqId = ref('faq-integracoes');
 
 const toggleFaq = (faqId) => {
     openedFaqId.value = openedFaqId.value === faqId ? '' : faqId;
@@ -45,7 +45,7 @@ const toggleFaq = (faqId) => {
                     </div>
                     <div class="section-title-border mt-3"></div>
                     <div class="faq-title mt-4">
-                        <h2 class="fw-semibold text-primary">Perguntas frequentes</h2>
+                        <h2 class="fw-semibold text-primary">Perguntas frequentes sobre contratação</h2>
                     </div>
                 </div>
             </div>
@@ -62,10 +62,7 @@ const toggleFaq = (faqId) => {
                             v-for="faq in faqs"
                             :key="faq.id"
                             class="accordion-item border-bottom"
-                            :class="{
-                                'rounded-0': faq.id === 'faq-implantacao' || faq.id === 'faq-suporte',
-                                'is-open': openedFaqId === faq.id,
-                            }"
+                            :class="{ 'is-open': openedFaqId === faq.id }"
                         >
                             <h6 class="accordion-header">
                                 <button
