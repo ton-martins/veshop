@@ -642,6 +642,29 @@ watch(
     },
 );
 
+const activeModalProduct = computed(() => {
+    if (!productModalOpen.value || !productModalId.value) return null;
+    return productMap.value.get(Number(productModalId.value)) ?? null;
+});
+
+const activeModalVariations = computed(() => {
+    const product = activeModalProduct.value;
+    if (!product || !Array.isArray(product.variations)) return [];
+
+    return product.variations
+        .filter((variation) => Number(variation.stock_quantity || 0) > 0)
+        .map((variation) => ({
+            id: Number(variation.id),
+            name: String(variation.name || ''),
+            sku: String(variation.sku || ''),
+            sale_price: Number(variation.sale_price || 0),
+            stock_quantity: Number(variation.stock_quantity || 0),
+            attributes: variation.attributes && typeof variation.attributes === 'object'
+                ? variation.attributes
+                : {},
+        }));
+});
+
 watch(
     [productModalOpen, activeModalProduct, activeModalVariations],
     ([isOpen, product, variations]) => {
@@ -725,29 +748,6 @@ const accountOrders = computed(() =>
         ? [...shopAccountOrders.value].sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0))
         : [],
 );
-
-const activeModalProduct = computed(() => {
-    if (!productModalOpen.value || !productModalId.value) return null;
-    return productMap.value.get(Number(productModalId.value)) ?? null;
-});
-
-const activeModalVariations = computed(() => {
-    const product = activeModalProduct.value;
-    if (!product || !Array.isArray(product.variations)) return [];
-
-    return product.variations
-        .filter((variation) => Number(variation.stock_quantity || 0) > 0)
-        .map((variation) => ({
-            id: Number(variation.id),
-            name: String(variation.name || ''),
-            sku: String(variation.sku || ''),
-            sale_price: Number(variation.sale_price || 0),
-            stock_quantity: Number(variation.stock_quantity || 0),
-            attributes: variation.attributes && typeof variation.attributes === 'object'
-                ? variation.attributes
-                : {},
-        }));
-});
 
 const selectedModalVariation = computed(() => {
     if (!activeModalProduct.value?.has_variations) return null;

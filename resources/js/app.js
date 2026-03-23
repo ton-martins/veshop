@@ -35,11 +35,21 @@ if (typeof document !== 'undefined') {
 
 createInertiaApp({
     title: (title) => String(title ?? '').trim(),
-    resolve: (name) =>
-        resolvePageComponent(
-            `./Pages/${name}.vue`,
-            import.meta.glob('./Pages/**/*.vue'),
-        ),
+    resolve: (name) => {
+        const pages = {
+            ...import.meta.glob('./Pages/**/*.vue'),
+            ...import.meta.glob('./pages/**/*.vue'),
+        };
+
+        const candidatePaths = [`./pages/${name}.vue`, `./Pages/${name}.vue`];
+        const resolvedPath = candidatePaths.find((path) => Object.prototype.hasOwnProperty.call(pages, path));
+
+        if (!resolvedPath) {
+            return resolvePageComponent(`./Pages/${name}.vue`, pages);
+        }
+
+        return resolvePageComponent(resolvedPath, pages);
+    },
     setup({ el, App, props, plugin }) {
         const vueApp = createApp({ render: () => h(App, props) })
             .use(plugin)

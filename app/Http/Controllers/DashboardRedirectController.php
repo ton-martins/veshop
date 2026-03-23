@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
@@ -15,7 +14,7 @@ class DashboardRedirectController extends Controller
     {
         $user = $request->user();
 
-        if ($user?->role === User::ROLE_MASTER) {
+        if ($user?->isMaster()) {
             return redirect()->route('master.home');
         }
 

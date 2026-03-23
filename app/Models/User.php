@@ -4,8 +4,8 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -133,16 +133,21 @@ class User extends Authenticatable
 
     public function isMaster(): bool
     {
-        return $this->role === self::ROLE_MASTER;
+        return $this->normalizedRole() === self::ROLE_MASTER;
     }
 
     public function isAdmin(): bool
     {
-        return $this->role === self::ROLE_ADMIN;
+        return $this->normalizedRole() === self::ROLE_ADMIN;
     }
 
     public function isActive(): bool
     {
         return (bool) $this->is_active;
+    }
+
+    public function normalizedRole(): string
+    {
+        return strtolower(trim((string) $this->role));
     }
 }

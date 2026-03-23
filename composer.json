@@ -49,9 +49,35 @@
             "Composer\\Config::disableProcessTimeout",
             "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
         ],
+        "lint": [
+            "@lint:php",
+            "@lint:js"
+        ],
+        "lint:php": [
+            "@php ./vendor/bin/pint --test --dirty"
+        ],
+        "lint:js": [
+            "npm run lint:js"
+        ],
+        "format": [
+            "@format:php",
+            "@format:js"
+        ],
+        "format:php": [
+            "@php ./vendor/bin/pint --dirty"
+        ],
+        "format:js": [
+            "npm run format:js"
+        ],
         "test": [
             "@php artisan config:clear --ansi",
+            "@test:php"
+        ],
+        "test:php": [
             "@php artisan test"
+        ],
+        "build": [
+            "npm run build"
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",

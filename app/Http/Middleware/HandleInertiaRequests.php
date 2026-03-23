@@ -304,8 +304,7 @@ class HandleInertiaRequests extends Middleware
     private function resolveSharedAuthenticatedUser(
         mixed $authenticatedUser,
         bool $canExposeSensitiveContext = true,
-    ): ?array
-    {
+    ): ?array {
         if (! $authenticatedUser) {
             return null;
         }
@@ -318,7 +317,9 @@ class HandleInertiaRequests extends Middleware
             'id' => (int) $authenticatedUser->id,
             'name' => (string) ($authenticatedUser->name ?? ''),
             'email' => (string) ($authenticatedUser->email ?? ''),
-            'role' => (string) ($authenticatedUser->role ?? ''),
+            'role' => method_exists($authenticatedUser, 'normalizedRole')
+                ? (string) $authenticatedUser->normalizedRole()
+                : strtolower(trim((string) ($authenticatedUser->role ?? ''))),
             'email_verified_at' => optional($authenticatedUser->email_verified_at)?->toIso8601String(),
             'avatar_url' => $this->resolveSharedUserAvatarUrl($authenticatedUser),
         ];

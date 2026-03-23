@@ -20,8 +20,13 @@ class EnsureUserRole
     public function handle(Request $request, Closure $next, string ...$roles): Response
     {
         $user = $request->user();
+        $normalizedExpectedRoles = collect($roles)
+            ->map(static fn (string $role): string => strtolower(trim($role)))
+            ->filter()
+            ->values()
+            ->all();
 
-        if (! $user || $roles === []) {
+        if (! $user || $normalizedExpectedRoles === []) {
             $this->securityAuditLogger->log(
                 $request,
                 'auth.role_denied',
@@ -29,13 +34,15 @@ class EnsureUserRole
                 (int) $request->session()->get('current_contractor_id', 0),
                 [
                     'reason' => 'missing_user_or_role_constraint',
-                    'expected_roles' => $roles,
+                    'expected_roles' => $normalizedExpectedRoles,
                 ],
             );
             abort(403);
         }
 
-        if (! in_array($user->role, $roles, true)) {
+        $actualRole = strtolower(trim((string) $user->role));
+
+        if (! in_array($actualRole, $normalizedExpectedRoles, true)) {
             $this->securityAuditLogger->log(
                 $request,
                 'auth.role_denied',
@@ -43,7 +50,7 @@ class EnsureUserRole
                 (int) $request->session()->get('current_contractor_id', 0),
                 [
                     'reason' => 'role_mismatch',
-                    'expected_roles' => $roles,
+                    'expected_roles' => $normalizedExpectedRoles,
                     'actual_role' => (string) $user->role,
                 ],
             );
