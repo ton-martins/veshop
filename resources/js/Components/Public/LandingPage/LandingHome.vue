@@ -27,7 +27,7 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
 
                     <h1 class="hero-title">
                         Gestão de <span class="hero-title-highlight">ponta</span>,
-                        <span class="hero-title-line">sem ruído na operação.</span>
+                        <span class="hero-title-line">que gera <span class="hero-title-highlight">resultado.</span></span>
                     </h1>
 
                     <p class="hero-subtitle">
@@ -47,7 +47,7 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
                     </div>
 
                     <div class="hero-proof">
-                        <p class="hero-proof-label">Sistema bem avaliado por gestores de operação</p>
+                        <p class="hero-proof-label">Aprovado por líderes que exigem performance</p>
                         <div class="hero-proof-stars" role="img" aria-label="Cinco estrelas">
                             <i v-for="n in 5" :key="n" class="ri-star-fill"></i>
                         </div>
@@ -63,6 +63,10 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
                                 loading="eager"
                                 decoding="async"
                             />
+                        </div>
+                        <div class="showcase-caption" aria-label="Destaque da experiência Veshop">
+                            <img src="/brand/icone-veshop.png" alt="Ícone Veshop" class="showcase-caption-icon" />
+                            <p class="showcase-caption-text">Controle total no desktop e no celular, em tempo real.</p>
                         </div>
                     </article>
                 </div>
@@ -235,6 +239,9 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
     position: relative;
     margin: 0;
     padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
 }
 
 .showcase-desktop {
@@ -255,6 +262,36 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
     mix-blend-mode: normal;
 }
 
+.showcase-caption {
+    margin-top: -5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.58rem;
+    padding: 0.5rem 0.82rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.62);
+    border: 1px solid rgba(7, 51, 65, 0.1);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    margin-right: 0.35rem;
+    max-width: 72%;
+    justify-content: flex-start;
+}
+
+.showcase-caption-icon {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+}
+
+.showcase-caption-text {
+    margin: 0;
+    font-size: 0.82rem !important;
+    line-height: 1.3;
+    color: #19465a !important;
+    font-weight: 700;
+}
+
 @media (max-width: 991.98px) {
     .landing-hero {
         padding: 136px 0 88px;
@@ -262,6 +299,13 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
 
     .hero-showcase {
         max-width: 660px;
+        align-items: center;
+    }
+
+    .showcase-caption {
+        margin-top: 1rem;
+        margin-right: 0;
+        max-width: 90%;
     }
 }
 
@@ -289,6 +333,17 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
 
     .hero-showcase {
         max-width: 100%;
+    }
+
+    .showcase-caption {
+        margin-top: 1rem;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .showcase-caption-text {
+        font-size: 0.76rem !important;
+        text-align: center;
     }
 
     .showcase-desktop {

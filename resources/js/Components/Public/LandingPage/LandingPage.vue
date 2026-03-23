@@ -613,14 +613,14 @@ defineProps({
 
 @media (max-width: 575px) {
     .landing-page-root :deep(.landing-hero)::before {
-        top: auto;
+        top: 34%;
         bottom: 10px;
         left: 50%;
         right: auto;
         transform: translateX(-50%);
         width: calc(100% - 16px);
         max-width: 430px;
-        height: clamp(300px, 82vw, 420px);
+        height: auto;
         border-radius: 24px;
     }
 
