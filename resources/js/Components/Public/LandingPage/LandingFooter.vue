@@ -63,10 +63,10 @@ const contactEmailHref = computed(() => (contactEmail.value ? `mailto:${contactE
                 </div>
 
                 <div class="col-lg-2 col-md-4 col-12">
-                    <h5 class="text-light">Navegacao:</h5>
+                    <h5 class="text-light">Navegação:</h5>
                     <ul class="list-unstyled mt-4">
                         <li><a href="#about" class="text-white-50">Sobre</a></li>
-                        <li><a href="#services" class="text-white-50">Modulos</a></li>
+                        <li><a href="#services" class="text-white-50">Módulos</a></li>
                         <li><a href="#price" class="text-white-50">Planos</a></li>
                         <li><a href="#testimonial" class="text-white-50">Clientes</a></li>
                     </ul>
@@ -76,9 +76,9 @@ const contactEmailHref = computed(() => (contactEmail.value ? `mailto:${contactE
                     <h5 class="text-light fs-5">Institucional:</h5>
                     <ul class="list-unstyled mt-4">
                         <li><a href="/termos-de-uso" class="text-white-50">Termos de uso</a></li>
-                        <li><a href="/politica-de-privacidade" class="text-white-50">Politica de privacidade</a></li>
+                        <li><a href="/politica-de-privacidade" class="text-white-50">Política de privacidade</a></li>
                         <li><a href="#!" class="text-white-50">Base de conhecimento</a></li>
-                        <li><a href="#!" class="text-white-50">Atualizacoes</a></li>
+                        <li><a href="#!" class="text-white-50">Atualizações</a></li>
                         <li><a href="#!" class="text-white-50">Central de ajuda</a></li>
                     </ul>
                 </div>
@@ -93,7 +93,7 @@ const contactEmailHref = computed(() => (contactEmail.value ? `mailto:${contactE
                     </div>
                     <div class="d-flex mt-4">
                         <i class="ri-twitter-fill fs-5 me-3 text-success"></i>
-                        <p class="text-white-50">Conteudos praticos sobre ERP, gestao comercial e desempenho operacional.</p>
+                        <p class="text-white-50">Conteúdos práticos sobre ERP, gestão comercial e desempenho operacional.</p>
                     </div>
                     <a href="#!" class="text-light">Conhecer mais</a>
                 </div>

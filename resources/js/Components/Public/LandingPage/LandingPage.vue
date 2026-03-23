@@ -604,16 +604,21 @@ defineProps({
 
 @media (max-width: 991.98px) {
     .landing-page-root :deep(.landing-hero)::before {
-        top: 84px;
-        width: min(52vw, 500px);
-        height: calc(100% - 84px);
-        border-bottom-left-radius: 30px;
+        top: 42%;
+        bottom: 12px;
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
+        width: calc(100% - 34px);
+        max-width: 700px;
+        height: auto;
+        border-radius: 28px;
     }
 }
 
 @media (max-width: 575px) {
     .landing-page-root :deep(.landing-hero)::before {
-        top: 34%;
+        top: 44%;
         bottom: 10px;
         left: 50%;
         right: auto;

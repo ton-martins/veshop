@@ -56,6 +56,12 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
 
                 <div class="col-lg-6">
                     <article class="hero-showcase" aria-label="Mockup da plataforma Veshop em notebook e celular">
+                        <div class="showcase-caption" aria-label="Destaque da experiência Veshop">
+                            <span class="showcase-caption-icon-wrap">
+                                <img src="/brand/icone-veshop.png" alt="Ícone Veshop" class="showcase-caption-icon" />
+                            </span>
+                            <p class="showcase-caption-text">Controle total no desktop e no celular, em tempo real.</p>
+                        </div>
                         <div class="showcase-desktop">
                             <img
                                 src="/landing/images/mockups/mockup.png"
@@ -63,10 +69,6 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
                                 loading="eager"
                                 decoding="async"
                             />
-                        </div>
-                        <div class="showcase-caption" aria-label="Destaque da experiência Veshop">
-                            <img src="/brand/icone-veshop.png" alt="Ícone Veshop" class="showcase-caption-icon" />
-                            <p class="showcase-caption-text">Controle total no desktop e no celular, em tempo real.</p>
                         </div>
                     </article>
                 </div>
@@ -242,6 +244,7 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
     display: flex;
     flex-direction: column;
     align-items: flex-end;
+    gap: 1rem;
 }
 
 .showcase-desktop {
@@ -263,33 +266,46 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
 }
 
 .showcase-caption {
-    margin-top: -5rem;
+    margin-top: 0;
+    margin-bottom: -3rem;;
     display: inline-flex;
     align-items: center;
-    gap: 0.58rem;
-    padding: 0.5rem 0.82rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.62);
-    border: 1px solid rgba(7, 51, 65, 0.1);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    gap: 0.62rem;
+    padding: 0.58rem 0.9rem 0.58rem 0.64rem;
+    border-radius: 16px;
+    background: linear-gradient(125deg, rgba(114, 205, 114, 0.24) 0%, rgba(241, 253, 244, 0.96) 54%, rgba(255, 255, 255, 0.98) 100%);
+    border: 1px solid rgba(114, 205, 114, 0.46);
+    box-shadow: 0 14px 24px -20px rgba(7, 51, 65, 0.55);
     margin-right: 0.35rem;
-    max-width: 72%;
+    max-width: 78%;
     justify-content: flex-start;
 }
 
+.showcase-caption-icon-wrap {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(180deg, #8edf8c 0%, #62c96a 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 8px 16px -10px rgba(7, 51, 65, 0.55);
+}
+
 .showcase-caption-icon {
-    width: 24px;
-    height: 24px;
-    flex: 0 0 24px;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    object-fit: contain;
 }
 
 .showcase-caption-text {
     margin: 0;
-    font-size: 0.82rem !important;
-    line-height: 1.3;
+    font-size: 0.9rem !important;
+    line-height: 1.25;
     color: #19465a !important;
-    font-weight: 700;
+    font-weight: 800;
 }
 
 @media (max-width: 991.98px) {
@@ -297,15 +313,64 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
         padding: 136px 0 88px;
     }
 
+    .hero-rotating {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .hero-title {
+        font-size: clamp(1.78rem, 5.8vw, 2.42rem);
+        text-align: center;
+    }
+
+    .hero-subtitle {
+        font-size: 0.95rem;
+        max-width: 37rem;
+        margin-left: auto;
+        margin-right: auto;
+        text-align: center;
+    }
+
+    .hero-actions {
+        justify-content: center;
+    }
+
+    .hero-btn {
+        width: min(100%, 340px);
+        justify-content: center;
+    }
+
+    .hero-proof {
+        width: 100%;
+        justify-content: center;
+        text-align: center;
+    }
+
     .hero-showcase {
-        max-width: 660px;
+        max-width: min(640px, 100%);
+        margin: 0 auto;
         align-items: center;
+        padding-top: 0.25rem;
     }
 
     .showcase-caption {
-        margin-top: 1rem;
+        margin-top: 0;
         margin-right: 0;
-        max-width: 90%;
+        max-width: min(92%, 560px);
+        width: 100%;
+        justify-content: center;
+        border-radius: 16px;
+    }
+
+    .showcase-caption-icon-wrap {
+        width: 34px;
+        height: 34px;
+        flex-basis: 34px;
+    }
+
+    .showcase-caption-text {
+        text-align: center;
+        font-size: 0.84rem !important;
     }
 }
 
@@ -336,13 +401,21 @@ const loopingWords = [...rotatingWords, rotatingWords[0]];
     }
 
     .showcase-caption {
-        margin-top: 1rem;
+        margin-top: 0;
         width: 100%;
         justify-content: center;
+        padding: 0.5rem 0.72rem;
+        gap: 0.5rem;
+    }
+
+    .showcase-caption-icon-wrap {
+        width: 30px;
+        height: 30px;
+        flex-basis: 30px;
     }
 
     .showcase-caption-text {
-        font-size: 0.76rem !important;
+        font-size: 0.78rem !important;
         text-align: center;
     }
 
