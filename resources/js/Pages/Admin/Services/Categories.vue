@@ -12,6 +12,7 @@ import { Layers3, Tags, Briefcase, AlertTriangle, Plus, Search, Filter, Pencil, 
 const props = defineProps({
     categories: { type: Object, default: () => ({ data: [], links: [] }) },
     filters: { type: Object, default: () => ({ search: '', status: '' }) },
+    next_sort_order: { type: Number, default: 1 },
     stats: {
         type: Object,
         default: () => ({
@@ -56,6 +57,10 @@ const statCards = computed(() => ([
 
 const rows = computed(() => props.categories?.data ?? []);
 const paginationLinks = computed(() => props.categories?.links ?? []);
+const nextSortOrder = computed(() => {
+    const parsed = Number(props.next_sort_order ?? 1);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+});
 
 const filterForm = useForm({
     search: props.filters?.search ?? '',
@@ -100,19 +105,26 @@ const categoryForm = useForm({
     name: '',
     slug: '',
     description: '',
-    sort_order: 0,
+    sort_order: Number(props.next_sort_order ?? 1),
     is_active: true,
 });
 const deleteForm = useForm({});
 
 const isEditing = computed(() => Boolean(editingCategory.value?.id));
 
-const openCreate = () => {
-    editingCategory.value = null;
+const resetCategoryForm = () => {
     categoryForm.reset();
     categoryForm.clearErrors();
-    categoryForm.sort_order = 0;
+    categoryForm.name = '';
+    categoryForm.slug = '';
+    categoryForm.description = '';
+    categoryForm.sort_order = nextSortOrder.value;
     categoryForm.is_active = true;
+};
+
+const openCreate = () => {
+    editingCategory.value = null;
+    resetCategoryForm();
     showModal.value = true;
 };
 
@@ -130,6 +142,7 @@ const openEdit = (category) => {
 const closeModal = () => {
     showModal.value = false;
     editingCategory.value = null;
+    resetCategoryForm();
 };
 
 const submitCategory = () => {

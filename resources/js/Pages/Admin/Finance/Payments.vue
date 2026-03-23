@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Modal from '@/Components/Modal.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
+import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
@@ -61,11 +62,22 @@ const gatewayForm = useForm({
 const gatewayDeleteForm = useForm({});
 const isEditingGateway = computed(() => Boolean(editingGateway.value?.id));
 
-const openCreateGateway = () => {
-    editingGateway.value = null;
+const resetGatewayForm = () => {
+    gatewayForm.transform((data) => data);
     gatewayForm.reset();
     gatewayForm.clearErrors();
     gatewayForm.provider = 'manual';
+    gatewayForm.name = '';
+    gatewayForm.is_active = true;
+    gatewayForm.is_default = false;
+    gatewayForm.is_sandbox = true;
+    gatewayForm.mercado_pago_access_token = '';
+    gatewayForm.mercado_pago_webhook_secret = '';
+};
+
+const openCreateGateway = () => {
+    editingGateway.value = null;
+    resetGatewayForm();
     gatewayModalOpen.value = true;
 };
 const openEditGateway = (gateway) => {
@@ -83,6 +95,7 @@ const openEditGateway = (gateway) => {
 const closeGatewayModal = () => {
     gatewayModalOpen.value = false;
     editingGateway.value = null;
+    resetGatewayForm();
 };
 const submitGateway = () => {
     if (isEditingGateway.value) {
@@ -124,12 +137,25 @@ const methodDeleteForm = useForm({});
 const isEditingMethod = computed(() => Boolean(editingMethod.value?.id));
 const gatewaySelectOptions = computed(() => [{ value: '', label: 'Sem gateway' }, ...gateways.value.map((gateway) => ({ value: gateway.id, label: gateway.name }))]);
 
-const openCreateMethod = () => {
-    editingMethod.value = null;
+const resetMethodForm = (sortOrder = 0) => {
+    methodForm.transform((data) => data);
     methodForm.reset();
     methodForm.clearErrors();
+    methodForm.payment_gateway_id = '';
     methodForm.code = 'pix';
-    methodForm.sort_order = (methods.value?.length ?? 0) + 10;
+    methodForm.name = '';
+    methodForm.is_active = true;
+    methodForm.is_default = false;
+    methodForm.allows_installments = false;
+    methodForm.max_installments = '';
+    methodForm.fee_fixed = '';
+    methodForm.fee_percent = '';
+    methodForm.sort_order = Number(sortOrder || 0);
+};
+
+const openCreateMethod = () => {
+    editingMethod.value = null;
+    resetMethodForm((methods.value?.length ?? 0) + 10);
     methodModalOpen.value = true;
 };
 const openEditMethod = (method) => {
@@ -150,6 +176,7 @@ const openEditMethod = (method) => {
 const closeMethodModal = () => {
     methodModalOpen.value = false;
     editingMethod.value = null;
+    resetMethodForm();
 };
 const submitMethod = () => {
     const payload = {
@@ -228,7 +255,7 @@ const removeMethod = () => {
         </section>
 
         <Modal :show="gatewayModalOpen" max-width="4xl" @close="closeGatewayModal"><WizardModalFrame :title="isEditingGateway ? 'Editar gateway' : 'Novo gateway'" :steps="['Dados']" :current-step="1" @close="closeGatewayModal"><div class="grid gap-3 md:grid-cols-2"><UiSelect v-model="gatewayForm.provider" :options="providerOptions" /><input v-model="gatewayForm.name" type="text" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Nome do gateway"><input v-model="gatewayForm.mercado_pago_access_token" type="password" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Access token (se aplicável)"><input v-model="gatewayForm.mercado_pago_webhook_secret" type="password" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Webhook secret (se aplicável)"></div><div class="mt-3 grid gap-2 sm:grid-cols-3"><label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm"><input v-model="gatewayForm.is_active" type="checkbox" class="rounded border-slate-300">Ativo</label><label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm"><input v-model="gatewayForm.is_default" type="checkbox" class="rounded border-slate-300">Padrão</label><label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm"><input v-model="gatewayForm.is_sandbox" type="checkbox" class="rounded border-slate-300">Sandbox</label></div><template #footer><div class="flex justify-end gap-2"><button type="button" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700" @click="closeGatewayModal">Cancelar</button><button type="button" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white" :disabled="gatewayForm.processing" @click="submitGateway">{{ gatewayForm.processing ? 'Salvando...' : 'Salvar' }}</button></div></template></WizardModalFrame></Modal>
-        <Modal :show="methodModalOpen" max-width="4xl" @close="closeMethodModal"><WizardModalFrame :title="isEditingMethod ? 'Editar forma' : 'Nova forma'" :steps="['Dados']" :current-step="1" @close="closeMethodModal"><div class="grid gap-3 md:grid-cols-2"><UiSelect v-model="methodForm.payment_gateway_id" :options="gatewaySelectOptions" /><UiSelect v-model="methodForm.code" :options="methodCodeOptions" /><input v-model="methodForm.name" type="text" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Nome da forma"><input v-model="methodForm.sort_order" type="number" min="0" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Ordem"><input v-model="methodForm.fee_fixed" type="number" step="0.01" min="0" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Taxa fixa"><input v-model="methodForm.fee_percent" type="number" step="0.01" min="0" max="100" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Taxa percentual"></div><div class="mt-3 grid gap-2 sm:grid-cols-3"><label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm"><input v-model="methodForm.is_active" type="checkbox" class="rounded border-slate-300">Ativa</label><label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm"><input v-model="methodForm.is_default" type="checkbox" class="rounded border-slate-300">Padrão</label><label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm"><input v-model="methodForm.allows_installments" type="checkbox" class="rounded border-slate-300">Parcela</label></div><div v-if="methodForm.allows_installments" class="mt-3"><input v-model="methodForm.max_installments" type="number" min="2" max="24" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Máximo de parcelas"></div><template #footer><div class="flex justify-end gap-2"><button type="button" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700" @click="closeMethodModal">Cancelar</button><button type="button" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white" :disabled="methodForm.processing" @click="submitMethod">{{ methodForm.processing ? 'Salvando...' : 'Salvar' }}</button></div></template></WizardModalFrame></Modal>
+        <Modal :show="methodModalOpen" max-width="4xl" @close="closeMethodModal"><WizardModalFrame :title="isEditingMethod ? 'Editar forma' : 'Nova forma'" :steps="['Dados']" :current-step="1" @close="closeMethodModal"><div class="grid gap-3 md:grid-cols-2"><UiSelect v-model="methodForm.payment_gateway_id" :options="gatewaySelectOptions" /><UiSelect v-model="methodForm.code" :options="methodCodeOptions" /><input v-model="methodForm.name" type="text" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Nome da forma"><input v-model="methodForm.sort_order" type="number" min="0" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Ordem"><BrlMoneyInput v-model="methodForm.fee_fixed" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Taxa fixa" /><input v-model="methodForm.fee_percent" type="number" step="0.01" min="0" max="100" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Taxa percentual"></div><div class="mt-3 grid gap-2 sm:grid-cols-3"><label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm"><input v-model="methodForm.is_active" type="checkbox" class="rounded border-slate-300">Ativa</label><label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm"><input v-model="methodForm.is_default" type="checkbox" class="rounded border-slate-300">Padrão</label><label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm"><input v-model="methodForm.allows_installments" type="checkbox" class="rounded border-slate-300">Parcela</label></div><div v-if="methodForm.allows_installments" class="mt-3"><input v-model="methodForm.max_installments" type="number" min="2" max="24" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Máximo de parcelas"></div><template #footer><div class="flex justify-end gap-2"><button type="button" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700" @click="closeMethodModal">Cancelar</button><button type="button" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white" :disabled="methodForm.processing" @click="submitMethod">{{ methodForm.processing ? 'Salvando...' : 'Salvar' }}</button></div></template></WizardModalFrame></Modal>
         <DeleteConfirmModal :show="gatewayDeleteOpen" title="Excluir gateway" message="Tem certeza que deseja excluir este gateway?" :item-label="gatewayToDelete?.name ? `Gateway: ${gatewayToDelete.name}` : ''" :processing="gatewayDeleteForm.processing" @close="closeDeleteGateway" @confirm="removeGateway" />
         <DeleteConfirmModal :show="methodDeleteOpen" title="Excluir forma de pagamento" message="Tem certeza que deseja excluir esta forma de pagamento?" :item-label="methodToDelete?.name ? `Forma: ${methodToDelete.name}` : ''" :processing="methodDeleteForm.processing" @close="closeDeleteMethod" @confirm="removeMethod" />
     </AuthenticatedLayout>

@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import Modal from '@/Components/Modal.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
+import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
@@ -172,12 +173,15 @@ const galleryAvailableSlots = computed(() =>
 );
 const isGalleryPickerDisabled = computed(() => galleryAvailableSlots.value <= 0);
 
-const openCreate = () => {
-    revokeGalleryPreviewUrls();
-    editingProduct.value = null;
-    productWizardStep.value = 1;
+const resetProductForm = () => {
     productForm.reset();
     productForm.clearErrors();
+    productForm.name = '';
+    productForm.sku = '';
+    productForm.category_id = '';
+    productForm.description = '';
+    productForm.cost_price = '';
+    productForm.sale_price = '';
     productForm.stock_quantity = 0;
     productForm.unit = props.units?.[0] ?? 'un';
     productForm.gallery_files = [];
@@ -185,6 +189,16 @@ const openCreate = () => {
     productForm.remove_gallery_ids = [];
     productForm.variations = [];
     productForm.is_active = true;
+    if (galleryInputRef.value) {
+        galleryInputRef.value.value = '';
+    }
+};
+
+const openCreate = () => {
+    revokeGalleryPreviewUrls();
+    editingProduct.value = null;
+    productWizardStep.value = 1;
+    resetProductForm();
     showModal.value = true;
 };
 
@@ -234,6 +248,7 @@ const closeModal = () => {
     showModal.value = false;
     editingProduct.value = null;
     productWizardStep.value = 1;
+    resetProductForm();
 };
 
 const revokeGalleryPreviewUrls = () => {
@@ -799,25 +814,22 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
 
                     <div v-if="productWizardStep === 2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Custo</label>
-                        <input
+                        <BrlMoneyInput
                             v-model="productForm.cost_price"
-                            type="number"
-                            min="0"
-                            step="0.01"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                        >
+                            placeholder="R$ 0,00"
+                        />
                         <p v-if="productForm.errors.cost_price" class="mt-1 text-xs text-rose-600">{{ productForm.errors.cost_price }}</p>
                     </div>
 
                     <div v-if="productWizardStep === 2">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Preço de venda</label>
-                        <input
+                        <BrlMoneyInput
                             v-model="productForm.sale_price"
-                            type="number"
-                            min="0"
-                            step="0.01"
+                            :allow-empty="false"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                        >
+                            placeholder="R$ 0,00"
+                        />
                         <p v-if="productForm.errors.sale_price" class="mt-1 text-xs text-rose-600">{{ productForm.errors.sale_price }}</p>
                     </div>
 
@@ -876,14 +888,11 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                             class="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700 md:col-span-2"
                             placeholder="SKU variação"
                         >
-                        <input
+                        <BrlMoneyInput
                             v-model="variation.sale_price"
-                            type="number"
-                            min="0"
-                            step="0.01"
                             class="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700 md:col-span-2"
-                            placeholder="Preço"
-                        >
+                            placeholder="R$ 0,00"
+                        />
                         <input
                             v-model="variation.stock_quantity"
                             type="number"

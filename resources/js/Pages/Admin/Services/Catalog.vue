@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
+import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import Modal from '@/Components/Modal.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
@@ -75,7 +76,15 @@ const rows = computed(() => props.services?.data ?? []);
 const paginationLinks = computed(() => props.services?.links ?? []);
 const asCurrency = (value) =>
     Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const formatDuration = (minutes) => `${Number(minutes ?? 0)} min`;
+const formatDuration = (minutes) => {
+    const safe = Math.max(0, Number(minutes ?? 0) || 0);
+    const hours = Math.floor(safe / 60);
+    const remaining = safe % 60;
+
+    if (hours > 0 && remaining > 0) return `${hours}h ${remaining}min`;
+    if (hours > 0) return `${hours}h`;
+    return `${remaining}min`;
+};
 
 const categoryOptions = computed(() => [
     { value: '', label: 'Todas as categorias' },
@@ -117,6 +126,8 @@ const showModal = ref(false);
 const editingService = ref(null);
 const imageInputRef = ref(null);
 const temporaryImagePreview = ref('');
+const durationHours = ref(1);
+const durationRemainder = ref(0);
 const deleteForm = useForm({});
 const showDeleteModal = ref(false);
 const serviceToDelete = ref(null);
@@ -135,12 +146,49 @@ const resetTemporaryPreview = () => {
     temporaryImagePreview.value = '';
 };
 
+const MIN_DURATION_MINUTES = 5;
+const MAX_DURATION_MINUTES = 1440;
+
+const clampDurationTotal = (value) => {
+    const parsed = Number.parseInt(value ?? MIN_DURATION_MINUTES, 10);
+    if (!Number.isFinite(parsed)) return MIN_DURATION_MINUTES;
+
+    return Math.min(MAX_DURATION_MINUTES, Math.max(MIN_DURATION_MINUTES, parsed));
+};
+
+const setDurationFieldsFromTotal = (totalMinutes) => {
+    const safeTotal = clampDurationTotal(totalMinutes);
+    durationHours.value = Math.floor(safeTotal / 60);
+    durationRemainder.value = safeTotal % 60;
+    form.duration_minutes = safeTotal;
+};
+
+const syncDurationMinutes = () => {
+    const parsedHours = Number.parseInt(durationHours.value ?? 0, 10);
+    const parsedMinutes = Number.parseInt(durationRemainder.value ?? 0, 10);
+    const safeHours = Number.isFinite(parsedHours) ? Math.min(24, Math.max(0, parsedHours)) : 0;
+    let safeMinutes = Number.isFinite(parsedMinutes) ? Math.min(59, Math.max(0, parsedMinutes)) : 0;
+
+    if (safeHours === 24) {
+        safeMinutes = 0;
+    }
+
+    durationHours.value = safeHours;
+    durationRemainder.value = safeMinutes;
+
+    const total = clampDurationTotal((safeHours * 60) + safeMinutes);
+    durationHours.value = Math.floor(total / 60);
+    durationRemainder.value = total % 60;
+    form.duration_minutes = total;
+};
+
 const openCreate = () => {
     resetTemporaryPreview();
     editingService.value = null;
     form.defaults(formDefaults());
     form.reset();
     form.clearErrors();
+    setDurationFieldsFromTotal(form.duration_minutes);
     showModal.value = true;
 };
 
@@ -152,6 +200,7 @@ const openEdit = (service) => {
     form.service_category_id = service.service_category_id ?? '';
     form.description = service.description ?? '';
     form.duration_minutes = Number(service.duration_minutes ?? 60);
+    setDurationFieldsFromTotal(form.duration_minutes);
     form.base_price = String(service.base_price ?? '0.00');
     form.is_active = Boolean(service.is_active);
     form.image_url = service.image_url ?? null;
@@ -167,6 +216,7 @@ const closeModal = () => {
     form.clearErrors();
     form.defaults(formDefaults());
     form.reset();
+    setDurationFieldsFromTotal(formDefaults().duration_minutes);
     resetTemporaryPreview();
     if (imageInputRef.value) {
         imageInputRef.value.value = '';
@@ -195,6 +245,8 @@ const removeImage = () => {
 };
 
 const submitService = () => {
+    syncDurationMinutes();
+
     const onFinish = () => {
         form.transform((data) => data);
     };
@@ -451,14 +503,34 @@ const resolveInitials = (value) => {
                     </div>
 
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Duração padrão (min) *</label>
-                        <input
-                            v-model.number="form.duration_minutes"
-                            type="number"
-                            min="5"
-                            max="1440"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                        >
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Duração padrão *</label>
+                        <div class="mt-1 grid grid-cols-2 gap-2">
+                            <div>
+                                <input
+                                    v-model.number="durationHours"
+                                    type="number"
+                                    min="0"
+                                    max="24"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="Horas"
+                                    @input="syncDurationMinutes"
+                                >
+                                <p class="mt-1 text-[11px] text-slate-500">Horas</p>
+                            </div>
+                            <div>
+                                <input
+                                    v-model.number="durationRemainder"
+                                    type="number"
+                                    min="0"
+                                    max="59"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="Minutos"
+                                    @input="syncDurationMinutes"
+                                >
+                                <p class="mt-1 text-[11px] text-slate-500">Minutos</p>
+                            </div>
+                        </div>
+                        <p class="mt-1 text-xs text-slate-500">Total: {{ formatDuration(form.duration_minutes) }}</p>
                         <p v-if="form.errors.duration_minutes" class="mt-1 text-xs text-rose-600">{{ form.errors.duration_minutes }}</p>
                     </div>
 
@@ -475,13 +547,12 @@ const resolveInitials = (value) => {
 
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Preço base (R$) *</label>
-                        <input
+                        <BrlMoneyInput
                             v-model="form.base_price"
-                            type="number"
-                            step="0.01"
-                            min="0"
+                            :allow-empty="false"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                        >
+                            placeholder="R$ 0,00"
+                        />
                         <p v-if="form.errors.base_price" class="mt-1 text-xs text-rose-600">{{ form.errors.base_price }}</p>
                     </div>
 
@@ -541,4 +612,3 @@ const resolveInitials = (value) => {
         />
     </AuthenticatedLayout>
 </template>
-

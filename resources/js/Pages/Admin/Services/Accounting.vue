@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import Modal from '@/Components/Modal.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
+import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import { useBranding } from '@/branding';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
@@ -950,11 +951,11 @@ const statusLabel = (options, value) => {
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor</label>
-                        <input v-model="feeForm.amount" type="number" step="0.01" min="0" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        <BrlMoneyInput v-model="feeForm.amount" :allow-empty="false" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="R$ 0,00" />
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor pago</label>
-                        <input v-model="feeForm.paid_amount" type="number" step="0.01" min="0" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        <BrlMoneyInput v-model="feeForm.paid_amount" :allow-empty="false" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="R$ 0,00" />
                     </div>
                 </div>
                 <div class="flex justify-end gap-2 border-t border-slate-100 pt-4">
@@ -1226,5 +1227,4 @@ const statusLabel = (options, value) => {
     color: #ffffff;
 }
 </style>
-
 

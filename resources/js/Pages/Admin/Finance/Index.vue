@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Modal from '@/Components/Modal.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
+import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
@@ -482,16 +483,8 @@ const runGatewayConnectionTest = async () => {
 };
 
 const openCreateGateway = () => {
+    resetGatewayForm();
     editingGateway.value = null;
-    gatewayForm.reset();
-    gatewayForm.clearErrors();
-    gatewayForm.provider = 'manual';
-    gatewayForm.name = '';
-    gatewayForm.is_active = true;
-    gatewayForm.is_default = false;
-    gatewayForm.is_sandbox = true;
-    gatewayForm.mercado_pago_access_token = '';
-    gatewayForm.mercado_pago_webhook_secret = '';
     resetGatewayConnectionFeedback();
     gatewayModalOpen.value = true;
 };
@@ -513,6 +506,7 @@ const openEditGateway = (gateway) => {
 const closeGatewayModal = () => {
     gatewayModalOpen.value = false;
     editingGateway.value = null;
+    resetGatewayForm();
     resetGatewayConnectionFeedback();
 };
 
@@ -571,8 +565,21 @@ const methodForm = useForm({
 const methodDeleteForm = useForm({});
 const isEditingMethod = computed(() => Boolean(editingMethod.value?.id));
 
-const openCreateMethod = () => {
-    editingMethod.value = null;
+const resetGatewayForm = () => {
+    gatewayForm.transform((data) => data);
+    gatewayForm.reset();
+    gatewayForm.clearErrors();
+    gatewayForm.provider = 'manual';
+    gatewayForm.name = '';
+    gatewayForm.is_active = true;
+    gatewayForm.is_default = false;
+    gatewayForm.is_sandbox = true;
+    gatewayForm.mercado_pago_access_token = '';
+    gatewayForm.mercado_pago_webhook_secret = '';
+};
+
+const resetMethodForm = (sortOrder = 0) => {
+    methodForm.transform((data) => data);
     methodForm.reset();
     methodForm.clearErrors();
     methodForm.payment_gateway_id = '';
@@ -584,7 +591,12 @@ const openCreateMethod = () => {
     methodForm.max_installments = '';
     methodForm.fee_fixed = '';
     methodForm.fee_percent = '';
-    methodForm.sort_order = (methods.value?.length ?? 0) + 10;
+    methodForm.sort_order = Number(sortOrder || 0);
+};
+
+const openCreateMethod = () => {
+    editingMethod.value = null;
+    resetMethodForm((methods.value?.length ?? 0) + 10);
     methodModalOpen.value = true;
 };
 
@@ -607,6 +619,7 @@ const openEditMethod = (method) => {
 const closeMethodModal = () => {
     methodModalOpen.value = false;
     editingMethod.value = null;
+    resetMethodForm();
 };
 
 const submitMethod = () => {
@@ -706,15 +719,27 @@ const entryForm = useForm({
 const entryDeleteForm = useForm({});
 const isEditingEntry = computed(() => Boolean(editingEntry.value?.id));
 
-const openCreateEntry = () => {
-    editingEntry.value = null;
+const resetEntryForm = () => {
+    entryForm.transform((data) => data);
     entryForm.reset();
     entryForm.clearErrors();
     entryForm.type = activeTab.value === 'receivables' ? 'receivable' : 'payable';
+    entryForm.counterparty_name = '';
+    entryForm.reference = '';
+    entryForm.amount = '';
+    entryForm.issue_date = '';
+    entryForm.due_date = '';
     entryForm.status = 'pending';
     entryForm.payment_method_id = '';
-    entryForm.remove_document = false;
+    entryForm.paid_at = '';
+    entryForm.notes = '';
     entryForm.document = null;
+    entryForm.remove_document = false;
+};
+
+const openCreateEntry = () => {
+    editingEntry.value = null;
+    resetEntryForm();
     entryModalOpen.value = true;
 };
 
@@ -739,7 +764,7 @@ const openEditEntry = (entry) => {
 const closeEntryModal = () => {
     entryModalOpen.value = false;
     editingEntry.value = null;
-    entryForm.clearErrors();
+    resetEntryForm();
 };
 
 const onEntryDocumentChange = (event) => {
@@ -1377,14 +1402,12 @@ const pdfIframeKey = (file) => `${String(file?.public_url ?? '')}-${pdfZoom.valu
 
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor (R$)</label>
-                        <input
+                        <BrlMoneyInput
                             v-model="entryForm.amount"
-                            type="number"
-                            step="0.01"
-                            min="0.01"
+                            :allow-empty="false"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="0,00"
-                        >
+                            placeholder="R$ 0,00"
+                        />
                         <p v-if="entryForm.errors.amount" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.amount }}</p>
                     </div>
 
@@ -1663,14 +1686,11 @@ const pdfIframeKey = (file) => `${String(file?.public_url ?? '')}-${pdfZoom.valu
 
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Taxa fixa (R$)</label>
-                        <input
+                        <BrlMoneyInput
                             v-model="methodForm.fee_fixed"
-                            type="number"
-                            step="0.01"
-                            min="0"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="0,00"
-                        >
+                            placeholder="R$ 0,00"
+                        />
                         <p v-if="methodForm.errors.fee_fixed" class="mt-1 text-xs text-rose-600">{{ methodForm.errors.fee_fixed }}</p>
                     </div>
 
@@ -1917,6 +1937,3 @@ const pdfIframeKey = (file) => `${String(file?.public_url ?? '')}-${pdfZoom.valu
     }
 }
 </style>
-
-
-

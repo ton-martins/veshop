@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import Modal from '@/Components/Modal.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
+import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
@@ -408,12 +409,12 @@ const statusLabel = (value) => {
                     <div class="grid gap-3 grid-cols-2">
                         <div>
                             <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor previsto</label>
-                            <input v-model="form.estimated_amount" type="number" step="0.01" min="0" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                            <BrlMoneyInput v-model="form.estimated_amount" :allow-empty="false" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="R$ 0,00" />
                             <p v-if="form.errors.estimated_amount" class="mt-1 text-xs text-rose-600">{{ form.errors.estimated_amount }}</p>
                         </div>
                         <div>
                             <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor final</label>
-                            <input v-model="form.final_amount" type="number" step="0.01" min="0" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                            <BrlMoneyInput v-model="form.final_amount" :allow-empty="false" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" placeholder="R$ 0,00" />
                             <p v-if="form.errors.final_amount" class="mt-1 text-xs text-rose-600">{{ form.errors.final_amount }}</p>
                         </div>
                     </div>

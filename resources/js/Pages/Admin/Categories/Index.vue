@@ -109,11 +109,19 @@ const deleteForm = useForm({});
 
 const isEditing = computed(() => Boolean(editingCategory.value?.id));
 
-const openCreate = () => {
-    editingCategory.value = null;
+const resetCategoryForm = () => {
     categoryForm.reset();
     categoryForm.clearErrors();
+    categoryForm.name = '';
+    categoryForm.slug = '';
+    categoryForm.parent_id = '';
+    categoryForm.description = '';
     categoryForm.is_active = true;
+};
+
+const openCreate = () => {
+    editingCategory.value = null;
+    resetCategoryForm();
     showModal.value = true;
 };
 
@@ -131,6 +139,7 @@ const openEdit = (category) => {
 const closeModal = () => {
     showModal.value = false;
     editingCategory.value = null;
+    resetCategoryForm();
 };
 
 const parentCategoryOptions = computed(() => [

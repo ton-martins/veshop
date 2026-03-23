@@ -257,12 +257,16 @@ watch(
     },
 );
 
-const openCreate = () => {
-    editingContractor.value = null;
-    contractorWizardStep.value = 1;
+const resetContractorForm = () => {
     contractorForm.reset();
     contractorForm.clearErrors();
+    contractorForm.name = '';
+    contractorForm.email = '';
+    contractorForm.phone = '';
+    contractorForm.cnpj = '';
+    contractorForm.slug = '';
     contractorForm.timezone = 'America/Sao_Paulo';
+    contractorForm.brand_name = '';
     contractorForm.brand_primary_color = normalizeBrandColor('#073341');
     contractorForm.contract_starts_at = '';
     contractorForm.contract_ends_at = '';
@@ -273,6 +277,12 @@ const openCreate = () => {
     contractorForm.override_storage_limit_gb = '';
     contractorForm.override_audit_log_retention_days = '';
     contractorForm.is_active = true;
+};
+
+const openCreate = () => {
+    editingContractor.value = null;
+    contractorWizardStep.value = 1;
+    resetContractorForm();
     showModal.value = true;
 };
 
@@ -304,6 +314,7 @@ const closeModal = () => {
     showModal.value = false;
     editingContractor.value = null;
     contractorWizardStep.value = 1;
+    resetContractorForm();
 };
 
 const goToWizardStep = (step) => {
@@ -798,5 +809,4 @@ const formatMoney = (value) => {
         />
     </AuthenticatedLayout>
 </template>
-
 

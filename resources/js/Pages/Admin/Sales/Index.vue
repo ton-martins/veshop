@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import Modal from '@/Components/Modal.vue';
+import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import OrderDetailsModal from '@/Components/App/Orders/OrderDetailsModal.vue';
 import { useBranding } from '@/branding';
@@ -679,13 +680,11 @@ const handleSaleDetailsAction = (payload) => {
                                 </label>
                                 <label class="space-y-1 md:col-span-2">
                                     <span class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Desconto</span>
-                                    <input
-                                        v-model.number="line.discount_amount"
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
+                                    <BrlMoneyInput
+                                        v-model="line.discount_amount"
                                         class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700"
-                                    >
+                                        placeholder="R$ 0,00"
+                                    />
                                 </label>
                                 <div class="flex items-end justify-end md:col-span-1">
                                     <button
@@ -718,25 +717,19 @@ const handleSaleDetailsAction = (payload) => {
                 <div class="grid gap-3 sm:grid-cols-2">
                     <label class="space-y-1">
                         <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Desconto geral</span>
-                        <input
-                            v-model.number="editForm.discount_amount"
-                            type="number"
-                            min="0"
-                            step="0.01"
+                        <BrlMoneyInput
+                            v-model="editForm.discount_amount"
                             class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="0,00"
-                        >
+                            placeholder="R$ 0,00"
+                        />
                     </label>
                     <label class="space-y-1">
                         <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Acréscimo</span>
-                        <input
-                            v-model.number="editForm.surcharge_amount"
-                            type="number"
-                            min="0"
-                            step="0.01"
+                        <BrlMoneyInput
+                            v-model="editForm.surcharge_amount"
                             class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="0,00"
-                        >
+                            placeholder="R$ 0,00"
+                        />
                     </label>
                 </div>
 

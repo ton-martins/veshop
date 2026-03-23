@@ -80,12 +80,15 @@ class AdminServiceCategoryService
             ->whereNull('service_category_id')
             ->count();
 
+        $nextSortOrder = $this->resolveNextSortOrder($contractor);
+
         return Inertia::render('Admin/Services/Categories', [
             'categories' => $categories,
             'filters' => [
                 'search' => $search,
                 'status' => $status,
             ],
+            'next_sort_order' => $nextSortOrder,
             'stats' => [
                 'categories' => $totalCategories,
                 'active' => $activeCategories,
@@ -101,6 +104,9 @@ class AdminServiceCategoryService
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
 
         $data = $this->validatePayload($request, $contractor);
+        if (! array_key_exists('sort_order', $data) || $data['sort_order'] === null) {
+            $data['sort_order'] = $this->resolveNextSortOrder($contractor);
+        }
         $data['slug'] = $this->resolveUniqueSlug($contractor, (string) ($data['slug'] ?? $data['name']));
         $data['contractor_id'] = $contractor->id;
 
@@ -192,4 +198,14 @@ class AdminServiceCategoryService
             ->when($ignoreCategoryId, static fn ($query) => $query->where('id', '!=', $ignoreCategoryId))
             ->exists();
     }
+
+    private function resolveNextSortOrder(Contractor $contractor): int
+    {
+        $maxSortOrder = (int) (ServiceCategory::query()
+            ->where('contractor_id', $contractor->id)
+            ->max('sort_order') ?? 0);
+
+        return max(0, $maxSortOrder) + 1;
+    }
+
 }

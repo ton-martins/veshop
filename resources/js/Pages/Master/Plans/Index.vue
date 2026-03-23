@@ -1,6 +1,7 @@
 ﻿<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Modal from '@/Components/Modal.vue';
+import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
@@ -679,7 +680,7 @@ const closeModulesModal = () => {
                             </div>
                             <textarea v-model="plan.summary" rows="2" class="mt-2 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700" placeholder="Resumo do plano" />
                             <div class="mt-2 grid gap-2 sm:grid-cols-2">
-                                <input v-model="plan.price_monthly" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-semibold text-slate-800" placeholder="Valor mensal">
+                                <BrlMoneyInput v-model="plan.price_monthly" class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-semibold text-slate-800" placeholder="Valor mensal" />
                                 <input v-model="plan.user_limit" type="number" min="1" step="1" class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-semibold text-slate-800" placeholder="Limite de usuários">
                                 <input v-model="plan.storage_limit_gb" type="number" min="1" step="1" class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-semibold text-slate-800" placeholder="Storage (GB)">
                                 <input v-model="plan.audit_log_retention_days" type="number" min="1" step="1" class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-semibold text-slate-800" placeholder="Auditoria (dias)">
@@ -968,4 +969,3 @@ const closeModulesModal = () => {
     color: #ffffff;
 }
 </style>
-

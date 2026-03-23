@@ -3,6 +3,7 @@ import PdvLayout from '@/Layouts/PdvLayout.vue';
 import Modal from '@/Components/Modal.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
+import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
@@ -1183,33 +1184,24 @@ function submitCreateClient() {
                         />
 
                         <div class="grid gap-2 sm:grid-cols-2">
-                            <input
+                            <BrlMoneyInput
                                 v-model="discountAmount"
-                                type="number"
-                                min="0"
-                                step="0.01"
                                 class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                                 placeholder="Desconto (R$)"
-                            >
-                            <input
+                            />
+                            <BrlMoneyInput
                                 v-model="surchargeAmount"
-                                type="number"
-                                min="0"
-                                step="0.01"
                                 class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                                 placeholder="Acréscimo (R$)"
-                            >
+                            />
                         </div>
 
                         <div v-if="isCashPayment" class="grid gap-2 sm:grid-cols-2">
-                            <input
+                            <BrlMoneyInput
                                 v-model="amountPaid"
-                                type="number"
-                                min="0"
-                                step="0.01"
                                 class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                                 placeholder="Valor pago (R$)"
-                            >
+                            />
                             <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm">
                                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Troco</p>
                                 <p class="mt-1 text-base font-bold text-emerald-700">{{ asCurrency(changeAmount) }}</p>
@@ -1280,14 +1272,12 @@ function submitCreateClient() {
         <Modal :show="openCashModalOpen" max-width="5xl" @close="openCashModalOpen = false">
             <WizardModalFrame title="Abrir caixa" description="Informe o saldo inicial." :steps="['Abertura']" :current-step="1" @close="openCashModalOpen = false">
                 <div class="space-y-3">
-                    <input
+                    <BrlMoneyInput
                         v-model="openCashForm.opening_balance"
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        :allow-empty="false"
                         class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                         placeholder="Saldo inicial (R$)"
-                    >
+                    />
                     <textarea
                         v-model="openCashForm.notes"
                         rows="3"
@@ -1318,14 +1308,12 @@ function submitCreateClient() {
                         Saldo esperado:
                         <span class="font-semibold">{{ asCurrency(props.cashSummary?.expected_balance ?? 0) }}</span>
                     </p>
-                    <input
+                    <BrlMoneyInput
                         v-model="closeCashForm.closing_balance"
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        :allow-empty="false"
                         class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                         placeholder="Saldo final (R$)"
-                    >
+                    />
                     <textarea
                         v-model="closeCashForm.notes"
                         rows="3"
