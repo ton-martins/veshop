@@ -322,7 +322,7 @@ const topFeatures = (plan) => {
 
 <style scoped>
 .price-section {
-    --next-section-bg: linear-gradient(180deg, #f7fbf8 0%, #eef5f1 100%);
+    --next-section-bg: linear-gradient(180deg, #08242c 0%, #0d3942 100%);
     overflow: hidden;
     background:
         radial-gradient(70% 70% at 12% 18%, rgba(129, 216, 111, 0.26) 0%, rgba(129, 216, 111, 0) 72%),

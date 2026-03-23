@@ -14,7 +14,7 @@ const whyChooseImageUrl = computed(() => landingImages.value.why_choose || '/lan
 </script>
 
 <template>
-    <section class="section why-choose-section landing-section-shell landing-section-light">
+    <section class="section why-choose-section landing-section-shell">
         <div class="container">
             <div class="row align-items-center justify-content-between g-4">
                 <div class="col-lg-5">
@@ -68,45 +68,45 @@ const whyChooseImageUrl = computed(() => landingImages.value.why_choose || '/lan
     background:
         radial-gradient(64% 65% at 90% 10%, rgba(129, 216, 111, 0.2) 0%, rgba(129, 216, 111, 0) 72%),
         radial-gradient(42% 46% at 10% 45%, rgba(52, 182, 130, 0.12) 0%, rgba(52, 182, 130, 0) 72%),
-        linear-gradient(180deg, #f7fbf8 0%, #eef5f1 100%);
+        linear-gradient(180deg, #08242c 0%, #0b333c 100%);
 }
 
 .why-choose-section .title-sm span {
-    color: #2f8b45;
+    color: #bff6cc;
 }
 
 .why-choose-section .section-title-border {
-    background: #5ac178;
+    background: #9ce1a8;
 }
 
 .why-choose-title p {
     margin-top: 0.9rem;
     margin-bottom: 0;
-    color: rgba(30, 58, 48, 0.82);
+    color: rgba(230, 255, 238, 0.78);
     line-height: 1.58;
 }
 
 .why-choose-title h2 {
-    color: #0f2b22 !important;
+    color: #effff3 !important;
 }
 
 .advantage-item {
     border-radius: 12px;
-    border: 1px solid rgba(48, 97, 71, 0.18);
-    background: rgba(255, 255, 255, 0.84);
+    border: 1px solid rgba(214, 255, 223, 0.2);
+    background: rgba(214, 255, 223, 0.08);
     padding: 0.68rem 0.74rem;
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    box-shadow: 0 15px 24px -20px rgba(14, 50, 35, 0.36);
+    box-shadow: 0 15px 24px -20px rgba(2, 12, 10, 0.88);
 }
 
 .advantage-item i {
-    color: #2f8b45;
+    color: #9ce1a8;
 }
 
 .advantage-item h6 {
-    color: #16382c;
+    color: #effff3;
     font-size: 0.88rem;
     line-height: 1.4;
 }

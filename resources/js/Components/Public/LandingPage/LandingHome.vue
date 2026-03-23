@@ -233,7 +233,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .landing-hero {
-    --next-section-bg: linear-gradient(180deg, #f6fbf8 0%, #eef5f1 100%);
+    --next-section-bg: linear-gradient(180deg, #08242c 0%, #0a2f37 100%);
     position: relative;
     overflow: hidden;
     padding: 170px 0 118px;

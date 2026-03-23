@@ -3,10 +3,14 @@ import { Link } from '@inertiajs/vue3';
 import { useBranding } from '@/branding';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
-defineProps({
+const props = defineProps({
     canLogin: {
         type: Boolean,
         default: true,
+    },
+    forceLandingLinks: {
+        type: Boolean,
+        default: false,
     },
 });
 
@@ -16,6 +20,16 @@ const { brandName, systemIconUrl } = useBranding();
 
 const closeMenu = () => {
     isMenuOpen.value = false;
+};
+
+const sectionHref = (sectionId) => {
+    const hash = `#${sectionId}`;
+
+    if (!props.forceLandingLinks) {
+        return hash;
+    }
+
+    return `${route('landing')}${hash}`;
 };
 
 const updateStickyState = () => {
@@ -48,7 +62,7 @@ onBeforeUnmount(() => {
         >
             <div class="container landing-navbar-shell">
                 <div class="navbar-brand logo">
-                    <a class="navbar-caption fs-4 ls-1 fw-bold" href="#home">
+                    <a class="navbar-caption fs-4 ls-1 fw-bold" :href="sectionHref('home')">
                         <span class="veshop-system-logo-wrap me-2">
                             <img
                                 :src="systemIconUrl"
@@ -74,19 +88,19 @@ onBeforeUnmount(() => {
                 <div id="navbarCollapseDesktop" class="landing-navbar-desktop d-none d-lg-flex">
                     <ul class="navbar-nav mx-auto" id="navbar-navlist">
                         <li class="nav-item">
-                            <a class="nav-link" href="#home">Início</a>
+                            <a class="nav-link" :href="sectionHref('home')">Início</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#about">Sobre</a>
+                            <a class="nav-link" :href="sectionHref('about')">Sobre</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#services">Módulos</a>
+                            <a class="nav-link" :href="sectionHref('services')">Módulos</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#price">Planos</a>
+                            <a class="nav-link" :href="sectionHref('price')">Planos</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#contacts">Contato</a>
+                            <a class="nav-link" :href="sectionHref('contacts')">Contato</a>
                         </li>
                     </ul>
 
@@ -114,19 +128,19 @@ onBeforeUnmount(() => {
                 <div class="container">
                     <ul class="navbar-nav" id="navbar-navlist-mobile">
                         <li class="nav-item">
-                            <a class="nav-link" href="#home" @click="closeMenu">Início</a>
+                            <a class="nav-link" :href="sectionHref('home')" @click="closeMenu">Início</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#about" @click="closeMenu">Sobre</a>
+                            <a class="nav-link" :href="sectionHref('about')" @click="closeMenu">Sobre</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#services" @click="closeMenu">Módulos</a>
+                            <a class="nav-link" :href="sectionHref('services')" @click="closeMenu">Módulos</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#price" @click="closeMenu">Planos</a>
+                            <a class="nav-link" :href="sectionHref('price')" @click="closeMenu">Planos</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#contacts" @click="closeMenu">Contato</a>
+                            <a class="nav-link" :href="sectionHref('contacts')" @click="closeMenu">Contato</a>
                         </li>
                     </ul>
 

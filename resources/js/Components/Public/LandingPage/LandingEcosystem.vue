@@ -24,7 +24,7 @@ const modules = [
 </script>
 
 <template>
-    <section id="ecosistema" class="ecosystem-band section landing-section-shell landing-section-light">
+    <section id="ecosistema" class="ecosystem-band section landing-section-shell">
         <div class="ecosystem-band-glow" aria-hidden="true"></div>
         <div class="container position-relative">
             <div class="row align-items-center g-4">
@@ -61,12 +61,12 @@ const modules = [
 
 <style scoped>
 .ecosystem-band {
-    --next-section-bg: linear-gradient(180deg, #f6fbf8 0%, #edf4f0 100%);
+    --next-section-bg: linear-gradient(180deg, #08242c 0%, #0b333c 100%);
     position: relative;
     overflow: hidden;
     background:
         radial-gradient(68% 78% at 50% -5%, rgba(129, 216, 111, 0.18) 0%, rgba(129, 216, 111, 0) 72%),
-        linear-gradient(180deg, #f6fbf8 0%, #eef5f1 100%);
+        linear-gradient(180deg, #08242c 0%, #0b333c 100%);
 }
 
 .ecosystem-band-glow {
@@ -83,7 +83,7 @@ const modules = [
 .ecosystem-title {
     margin-top: 1rem;
     margin-bottom: 0;
-    color: #0f2b22;
+    color: #effff3;
     font-size: clamp(1.6rem, 2.8vw, 2.2rem);
     line-height: 1.23;
 }
@@ -91,23 +91,23 @@ const modules = [
 .ecosystem-text {
     margin-top: 0.9rem;
     margin-bottom: 0;
-    color: rgba(28, 58, 47, 0.8);
+    color: rgba(229, 255, 237, 0.78);
     line-height: 1.58;
 }
 
 .ecosystem-card {
     border-radius: 20px;
-    border: 1px solid rgba(47, 100, 73, 0.18);
-    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(214, 255, 223, 0.2);
+    background: rgba(214, 255, 223, 0.08);
     padding: 1rem;
-    box-shadow: 0 18px 34px -30px rgba(14, 50, 35, 0.34);
+    box-shadow: 0 18px 34px -30px rgba(2, 12, 10, 0.9);
     transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .ecosystem-card:hover {
     transform: translateY(-4px);
-    border-color: rgba(47, 100, 73, 0.3);
-    box-shadow: 0 24px 38px -30px rgba(14, 50, 35, 0.44);
+    border-color: rgba(214, 255, 223, 0.34);
+    box-shadow: 0 24px 38px -30px rgba(2, 12, 10, 0.96);
 }
 
 .ecosystem-icon {
@@ -117,15 +117,15 @@ const modules = [
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(129, 216, 111, 0.2);
-    color: #2f8b45;
+    background: rgba(129, 216, 111, 0.24);
+    color: #e4ffe8;
     font-size: 1.05rem;
 }
 
 .ecosystem-card h3 {
     margin-top: 0.62rem;
     margin-bottom: 0;
-    color: #16382c;
+    color: #effff3;
     font-size: 1rem;
     font-weight: 700;
 }
@@ -133,7 +133,7 @@ const modules = [
 .ecosystem-card p {
     margin-top: 0.42rem;
     margin-bottom: 0;
-    color: rgba(29, 57, 47, 0.78);
+    color: rgba(229, 255, 237, 0.78);
     font-size: 0.86rem;
     line-height: 1.48;
 }

@@ -73,7 +73,7 @@ const solutionCards = [
 
 <style scoped>
 .services-section {
-    --next-section-bg: linear-gradient(180deg, #f7fbf8 0%, #eef5f1 100%);
+    --next-section-bg: linear-gradient(180deg, #08242c 0%, #0b333c 100%);
     position: relative;
     overflow: hidden;
     background:

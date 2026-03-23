@@ -7,7 +7,7 @@ const aboutImageUrl = computed(() => landingImages.value.about || '/landing/imag
 </script>
 
 <template>
-    <section class="section about-section landing-section-shell landing-section-light" id="about">
+    <section class="section about-section landing-section-shell" id="about">
         <div class="container">
             <div class="row align-items-center justify-content-between g-4">
                 <div class="col-lg-6">
@@ -51,15 +51,15 @@ const aboutImageUrl = computed(() => landingImages.value.about || '/landing/imag
     background:
         radial-gradient(62% 70% at 12% 8%, rgba(129, 216, 111, 0.2) 0%, rgba(129, 216, 111, 0) 72%),
         radial-gradient(44% 48% at 84% 20%, rgba(52, 182, 130, 0.12) 0%, rgba(52, 182, 130, 0) 72%),
-        linear-gradient(180deg, #f6fbf8 0%, #edf4f0 100%);
+        linear-gradient(180deg, #08242c 0%, #0b333c 100%);
 }
 
 .about-section .title-sm span {
-    color: #2f8b45;
+    color: #bff6cc;
 }
 
 .about-section .section-title-border {
-    background: #5ac178;
+    background: #9ce1a8;
 }
 
 .photo-shell {
@@ -115,12 +115,12 @@ const aboutImageUrl = computed(() => landingImages.value.about || '/landing/imag
 .about-title p {
     margin-top: 0.9rem;
     margin-bottom: 0;
-    color: rgba(29, 57, 47, 0.84);
+    color: rgba(230, 255, 238, 0.78);
     line-height: 1.58;
 }
 
 .about-title h2 {
-    color: #0f2b22 !important;
+    color: #effff3 !important;
 }
 
 .about-btn .landing-cta-solid {

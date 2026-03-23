@@ -22,7 +22,7 @@ const pageTitle = computed(() => `Termos de Uso | ${brandName.value}`);
     </Head>
 
     <div class="landing-page-root legal-page-root">
-        <LandingHeader :can-login="true" />
+        <LandingHeader :can-login="true" :force-landing-links="true" />
 
         <main class="legal-main">
             <article class="legal-card">

@@ -100,34 +100,10 @@ defineProps({
     border-top-left-radius: var(--corner-cut-size);
 }
 
-.landing-page-root :deep(.landing-section-light) {
-    box-shadow: 0 28px 44px -44px rgba(4, 19, 15, 0.72);
-}
-
 .landing-page-root :deep(.landing-section-shell > .container),
 .landing-page-root :deep(.landing-section-shell > .container-fluid) {
     position: relative;
     z-index: 1;
-}
-
-.landing-page-root :deep(.landing-section-light .text-primary),
-.landing-page-root :deep(.landing-section-light h2),
-.landing-page-root :deep(.landing-section-light h3),
-.landing-page-root :deep(.landing-section-light h4) {
-    color: #0f2b22 !important;
-}
-
-.landing-page-root :deep(.landing-section-light .title-sm span) {
-    color: #2f8b45 !important;
-}
-
-.landing-page-root :deep(.landing-section-light .section-title-border) {
-    background: #5ac178 !important;
-}
-
-.landing-page-root :deep(.landing-section-light p),
-.landing-page-root :deep(.landing-section-light .text-muted) {
-    color: rgba(28, 58, 47, 0.8) !important;
 }
 
 .landing-page-root :deep(main),
@@ -151,6 +127,19 @@ defineProps({
 
 .landing-page-root :deep(main section .section-title-border) {
     background: #9ce1a8;
+}
+
+.landing-page-root :deep(h1),
+.landing-page-root :deep(h2),
+.landing-page-root :deep(h3),
+.landing-page-root :deep(h4) {
+    font-family: 'Sora', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 700 !important;
+}
+
+.landing-page-root :deep(.btn) {
+    font-family: 'Sora', ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600 !important;
 }
 
 @media (max-width: 575px) {
