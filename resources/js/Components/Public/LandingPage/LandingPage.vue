@@ -68,7 +68,25 @@ defineProps({
     max-width: 100vw;
     overflow-x: hidden;
     overflow-x: clip;
+    position: relative;
+    isolation: isolate;
     background: #ffffff;
+}
+
+.landing-page-root > header,
+.landing-page-root > main,
+.landing-page-root > footer {
+    position: relative;
+    z-index: 1;
+}
+
+.landing-page-root > header {
+    z-index: 4;
+}
+
+.landing-page-root > main,
+.landing-page-root > footer {
+    z-index: 1;
 }
 
 .landing-page-root :deep(.landing-section-shell) {
@@ -80,8 +98,8 @@ defineProps({
     box-shadow: none;
 }
 
-.landing-page-root :deep(.landing-section-shell::before),
-.landing-page-root :deep(.landing-section-shell::after) {
+.landing-page-root :deep(.landing-section-shell:not(.landing-hero)::before),
+.landing-page-root :deep(.landing-section-shell:not(.landing-hero)::after) {
     display: none !important;
 }
 
@@ -225,8 +243,24 @@ defineProps({
     --next-section-bg: #ffffff !important;
     background:
         radial-gradient(65% 60% at 10% 6%, rgba(129, 216, 111, 0.15) 0%, rgba(129, 216, 111, 0) 72%),
-        radial-gradient(45% 42% at 88% 20%, rgba(7, 51, 65, 0.08) 0%, rgba(7, 51, 65, 0) 72%),
+        radial-gradient(56% 56% at 88% 16%, rgba(129, 216, 111, 0.2) 0%, rgba(129, 216, 111, 0) 72%),
         linear-gradient(180deg, #f5fdff 0%, #f3f6f9 100%) !important;
+}
+
+.landing-page-root :deep(.landing-hero)::before {
+    content: '';
+    position: absolute;
+    top: 96px;
+    right: 0;
+    width: min(44vw, 700px);
+    height: calc(100% - 96px);
+    background:
+        radial-gradient(120% 120% at 100% 0%, rgba(114, 205, 114, 0.44) 0%, rgba(114, 205, 114, 0) 64%),
+        linear-gradient(180deg, #ddf8df 0%, #9ce39e 58%, #72cd72 100%);
+    border-bottom-left-radius: 38px;
+    border-top-left-radius: 22px;
+    pointer-events: none;
+    z-index: 0;
 }
 
 .landing-page-root :deep(.ecosystem-band),
@@ -568,7 +602,28 @@ defineProps({
     color: var(--renol-light) !important;
 }
 
+@media (max-width: 991.98px) {
+    .landing-page-root :deep(.landing-hero)::before {
+        top: 84px;
+        width: min(52vw, 500px);
+        height: calc(100% - 84px);
+        border-bottom-left-radius: 30px;
+    }
+}
+
 @media (max-width: 575px) {
+    .landing-page-root :deep(.landing-hero)::before {
+        top: auto;
+        bottom: 10px;
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
+        width: calc(100% - 16px);
+        max-width: 430px;
+        height: clamp(300px, 82vw, 420px);
+        border-radius: 24px;
+    }
+
     .landing-page-root :deep(.container) {
         padding-left: 1rem;
         padding-right: 1rem;
