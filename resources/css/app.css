@@ -84,6 +84,32 @@
         box-shadow: 0 0 0 100vmax #f1f5f9 inset;
     }
 
+    input[type='checkbox'] {
+        accent-color: #22c55e;
+        color: #22c55e !important;
+        border-color: #86efac;
+        background-color: #ecfdf5;
+    }
+
+    input[type='checkbox']:checked {
+        border-color: #22c55e !important;
+        background-color: #22c55e !important;
+        color: #ffffff;
+    }
+
+    input[type='checkbox']:focus,
+    input[type='checkbox']:focus-visible {
+        border-color: #22c55e !important;
+        box-shadow: 0 0 0 0.08rem rgba(34, 197, 94, 0.18) !important;
+        outline: none !important;
+        --tw-ring-color: rgba(34, 197, 94, 0.18);
+    }
+
+    input[type='checkbox']:disabled {
+        cursor: not-allowed;
+        opacity: 0.58;
+    }
+
     input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']):focus,
     input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']):focus-visible,
     select:focus,
