@@ -496,6 +496,10 @@ const markNotificationsForm = useForm({ id: '' });
 
 const TABLE_VIEW_STORAGE_KEY = 'veshop:table-view-mode';
 const allowedTableViewModes = new Set(['list', 'cards']);
+const MAX_CARD_VISIBLE_FIELDS = 3;
+const ACTION_COLUMN_KEYWORDS = ['acao', 'acoes', 'action', 'actions', 'opcao', 'opcoes', 'options'];
+const ROW_INTERACTIVE_SELECTOR = 'a, button, input, select, textarea, label, summary, [role="button"], [contenteditable="true"], [data-row-click-ignore]';
+const ROW_EDIT_TRIGGER_SELECTOR = 'button, a, [role="button"]';
 const tableViewMode = ref('list');
 const hasAdaptiveTables = ref(false);
 let tableMutationObserver = null;
@@ -527,25 +531,31 @@ const ensureTableScrollWrapper = (table) => {
     wrapper.appendChild(table);
 };
 
-const isActionColumnLabel = (label) => {
-    const normalized = String(label ?? '')
+const normalizeComparableText = (value) =>
+    String(value ?? '')
         .toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
         .trim();
 
-    return normalized.includes('acao') || normalized.includes('actions');
+const isActionColumnLabel = (label) => {
+    const normalized = normalizeComparableText(label);
+
+    return ACTION_COLUMN_KEYWORDS.some((keyword) => normalized.includes(keyword));
 };
 
 const setCardCellKind = (cell, index, label) => {
-    if (cell.hasAttribute('colspan')) return;
+    if (cell.hasAttribute('colspan')) return null;
 
     if (index === 0) {
         cell.setAttribute('data-card-kind', 'primary');
-        return;
+        return 'primary';
     }
 
-    cell.setAttribute('data-card-kind', isActionColumnLabel(label) ? 'actions' : 'field');
+    const kind = isActionColumnLabel(label) ? 'actions' : 'field';
+    cell.setAttribute('data-card-kind', kind);
+    return kind;
 };
 
 const isCardFieldCell = (cell, index) =>
@@ -570,6 +580,108 @@ const hydrateCardFieldValue = (cell, index) => {
     value.textContent = rawValue;
     cell.textContent = '';
     cell.appendChild(value);
+};
+
+const applyCardFieldVisibility = (cell, kind, fieldIndex) => {
+    if (kind === 'field') {
+        const nextFieldIndex = fieldIndex + 1;
+        cell.setAttribute('data-card-field-index', String(nextFieldIndex));
+        cell.setAttribute('data-card-visible', nextFieldIndex <= MAX_CARD_VISIBLE_FIELDS ? 'true' : 'false');
+        return nextFieldIndex;
+    }
+
+    cell.removeAttribute('data-card-field-index');
+    cell.removeAttribute('data-card-visible');
+    return fieldIndex;
+};
+
+const isInteractiveTarget = (target) =>
+    target instanceof Element && Boolean(target.closest(ROW_INTERACTIVE_SELECTOR));
+
+const hasTextSelection = () => {
+    if (typeof window === 'undefined' || typeof window.getSelection !== 'function') {
+        return false;
+    }
+
+    const selection = window.getSelection();
+    return Boolean(selection && String(selection).trim() !== '');
+};
+
+const hasEditToken = (value) => {
+    const normalized = normalizeComparableText(value);
+    if (normalized.includes('/edit')) return true;
+    return /(^|[^a-z])(editar|edit|alterar)([^a-z]|$)/.test(normalized);
+};
+
+const isEditTriggerElement = (element) => {
+    if (!(element instanceof HTMLElement)) return false;
+    if (element.matches('[disabled], [aria-disabled="true"]')) return false;
+    if (element.getClientRects().length === 0) return false;
+    if (element.hasAttribute('data-row-edit')) return true;
+
+    const inspectText = [
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.textContent,
+        element.getAttribute('href'),
+    ].join(' ');
+
+    if (hasEditToken(inspectText)) return true;
+
+    return Boolean(
+        element.querySelector(
+            "[data-lucide='pencil'], [data-lucide='square-pen'], [data-lucide='pen'], [class*='lucide-pencil'], [class*='pencil']",
+        ),
+    );
+};
+
+const resolveRowEditTrigger = (row) => {
+    const candidates = Array.from(row.querySelectorAll(ROW_EDIT_TRIGGER_SELECTOR));
+    return candidates.find((candidate) => isEditTriggerElement(candidate)) ?? null;
+};
+
+const clearRowClickBinding = (row) => {
+    const previousHandler = row.__veshopRowClickHandler;
+    if (typeof previousHandler === 'function') {
+        row.removeEventListener('click', previousHandler);
+    }
+
+    row.__veshopRowClickHandler = null;
+    row.__veshopRowEditTrigger = null;
+    row.removeAttribute('data-row-clickable');
+};
+
+const bindRowClickToEditTrigger = (row, editTrigger) => {
+    if (!editTrigger) {
+        clearRowClickBinding(row);
+        return;
+    }
+
+    if (row.__veshopRowClickHandler && row.__veshopRowEditTrigger === editTrigger) {
+        row.setAttribute('data-row-clickable', 'true');
+        return;
+    }
+
+    clearRowClickBinding(row);
+
+    const handler = (event) => {
+        if (event.defaultPrevented) return;
+        if (isInteractiveTarget(event.target)) return;
+        if (hasTextSelection()) return;
+
+        editTrigger.dispatchEvent(
+            new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+            }),
+        );
+    };
+
+    row.addEventListener('click', handler);
+    row.__veshopRowClickHandler = handler;
+    row.__veshopRowEditTrigger = editTrigger;
+    row.setAttribute('data-row-clickable', 'true');
 };
 
 const hydrateAdaptiveTables = () => {
@@ -599,7 +711,12 @@ const hydrateAdaptiveTables = () => {
 
             const isEmptyStateRow = cells.length === 1 && cells[0].hasAttribute('colspan');
 
-            if (isEmptyStateRow) return;
+            if (isEmptyStateRow) {
+                clearRowClickBinding(row);
+                return;
+            }
+
+            let fieldIndex = 0;
 
             cells.forEach((cell, index) => {
                 const currentLabel = String(cell.getAttribute('data-label') ?? '').trim();
@@ -609,9 +726,12 @@ const hydrateAdaptiveTables = () => {
                     cell.setAttribute('data-label', label);
                 }
 
-                setCardCellKind(cell, index, label);
+                const kind = setCardCellKind(cell, index, label);
+                fieldIndex = applyCardFieldVisibility(cell, kind, fieldIndex);
                 hydrateCardFieldValue(cell, index);
             });
+
+            bindRowClickToEditTrigger(row, resolveRowEditTrigger(row));
         });
     });
 };
