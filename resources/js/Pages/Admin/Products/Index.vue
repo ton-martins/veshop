@@ -681,7 +681,6 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                             </p>
                             <p>
                                 Limite de fotos por produto: <span class="font-semibold text-slate-800">{{ props.storage?.gallery_limit_per_product || 5 }}</span>
-                                (teto técnico {{ props.storage?.gallery_technical_limit || 5 }})
                             </p>
                         </div>
                     </section>
