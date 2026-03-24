@@ -2,7 +2,7 @@
 import Modal from '@/Components/Modal.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, router, usePage } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import {
     Boxes,
@@ -74,11 +74,11 @@ const props = defineProps({
             module_codes: [],
             date_from: '',
             date_to: '',
+            custom_file_name: '',
         }),
     },
 });
 
-const page = usePage();
 const exportProcessing = ref(false);
 const exportModalOpen = ref(false);
 const previewModalOpen = ref(false);
@@ -107,6 +107,7 @@ const exportForm = ref({
     include_details: Boolean(props.exportDefaults?.include_details ?? true),
     date_from: String(props.exportDefaults?.date_from ?? props.filters?.start_date ?? ''),
     date_to: String(props.exportDefaults?.date_to ?? props.filters?.end_date ?? ''),
+    custom_file_name: String(props.exportDefaults?.custom_file_name ?? ''),
     module_codes: Array.isArray(props.exportDefaults?.module_codes)
         ? props.exportDefaults.module_codes.map((code) => String(code))
         : [],
@@ -131,6 +132,7 @@ watch(
             include_details: Boolean(defaults?.include_details ?? true),
             date_from: String(defaults?.date_from ?? props.filters?.start_date ?? ''),
             date_to: String(defaults?.date_to ?? props.filters?.end_date ?? ''),
+            custom_file_name: String(defaults?.custom_file_name ?? ''),
             module_codes: Array.isArray(defaults?.module_codes)
                 ? defaults.module_codes.map((code) => String(code))
                 : [],
@@ -160,7 +162,6 @@ const exportFormatOptions = [
     { value: 'csv', label: 'CSV' },
 ];
 
-const flashStatus = computed(() => String(page.props?.flash?.status ?? '').trim());
 const hasSelectedModules = computed(() => exportForm.value.module_codes.length > 0);
 const hasExportModules = computed(() => Array.isArray(props.exportModules) && props.exportModules.length > 0);
 
@@ -264,6 +265,7 @@ const submitExport = () => {
         include_details: Boolean(exportForm.value.include_details),
         date_from: String(exportForm.value.date_from || '').trim() || null,
         date_to: String(exportForm.value.date_to || '').trim() || null,
+        custom_file_name: String(exportForm.value.custom_file_name || '').trim() || null,
     };
 
     router.post(route('admin.reports.exports'), payload, {
@@ -310,12 +312,6 @@ const resolveMetricValue = (card) => {
 
     <AuthenticatedLayout area="admin" header-variant="compact" header-title="Relatórios">
         <section class="space-y-4">
-            <div
-                v-if="flashStatus"
-                class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800"
-            >
-                {{ flashStatus }}
-            </div>
             <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <label class="w-full sm:max-w-xs">
@@ -511,6 +507,19 @@ const resolveMetricValue = (card) => {
                             v-model="exportForm.date_to"
                             type="date"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        >
+                    </label>
+                </div>
+
+                <div class="grid gap-3">
+                    <label class="text-xs font-medium text-slate-600">
+                        Nome do documento (opcional)
+                        <input
+                            v-model="exportForm.custom_file_name"
+                            type="text"
+                            maxlength="120"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Ex.: relatório financeiro março"
                         >
                     </label>
                 </div>

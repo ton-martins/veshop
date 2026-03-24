@@ -17,7 +17,6 @@ const props = defineProps({
 });
 
 const page = usePage();
-const flashStatus = computed(() => page.props.flash?.status ?? null);
 const generalError = computed(() => page.props.errors?.general ?? null);
 const activeNicheTab = ref(props.filters?.niche ?? props.niches?.[0]?.value ?? 'commercial');
 const saveForm = useForm({});
@@ -653,7 +652,6 @@ const closeModulesModal = () => {
         </template>
 
         <section class="space-y-4">
-            <div v-if="flashStatus" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{{ flashStatus }}</div>
             <div v-if="generalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ generalError }}</div>
 
             <section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">

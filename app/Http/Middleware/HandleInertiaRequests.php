@@ -8,6 +8,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Middleware;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
@@ -79,6 +80,7 @@ class HandleInertiaRequests extends Middleware
             ],
             'flash' => [
                 'status' => fn () => $request->session()->get('status'),
+                'status_token' => fn () => $request->session()->has('status') ? (string) Str::uuid() : null,
                 'checkout_payment' => fn () => $request->session()->get('checkout_payment'),
                 'checkout_manual' => fn () => $request->session()->get('checkout_manual'),
                 'service_booking_whatsapp_url' => fn () => $request->session()->get('service_booking_whatsapp_url'),

@@ -45,7 +45,6 @@ const props = defineProps({
 });
 
 const page = usePage();
-const flashStatus = computed(() => page.props.flash?.status ?? null);
 const generalError = computed(() => page.props.errors?.general ?? null);
 
 const filtersForm = useForm({
@@ -795,9 +794,6 @@ const destroyUser = () => {
 
     <AuthenticatedLayout area="master" header-variant="compact" header-title="Usuários" :show-table-view-toggle="false">
         <section class="space-y-4">
-            <div v-if="flashStatus" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                {{ flashStatus }}
-            </div>
             <div v-if="generalError" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                 {{ generalError }}
             </div>

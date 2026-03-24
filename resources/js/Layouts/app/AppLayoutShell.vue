@@ -131,6 +131,8 @@ const notificationItems = computed(() => {
     const items = page.props.notifications?.items;
     return Array.isArray(items) ? items : [];
 });
+const flashStatusMessage = computed(() => String(page.props.flash?.status ?? '').trim());
+const flashStatusToken = computed(() => String(page.props.flash?.status_token ?? '').trim());
 const contractorContext = computed(
     () => page.props.contractorContext ?? { current: null, available: [] },
 );
@@ -489,10 +491,14 @@ const mobileQuickLinks = computed(() => {
 const sidebarOpen = ref(false);
 const notificationsPanelOpen = ref(false);
 const sidebarCollapsed = ref(false);
+const statusToastVisible = ref(false);
+const statusToastMessage = ref('');
+const lastStatusToastFingerprint = ref('');
 const expandedGroups = ref(new Set());
 const slots = useSlots();
 const appMainRef = ref(null);
 const markNotificationsForm = useForm({ id: '' });
+let statusToastTimer = null;
 
 const TABLE_VIEW_STORAGE_KEY = 'veshop:table-view-mode';
 const allowedTableViewModes = new Set(['list', 'cards']);
@@ -504,6 +510,45 @@ const tableViewMode = ref('list');
 const hasAdaptiveTables = ref(false);
 let tableMutationObserver = null;
 let tableHydrationFrame = null;
+
+const clearStatusToastTimer = () => {
+    if (typeof window === 'undefined' || statusToastTimer === null) return;
+    window.clearTimeout(statusToastTimer);
+    statusToastTimer = null;
+};
+
+const hideStatusToast = () => {
+    clearStatusToastTimer();
+    statusToastVisible.value = false;
+};
+
+const showStatusToast = (message) => {
+    const safeMessage = String(message ?? '').trim();
+    if (!safeMessage) return;
+
+    statusToastMessage.value = safeMessage;
+    statusToastVisible.value = true;
+    clearStatusToastTimer();
+
+    if (typeof window !== 'undefined') {
+        statusToastTimer = window.setTimeout(() => {
+            statusToastVisible.value = false;
+            statusToastTimer = null;
+        }, 4200);
+    }
+};
+
+const flashStatusFingerprint = computed(() => {
+    const message = flashStatusMessage.value;
+    if (!message) return '';
+
+    const token = flashStatusToken.value;
+    if (token) {
+        return `${token}:${message}`;
+    }
+
+    return `${String(page.component ?? '')}:${String(page.url ?? '')}:${message}`;
+});
 
 const normalizeTableViewMode = (value) => {
     const normalized = String(value ?? '')
@@ -890,6 +935,19 @@ watch(tableViewMode, (mode) => {
 });
 
 watch(
+    flashStatusFingerprint,
+    (fingerprint) => {
+        if (!fingerprint || fingerprint === lastStatusToastFingerprint.value) {
+            return;
+        }
+
+        lastStatusToastFingerprint.value = fingerprint;
+        showStatusToast(flashStatusMessage.value);
+    },
+    { immediate: true },
+);
+
+watch(
     () => page.url,
     () => {
         scheduleAdaptiveTablesHydration();
@@ -904,6 +962,8 @@ watch(notificationsEnabled, (enabled) => {
 });
 
 onBeforeUnmount(() => {
+    clearStatusToastTimer();
+
     if (tableMutationObserver) {
         tableMutationObserver.disconnect();
         tableMutationObserver = null;
@@ -1451,6 +1511,28 @@ const handleGlobalKeydown = (event) => {
             </div>
         </template>
 
+        <transition name="status-toast">
+            <div
+                v-if="statusToastVisible"
+                class="fixed right-4 top-4 z-[70] w-[min(92vw,420px)] rounded-xl border border-emerald-200 bg-white px-3 py-2.5 shadow-lg shadow-emerald-100/70"
+                role="status"
+                aria-live="polite"
+            >
+                <div class="flex items-start gap-2">
+                    <div class="mt-0.5 h-2 w-2 rounded-full bg-emerald-500" />
+                    <p class="min-w-0 flex-1 text-sm font-medium text-slate-700">{{ statusToastMessage }}</p>
+                    <button
+                        type="button"
+                        class="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                        aria-label="Fechar notificação"
+                        @click="hideStatusToast"
+                    >
+                        <X class="h-4 w-4" />
+                    </button>
+                </div>
+            </div>
+        </transition>
+
         <transition name="drawer">
             <div
                 v-if="notificationsEnabled && notificationsPanelOpen"
@@ -1489,3 +1571,16 @@ const handleGlobalKeydown = (event) => {
         </button>
     </div>
 </template>
+
+<style scoped>
+.status-toast-enter-active,
+.status-toast-leave-active {
+    transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.status-toast-enter-from,
+.status-toast-leave-to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+}
+</style>

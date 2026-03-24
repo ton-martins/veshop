@@ -165,12 +165,29 @@ class AdminContractorBrandingService
 
         return collect($preferred)
             ->filter(static fn (string $timezone): bool => in_array($timezone, DateTimeZone::listIdentifiers(), true))
-            ->map(static fn (string $timezone): array => [
+            ->map(fn (string $timezone): array => [
                 'value' => $timezone,
-                'label' => str_replace('_', ' ', $timezone),
+                'label' => $this->formatTimezoneLabel($timezone),
             ])
             ->values()
             ->all();
+    }
+
+    private function formatTimezoneLabel(string $timezone): string
+    {
+        $labels = [
+            'America/Sao_Paulo' => 'América/São Paulo',
+            'America/Belem' => 'América/Belém',
+            'America/Cuiaba' => 'América/Cuiabá',
+        ];
+
+        if (array_key_exists($timezone, $labels)) {
+            return $labels[$timezone];
+        }
+
+        $base = str_replace('_', ' ', $timezone);
+
+        return str_replace('America/', 'América/', $base);
     }
 
     private function resolveStorageLimitGb(array $settings): ?int

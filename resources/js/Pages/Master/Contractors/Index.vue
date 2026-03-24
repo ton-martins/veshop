@@ -6,7 +6,7 @@ import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
-import { Head, router, useForm, usePage } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import { Building2, CircleCheckBig, Store, Briefcase, Search, Filter, Plus, Pencil, Trash2 } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
 
@@ -36,9 +36,6 @@ const props = defineProps({
         default: () => [],
     },
 });
-
-const page = usePage();
-const flashStatus = computed(() => page.props.flash?.status ?? null);
 
 const filterForm = useForm({
     search: props.filters?.search ?? '',
@@ -515,10 +512,6 @@ const formatMoney = (value) => {
 
     <AuthenticatedLayout area="master" header-variant="compact" header-title="Contratantes" :show-table-view-toggle="false">
         <section class="space-y-4">
-            <div v-if="flashStatus" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                {{ flashStatus }}
-            </div>
-
             <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <article v-for="stat in statsCards" :key="stat.key" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div class="flex items-start justify-between gap-3">

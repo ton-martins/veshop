@@ -5,7 +5,7 @@ import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
 import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { Head, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import { Plus, PlugZap, ShieldCheck, CreditCard, HandCoins, Pencil, Trash2 } from 'lucide-vue-next';
 
@@ -16,8 +16,6 @@ const props = defineProps({
     },
 });
 
-const page = usePage();
-const statusMessage = computed(() => page.props.flash?.status ?? null);
 const gateways = computed(() => props.paymentConfig?.gateways ?? []);
 const methods = computed(() => props.paymentConfig?.methods ?? []);
 const providerOptions = computed(() => props.paymentConfig?.provider_options ?? []);
@@ -214,7 +212,6 @@ const removeMethod = () => {
 <template>
     <AuthenticatedLayout area="admin" header-variant="compact" header-title="Pagamentos">
         <Head title="Pagamentos" />
-        <div v-if="statusMessage" class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ statusMessage }}</div>
 
         <section class="space-y-4">
             <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

@@ -2,7 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { Head, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { Store, Truck } from 'lucide-vue-next';
 
@@ -60,9 +60,6 @@ const normalizeBusinessHours = (value) => {
     return base;
 };
 
-const page = usePage();
-const statusMessage = computed(() => page.props.flash?.status ?? null);
-
 const allTabs = [
     { key: 'vitrine', label: 'Vitrine', icon: Store },
     { key: 'frete', label: 'Frete', icon: Truck },
@@ -91,6 +88,7 @@ const setActiveTab = (tab) => {
 };
 
 const storefrontForm = useForm({
+    slug: '',
     store_online: true,
     offline_message: '',
     business_hours: emptyBusinessHours(),
@@ -122,6 +120,7 @@ const hydrateStorefront = () => {
     const hero = storefront.hero ?? {};
     const promotions = storefront.promotions ?? {};
     const catalog = storefront.catalog ?? {};
+    storefrontForm.slug = String(props.contractor?.slug ?? '').trim();
 
     storefrontForm.store_online = storefront.store_online ?? true;
     storefrontForm.offline_message = storefront.offline_message ?? '';
@@ -154,6 +153,12 @@ const hydrateShipping = () => {
 
 watch(() => props.storefront, hydrateStorefront, { deep: true, immediate: true });
 watch(() => props.shopShipping, hydrateShipping, { deep: true, immediate: true });
+watch(
+    () => props.contractor?.slug,
+    (slug) => {
+        storefrontForm.slug = String(slug ?? '').trim();
+    },
+);
 
 const WEEKDAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
 const DEFAULT_BUSINESS_OPEN = '08:00';
@@ -257,6 +262,23 @@ const promotionErrorMessage = computed(() =>
 );
 
 const previewBrandName = computed(() => props.contractor?.brand_name || props.contractor?.name || 'Loja');
+const previewSlug = computed(() => String(storefrontForm.slug ?? props.contractor?.slug ?? '').trim().toLowerCase());
+const previewShopPath = computed(() => `/shop/${previewSlug.value || String(props.contractor?.slug ?? '').trim()}`);
+const previewShopUrl = computed(() => {
+    const slug = previewSlug.value || String(props.contractor?.slug ?? '').trim();
+    if (!slug) return '';
+
+    const original = String(props.shop_url ?? '').trim();
+    if (original.includes('/shop/')) {
+        return `${original.split('/shop/')[0]}/shop/${slug}`;
+    }
+
+    if (typeof window !== 'undefined') {
+        return `${window.location.origin}/shop/${slug}`;
+    }
+
+    return original || `/shop/${slug}`;
+});
 const activeBlocksCount = computed(() =>
     [storefrontForm.hero_enabled, storefrontForm.promotions_enabled, storefrontForm.categories_enabled, storefrontForm.catalog_enabled].filter(Boolean).length,
 );
@@ -342,6 +364,12 @@ const submitStorefront = () => {
         ...data,
         _method: 'put',
         section: 'storefront',
+        slug: String(data.slug || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9-]/g, '-')
+            .replace(/-{2,}/g, '-')
+            .replace(/^-+|-+$/g, ''),
         banners_enabled: false,
         banners: [],
         promotion_product_ids: (data.promotion_product_ids ?? [])
@@ -381,19 +409,15 @@ const submitShipping = () => {
     <AuthenticatedLayout area="admin" header-variant="compact" header-title="Loja Virtual">
         <Head title="Loja Virtual" />
 
-        <div v-if="statusMessage" class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {{ statusMessage }}
-        </div>
-
         <section class="space-y-4">
             <section class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Loja pública</p>
                     <p class="mt-2 text-sm font-semibold text-slate-900">{{ previewBrandName }}</p>
-                    <p class="mt-1 text-xs text-slate-500">/shop/{{ props.contractor?.slug }}</p>
+                    <p class="mt-1 text-xs text-slate-500">{{ previewShopPath }}</p>
                     <a
-                        v-if="shop_url"
-                        :href="shop_url"
+                        v-if="previewShopUrl"
+                        :href="previewShopUrl"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="mt-3 inline-flex rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
@@ -434,6 +458,22 @@ const submitShipping = () => {
                         <p class="text-sm font-semibold text-slate-800">{{ currentTemplateMeta?.label || 'Modelo padrão' }}</p>
                         <span class="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">Somente leitura</span>
                     </div>
+                </section>
+
+                <section class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Slug da loja virtual</label>
+                    <div class="mt-2 flex items-center overflow-hidden rounded-lg border border-slate-200 bg-white">
+                        <span class="border-r border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">/shop/</span>
+                        <input
+                            v-model="storefrontForm.slug"
+                            type="text"
+                            class="w-full border-0 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-0"
+                            placeholder="minha-loja"
+                            autocomplete="off"
+                        >
+                    </div>
+                    <p class="mt-2 text-[11px] text-slate-500">Use apenas letras minúsculas, números e hífen.</p>
+                    <p v-if="storefrontForm.errors.slug" class="mt-1 text-[11px] text-rose-600">{{ storefrontForm.errors.slug }}</p>
                 </section>
 
                 <section class="grid gap-3 md:grid-cols-2">

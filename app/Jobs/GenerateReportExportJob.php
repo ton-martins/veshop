@@ -110,12 +110,20 @@ class GenerateReportExportJob implements ShouldQueue
         Storage::disk($disk)->makeDirectory($directory);
 
         $extension = $this->resolveExtension($format);
-        $filename = sprintf(
+        $defaultFilename = sprintf(
             'relatorio-%d-%d-%s.%s',
             (int) $export->contractor_id,
             (int) $export->id,
             now()->format('Ymd-His'),
             $extension
+        );
+        $filename = $this->resolveOutputFilename(
+            disk: $disk,
+            directory: $directory,
+            filters: $filters,
+            defaultFilename: $defaultFilename,
+            extension: $extension,
+            exportId: (int) $export->id,
         );
         $path = "{$directory}/{$filename}";
 
@@ -222,6 +230,52 @@ class GenerateReportExportJob implements ShouldQueue
             ReportExport::FORMAT_EXCEL => 'xls',
             default => 'csv',
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function resolveOutputFilename(
+        string $disk,
+        string $directory,
+        array $filters,
+        string $defaultFilename,
+        string $extension,
+        int $exportId
+    ): string {
+        $baseName = $this->sanitizeCustomFileName($filters['custom_file_name'] ?? null);
+        if ($baseName === null) {
+            return $defaultFilename;
+        }
+
+        $filename = "{$baseName}.{$extension}";
+        if (Storage::disk($disk)->exists("{$directory}/{$filename}")) {
+            $filename = "{$baseName}-{$exportId}.{$extension}";
+        }
+
+        return $filename;
+    }
+
+    private function sanitizeCustomFileName(mixed $value): ?string
+    {
+        $raw = trim((string) ($value ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        $withoutExtension = preg_replace('/\.[a-z0-9]{2,5}$/iu', '', $raw);
+        $candidate = is_string($withoutExtension) ? $withoutExtension : $raw;
+
+        $candidate = preg_replace('/[\\\\\/:"*?<>|]+/u', '', $candidate);
+        $candidate = is_string($candidate) ? $candidate : '';
+        $candidate = preg_replace('/\s+/u', ' ', $candidate);
+        $candidate = is_string($candidate) ? trim($candidate, " .\t\n\r\0\x0B") : '';
+
+        if ($candidate === '') {
+            return null;
+        }
+
+        return mb_substr($candidate, 0, 120);
     }
 
     /**

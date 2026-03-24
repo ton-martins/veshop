@@ -142,6 +142,7 @@ class AdminReportService
                 'module_codes' => $defaultModuleCodes,
                 'date_from' => $period->startDate(),
                 'date_to' => $period->endDate(),
+                'custom_file_name' => '',
             ],
         ]);
     }
@@ -158,6 +159,7 @@ class AdminReportService
             'date_from' => ['nullable', 'date_format:Y-m-d'],
             'date_to' => ['nullable', 'date_format:Y-m-d'],
             'include_details' => ['nullable', 'boolean'],
+            'custom_file_name' => ['nullable', 'string', 'max:120'],
         ]);
 
         /** @var User|null $user */
@@ -183,6 +185,8 @@ class AdminReportService
             $requestedModuleCodes = $this->resolveDefaultModuleCodes($contractor, $this->resolveExportModules($contractor));
         }
 
+        $customFileName = $this->sanitizeCustomFileName($validated['custom_file_name'] ?? null);
+
         $export = ReportExport::query()->create([
             'contractor_id' => $contractor->id,
             'requested_by_user_id' => $user?->id,
@@ -196,6 +200,7 @@ class AdminReportService
                 'date_from' => $validated['date_from'] ?? null,
                 'date_to' => $validated['date_to'] ?? null,
                 'include_details' => (bool) ($validated['include_details'] ?? true),
+                'custom_file_name' => $customFileName,
             ],
         ]);
 
@@ -306,6 +311,28 @@ class AdminReportService
         }
 
         return ReportExport::FORMAT_CSV;
+    }
+
+    private function sanitizeCustomFileName(mixed $value): ?string
+    {
+        $raw = trim((string) ($value ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        $withoutExtension = preg_replace('/\.[a-z0-9]{2,5}$/iu', '', $raw);
+        $candidate = is_string($withoutExtension) ? $withoutExtension : $raw;
+
+        $candidate = preg_replace('/[\\\\\/:"*?<>|]+/u', '', $candidate);
+        $candidate = is_string($candidate) ? $candidate : '';
+        $candidate = preg_replace('/\s+/u', ' ', $candidate);
+        $candidate = is_string($candidate) ? trim($candidate, " .\t\n\r\0\x0B") : '';
+
+        if ($candidate === '') {
+            return null;
+        }
+
+        return mb_substr($candidate, 0, 120);
     }
 
     private function statusLabel(string $status): string

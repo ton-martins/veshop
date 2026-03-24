@@ -1,7 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import BrandingImageUploader from '@/Components/BrandingImageUploader.vue';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { Head, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
@@ -9,9 +9,6 @@ const props = defineProps({
     defaults: { type: Object, default: () => ({}) },
     storageConfigured: { type: Boolean, default: true },
 });
-
-const page = usePage();
-const statusMessage = computed(() => page.props.flash?.status ?? null);
 
 const form = useForm({
     name: '',
@@ -125,13 +122,6 @@ const submit = () => {
     <AuthenticatedLayout area="master" header-variant="compact" header-title="Identidade visual do sistema">
         <Head title="Identidade visual do sistema" />
 
-        <div
-            v-if="statusMessage"
-            class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
-        >
-            {{ statusMessage }}
-        </div>
-
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,360px)]">
             <form class="space-y-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6" @submit.prevent="submit">
                 <section class="space-y-4">
@@ -234,7 +224,7 @@ const submit = () => {
                                 label="Ícone do sistema"
                                 :help-text="storageConfigured ? 'Formato quadrado.' : 'Configure o armazenamento para upload.'"
                                 :initial-preview="iconPreview"
-                                :aspect-ratio="1"
+                                :aspect-ratio="3.5"
                                 :disabled="!storageConfigured"
                                 @change="setImageChange('icon', 'remove_icon', iconPreview)"
                             />
@@ -254,7 +244,7 @@ const submit = () => {
                                 label="Favicon"
                                 :help-text="storageConfigured ? 'Sugestão: 48x48px ou .ico.' : 'Configure o armazenamento para upload.'"
                                 :initial-preview="faviconPreview"
-                                :aspect-ratio="1"
+                                :aspect-ratio="3.5"
                                 accept=".ico,image/png,image/webp,image/svg+xml"
                                 :disabled="!storageConfigured"
                                 @change="setImageChange('favicon', 'remove_favicon', faviconPreview)"

@@ -12,12 +12,14 @@ use App\Models\ProductImage;
 use App\Models\ProductVariation;
 use App\Services\ContractorStorageQuotaService;
 use App\Services\ProductImageProcessor;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -189,7 +191,7 @@ class AdminProductService
             });
         } catch (\Throwable $exception) {
             $this->cleanupCreatedPaths($createdPaths);
-            throw $exception;
+            $this->rethrowProductPersistenceException($exception);
         }
 
         return back()->with('status', 'Produto criado com sucesso.');
@@ -227,7 +229,7 @@ class AdminProductService
             });
         } catch (\Throwable $exception) {
             $this->cleanupCreatedPaths($createdPaths);
-            throw $exception;
+            $this->rethrowProductPersistenceException($exception);
         }
 
         return back()->with('status', 'Produto atualizado com sucesso.');
@@ -584,6 +586,7 @@ class AdminProductService
                 }
             }
 
+            $currentSortOrder = $sortOrder++;
             $payload = [
                 'contractor_id' => $contractor->id,
                 'product_id' => $product->id,
@@ -596,17 +599,35 @@ class AdminProductService
                 'sale_price' => round((float) ($row['sale_price'] ?? 0), 2),
                 'stock_quantity' => max(0, (int) ($row['stock_quantity'] ?? 0)),
                 'is_active' => (bool) ($row['is_active'] ?? true),
-                'sort_order' => $sortOrder++,
+                'sort_order' => $currentSortOrder,
             ];
 
             if ($variation) {
-                $variation->fill($payload)->save();
+                try {
+                    $variation->fill($payload)->save();
+                } catch (QueryException $exception) {
+                    if (! $this->isVariationSkuNullConstraint($exception) || ($payload['sku'] ?? null) !== null) {
+                        throw $exception;
+                    }
+
+                    $payload['sku'] = $this->generateFallbackVariationSku($contractor, $product, $currentSortOrder);
+                    $variation->fill($payload)->save();
+                }
                 $keptIds[] = (int) $variation->id;
 
                 continue;
             }
 
-            $created = ProductVariation::query()->create($payload);
+            try {
+                $created = ProductVariation::query()->create($payload);
+            } catch (QueryException $exception) {
+                if (! $this->isVariationSkuNullConstraint($exception) || ($payload['sku'] ?? null) !== null) {
+                    throw $exception;
+                }
+
+                $payload['sku'] = $this->generateFallbackVariationSku($contractor, $product, $currentSortOrder);
+                $created = ProductVariation::query()->create($payload);
+            }
             $keptIds[] = (int) $created->id;
         }
 
@@ -691,6 +712,57 @@ class AdminProductService
                 Storage::disk('public')->delete($path);
             }
         }
+    }
+
+    private function rethrowProductPersistenceException(\Throwable $exception): never
+    {
+        if ($exception instanceof QueryException && $this->isVariationSkuUniqueConstraint($exception)) {
+            throw ValidationException::withMessages([
+                'variations' => 'Já existe código de variação em uso para este contratante.',
+            ]);
+        }
+
+        throw $exception;
+    }
+
+    private function isVariationSkuUniqueConstraint(QueryException $exception): bool
+    {
+        $message = mb_strtolower((string) $exception->getMessage());
+
+        if (str_contains($message, 'product_variations_contractor_sku_unique')) {
+            return true;
+        }
+
+        return str_contains($message, 'product_variations')
+            && str_contains($message, 'sku')
+            && str_contains($message, 'duplicate');
+    }
+
+    private function isVariationSkuNullConstraint(QueryException $exception): bool
+    {
+        $message = mb_strtolower((string) $exception->getMessage());
+
+        if (! str_contains($message, 'product_variations') || ! str_contains($message, 'sku')) {
+            return false;
+        }
+
+        return str_contains($message, 'cannot be null')
+            || str_contains($message, 'doesn\'t have a default value')
+            || str_contains($message, 'not null')
+            || str_contains($message, 'null value');
+    }
+
+    private function generateFallbackVariationSku(Contractor $contractor, Product $product, int $sortOrder): string
+    {
+        $seed = sprintf(
+            'VAR-%d-%d-%d-%s',
+            (int) $contractor->id,
+            (int) $product->id,
+            max(1, $sortOrder + 1),
+            Str::upper(Str::random(6))
+        );
+
+        return mb_substr($seed, 0, 80);
     }
 
     /**

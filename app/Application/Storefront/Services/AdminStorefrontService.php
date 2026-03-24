@@ -11,6 +11,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -134,7 +135,21 @@ class AdminStorefrontService
 
     private function updateStorefrontSection(Request $request, Contractor $contractor): RedirectResponse
     {
+        $normalizedSlug = Str::slug((string) $request->input('slug', $contractor->slug));
+        if ($normalizedSlug === '') {
+            $normalizedSlug = (string) $contractor->slug;
+        }
+        $request->merge(['slug' => $normalizedSlug]);
+
         $validated = $request->validate([
+            'slug' => [
+                'required',
+                'string',
+                'min:3',
+                'max:80',
+                'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/',
+                Rule::unique('contractors', 'slug')->ignore($contractor->id),
+            ],
             'template' => ['nullable', Rule::in(StorefrontSettings::templates())],
             'store_online' => ['nullable', 'boolean'],
             'offline_message' => ['nullable', 'string', 'max:240'],
@@ -283,6 +298,7 @@ class AdminStorefrontService
         }
 
         $contractor->settings = $settings;
+        $contractor->slug = (string) $validated['slug'];
         $contractor->save();
 
         return back()->with('status', 'Configurações da vitrine atualizadas com sucesso.');

@@ -6,7 +6,7 @@ import UiSelect from '@/Components/App/UiSelect.vue';
 import Modal from '@/Components/Modal.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { Head, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { LayoutDashboard, BarChart3, UserX, UserCheck } from 'lucide-vue-next';
 
@@ -20,9 +20,6 @@ const props = defineProps({
     storageUsage: { type: Object, default: () => ({}) },
     supportAccess: { type: Object, default: () => ({}) },
 });
-
-const page = usePage();
-const statusMessage = computed(() => page.props.flash?.status ?? null);
 
 const form = useForm({
     brand_name: '',
@@ -205,13 +202,6 @@ const submitSupportConfirmation = () => {
     <AuthenticatedLayout area="admin" header-variant="compact" header-title="Branding">
         <Head title="Branding" />
 
-        <div
-            v-if="statusMessage"
-            class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
-        >
-            {{ statusMessage }}
-        </div>
-
         <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
             <form
                 class="overflow-hidden rounded-3xl border border-emerald-100 bg-white/95 shadow-sm"
@@ -296,7 +286,7 @@ const submitSupportConfirmation = () => {
                                 label="Avatar/Ícone"
                                 :help-text="props.storageConfigured ? 'Formato quadrado.' : 'Configure o storage para upload.'"
                                 :initial-preview="avatarPreview"
-                                :aspect-ratio="1"
+                                :aspect-ratio="3.6"
                                 :disabled="!props.storageConfigured"
                                 @change="handleAvatarChange"
                             />
