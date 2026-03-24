@@ -181,6 +181,7 @@ const editingUser = ref(null);
 const showDeleteModal = ref(false);
 const userToDelete = ref(null);
 const currentStep = ref(1);
+const wizardValidationRequested = ref(false);
 const jsonError = ref('');
 const cepLookupLoading = ref(false);
 const cepLookupError = ref('');
@@ -333,28 +334,149 @@ const formatCepMask = (value) => {
 const isValidCepMaskBR = (value) => /^\d{5}-\d{3}$/.test(String(value ?? '').trim());
 
 const formattedCep = computed(() => formatCepMask(addressForm.value.cep));
+const isBasicEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value ?? '').trim());
 
-const canAdvance = computed(() => {
-    if (currentStep.value === 1) {
-        return String(userForm.name ?? '').trim() !== '' && String(userForm.email ?? '').trim() !== '';
+const isWizardStepValid = (stepId) => {
+    if (stepId === 1) {
+        const name = String(userForm.name ?? '').trim();
+        const email = String(userForm.email ?? '').trim();
+        const cpf = String(userForm.cpf ?? '').trim();
+        const phone = String(userForm.phone ?? '').trim();
+
+        return name !== ''
+            && email !== ''
+            && isBasicEmail(email)
+            && (!cpf || isValidCpfMaskBR(cpf))
+            && (!phone || isValidPhoneMaskBR(phone));
     }
 
-    if (currentStep.value === 2) {
+    if (stepId === 2) {
         const hasRole = String(userForm.role ?? '').trim() !== '';
-        if (isEditing.value) return hasRole;
-
         const password = String(userForm.password ?? '');
         const passwordConfirmation = String(userForm.password_confirmation ?? '');
+        const hasPasswordInput = password !== '' || passwordConfirmation !== '';
 
-        return hasRole && password.length >= 8 && passwordConfirmation.length >= 8;
+        if (isEditing.value && !hasPasswordInput) {
+            return hasRole;
+        }
+
+        return hasRole
+            && password.length >= 8
+            && passwordConfirmation.length >= 8
+            && password === passwordConfirmation;
     }
 
-    if (currentStep.value === 3) {
-        return Array.isArray(userForm.contractor_ids) && userForm.contractor_ids.length > 0;
+    if (stepId === 3) {
+        const hasContractor = Array.isArray(userForm.contractor_ids) && userForm.contractor_ids.length > 0;
+        const cep = String(addressForm.value.cep ?? '').trim();
+        const cepIsValid = !cep || isValidCepMaskBR(cep);
+
+        return hasContractor && cepIsValid;
     }
 
     return true;
-});
+};
+
+const clearStepLocalErrors = (stepId) => {
+    if (stepId === 1) {
+        userForm.clearErrors('name', 'email', 'cpf', 'phone');
+        return;
+    }
+
+    if (stepId === 2) {
+        userForm.clearErrors('role', 'password', 'password_confirmation');
+        return;
+    }
+
+    if (stepId === 3) {
+        userForm.clearErrors('contractor_ids', 'address.cep');
+    }
+};
+
+const applyStepLocalErrors = (stepId) => {
+    if (stepId === 1) {
+        const name = String(userForm.name ?? '').trim();
+        const email = String(userForm.email ?? '').trim();
+        const cpf = String(userForm.cpf ?? '').trim();
+        const phone = String(userForm.phone ?? '').trim();
+
+        if (name === '') userForm.setError('name', 'Informe o nome completo.');
+        if (email === '') userForm.setError('email', 'Informe o e-mail.');
+        if (email !== '' && !isBasicEmail(email)) userForm.setError('email', 'Informe um e-mail válido.');
+        if (cpf && !isValidCpfMaskBR(cpf)) userForm.setError('cpf', 'Informe o CPF no formato 000.000.000-00.');
+        if (phone && !isValidPhoneMaskBR(phone)) userForm.setError('phone', 'Informe o telefone no formato (11) 99999-9999.');
+        return;
+    }
+
+    if (stepId === 2) {
+        const hasRole = String(userForm.role ?? '').trim() !== '';
+        const password = String(userForm.password ?? '');
+        const passwordConfirmation = String(userForm.password_confirmation ?? '');
+        const hasPasswordInput = password !== '' || passwordConfirmation !== '';
+
+        if (!hasRole) userForm.setError('role', 'Selecione o perfil do usuário.');
+
+        if (!isEditing.value || hasPasswordInput) {
+            if (password.length < 8) userForm.setError('password', 'A senha deve ter ao menos 8 caracteres.');
+            if (passwordConfirmation.length < 8) userForm.setError('password_confirmation', 'Confirme a senha com ao menos 8 caracteres.');
+            if (password.length >= 8 && passwordConfirmation.length >= 8 && password !== passwordConfirmation) {
+                userForm.setError('password_confirmation', 'A confirmação de senha deve ser igual à senha.');
+            }
+        }
+        return;
+    }
+
+    if (stepId === 3) {
+        const hasContractor = Array.isArray(userForm.contractor_ids) && userForm.contractor_ids.length > 0;
+        const cep = String(addressForm.value.cep ?? '').trim();
+
+        if (!hasContractor) userForm.setError('contractor_ids', 'Selecione ao menos um contratante.');
+        if (cep && !isValidCepMaskBR(cep)) userForm.setError('address.cep', 'Informe o CEP no formato 00000-000.');
+    }
+};
+
+const validateCreateStepAndMark = (stepId) => {
+    if (isEditing.value) return true;
+
+    wizardValidationRequested.value = true;
+    clearStepLocalErrors(stepId);
+
+    if (isWizardStepValid(stepId)) return true;
+
+    applyStepLocalErrors(stepId);
+    return false;
+};
+
+const userStepErrorKeyMap = {
+    1: ['name', 'email', 'cpf', 'phone'],
+    2: ['role', 'password', 'password_confirmation', 'job_title', 'is_active'],
+    3: ['contractor_ids', 'avatar', 'avatar_url', 'address'],
+    4: [],
+};
+
+const hasFormErrorForStep = (stepId) => {
+    const keys = Object.keys(userForm.errors ?? {});
+    const prefixes = userStepErrorKeyMap[stepId] ?? [];
+
+    return keys.some((key) => prefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}.`)));
+};
+
+const shouldShowStepErrors = computed(() =>
+    isEditing.value
+    || wizardValidationRequested.value
+    || Object.keys(userForm.errors ?? {}).length > 0,
+);
+
+const wizardStepErrors = computed(() =>
+    wizardSteps.map((step) => {
+        if (!shouldShowStepErrors.value) return false;
+
+        const checkLocalValidation = isEditing.value || step.id <= currentStep.value;
+        const hasLocalError = checkLocalValidation ? !isWizardStepValid(step.id) : false;
+
+        return hasLocalError || hasFormErrorForStep(step.id);
+    }),
+);
 
 onBeforeUnmount(() => {
     clearAvatarUploadPreview();
@@ -417,6 +539,7 @@ const buildAddressPayload = () => {
 
 const resetWizard = () => {
     currentStep.value = 1;
+    wizardValidationRequested.value = false;
     cepLookupError.value = '';
     jsonError.value = '';
     avatarImageFailed.value = false;
@@ -478,12 +601,25 @@ const closeModal = () => {
 
 const goToStep = (stepId) => {
     if (stepId < 1 || stepId > wizardSteps.length) return;
+
+    if (isEditing.value || stepId <= currentStep.value) {
+        currentStep.value = stepId;
+        return;
+    }
+
+    for (let nextStep = currentStep.value; nextStep < stepId; nextStep += 1) {
+        if (!validateCreateStepAndMark(nextStep)) {
+            currentStep.value = nextStep;
+            return;
+        }
+    }
+
     currentStep.value = stepId;
 };
 
 const goNextStep = () => {
     if (currentStep.value >= wizardSteps.length) return;
-    if (!canAdvance.value) return;
+    if (!validateCreateStepAndMark(currentStep.value)) return;
     currentStep.value += 1;
 };
 
@@ -535,7 +671,26 @@ const lookupCep = async () => {
     }
 };
 
+const validateAllWizardStepsBeforeSubmit = () => {
+    wizardValidationRequested.value = true;
+
+    for (const step of [1, 2, 3]) {
+        clearStepLocalErrors(step);
+    }
+
+    for (const step of [1, 2, 3]) {
+        if (isWizardStepValid(step)) continue;
+        applyStepLocalErrors(step);
+        currentStep.value = step;
+        return false;
+    }
+
+    return true;
+};
+
 const submitUser = () => {
+    if (!validateAllWizardStepsBeforeSubmit()) return;
+
     jsonError.value = '';
     cepLookupError.value = '';
     userForm.clearErrors('cpf', 'phone');
@@ -827,9 +982,23 @@ const destroyUser = () => {
                         :key="`wizard-step-${step.id}`"
                         type="button"
                         class="flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition"
-                        :class="step.id === currentStep ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'"
+                        :class="
+                            wizardStepErrors[step.id - 1] && step.id === currentStep
+                                ? 'border-rose-600 bg-rose-600 text-white'
+                                : wizardStepErrors[step.id - 1]
+                                    ? 'border-rose-200 bg-rose-50 text-rose-700'
+                                    : step.id === currentStep
+                                        ? 'border-slate-900 bg-slate-900 text-white'
+                                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                        "
                         @click="goToStep(step.id)"
                     >
+                        <span
+                            v-if="wizardStepErrors[step.id - 1]"
+                            class="inline-block h-2 w-2 flex-none rounded-full"
+                            :class="step.id === currentStep ? 'bg-white' : 'bg-rose-500'"
+                            aria-hidden="true"
+                        />
                         <component :is="step.icon" class="h-4 w-4" />
                         {{ step.label }}
                     </button>
@@ -935,6 +1104,7 @@ const destroyUser = () => {
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                             placeholder="Repita a senha"
                         >
+                        <InputError :message="userForm.errors.password_confirmation" class="mt-1" />
                     </div>
 
                     <div class="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -1108,6 +1278,7 @@ const destroyUser = () => {
                                     </button>
                                 </div>
                                 <p class="mt-1 text-[11px] text-slate-500">CEP atual: {{ formattedCep || '-' }}</p>
+                                <InputError :message="userForm.errors['address.cep']" class="mt-1" />
                             </div>
 
                             <div class="md:col-span-2">
@@ -1241,7 +1412,6 @@ const destroyUser = () => {
                             v-if="!isLastStep"
                             type="button"
                             class="inline-flex items-center gap-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                            :disabled="!canAdvance"
                             @click="goNextStep"
                         >
                             Próximo
@@ -1273,4 +1443,3 @@ const destroyUser = () => {
         />
     </AuthenticatedLayout>
 </template>
-

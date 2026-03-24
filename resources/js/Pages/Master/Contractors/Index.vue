@@ -130,6 +130,7 @@ const showDeleteModal = ref(false);
 const contractorToDelete = ref(null);
 const contractorWizardSteps = ['Dados do contratante', 'Plano de assinatura'];
 const contractorWizardStep = ref(1);
+const contractorWizardValidationRequested = ref(false);
 
 const contractorForm = useForm({
     name: '',
@@ -229,6 +230,113 @@ const planFormOptions = computed(() => [
 ]);
 const isEditing = computed(() => Boolean(editingContractor.value?.id));
 
+const isBasicEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value ?? '').trim());
+
+const isContractorStepValid = (stepNumber) => {
+    if (stepNumber === 1) {
+        return String(contractorForm.name ?? '').trim() !== ''
+            && String(contractorForm.email ?? '').trim() !== ''
+            && isBasicEmail(contractorForm.email)
+            && String(contractorForm.timezone ?? '').trim() !== ''
+            && String(contractorForm.business_niche ?? '').trim() !== ''
+            && String(contractorForm.business_type ?? '').trim() !== '';
+    }
+
+    if (stepNumber === 2) {
+        const startsAt = String(contractorForm.contract_starts_at ?? '').trim();
+        const endsAt = String(contractorForm.contract_ends_at ?? '').trim();
+
+        if (endsAt && !startsAt) return false;
+        if (startsAt && endsAt && endsAt < startsAt) return false;
+    }
+
+    return true;
+};
+
+const clearContractorStepLocalErrors = (stepNumber) => {
+    if (stepNumber === 1) {
+        contractorForm.clearErrors('name', 'email', 'timezone', 'business_niche', 'business_type');
+        return;
+    }
+
+    if (stepNumber === 2) {
+        contractorForm.clearErrors('contract_starts_at', 'contract_ends_at');
+    }
+};
+
+const applyContractorStepLocalErrors = (stepNumber) => {
+    if (stepNumber === 1) {
+        const name = String(contractorForm.name ?? '').trim();
+        const email = String(contractorForm.email ?? '').trim();
+        const timezone = String(contractorForm.timezone ?? '').trim();
+        const niche = String(contractorForm.business_niche ?? '').trim();
+        const businessType = String(contractorForm.business_type ?? '').trim();
+
+        if (name === '') contractorForm.setError('name', 'Informe o nome do contratante.');
+        if (email === '') contractorForm.setError('email', 'Informe o e-mail do contratante.');
+        if (email !== '' && !isBasicEmail(email)) contractorForm.setError('email', 'Informe um e-mail válido.');
+        if (timezone === '') contractorForm.setError('timezone', 'Selecione o fuso horário.');
+        if (niche === '') contractorForm.setError('business_niche', 'Selecione o nicho.');
+        if (businessType === '') contractorForm.setError('business_type', 'Selecione o tipo de contratante.');
+        return;
+    }
+
+    if (stepNumber === 2) {
+        const startsAt = String(contractorForm.contract_starts_at ?? '').trim();
+        const endsAt = String(contractorForm.contract_ends_at ?? '').trim();
+
+        if (endsAt && !startsAt) {
+            contractorForm.setError('contract_starts_at', 'Informe o início do contrato para usar término.');
+        }
+        if (startsAt && endsAt && endsAt < startsAt) {
+            contractorForm.setError('contract_ends_at', 'O término deve ser igual ou posterior ao início.');
+        }
+    }
+};
+
+const validateCurrentContractorStepForCreate = () => {
+    if (isEditing.value) return true;
+
+    const step = contractorWizardStep.value;
+    contractorWizardValidationRequested.value = true;
+    clearContractorStepLocalErrors(step);
+
+    if (isContractorStepValid(step)) return true;
+
+    applyContractorStepLocalErrors(step);
+    return false;
+};
+
+const contractorStepErrorKeyMap = {
+    1: ['name', 'email', 'phone', 'cnpj', 'slug', 'timezone', 'brand_name', 'brand_primary_color', 'business_niche', 'business_type'],
+    2: ['plan_id', 'contract_starts_at', 'contract_ends_at', 'override_user_limit', 'override_storage_limit_gb', 'override_audit_log_retention_days', 'is_active'],
+};
+
+const hasContractorFormErrorForStep = (stepNumber) => {
+    const keys = Object.keys(contractorForm.errors ?? {});
+    const prefixes = contractorStepErrorKeyMap[stepNumber] ?? [];
+
+    return keys.some((key) => prefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}.`)));
+};
+
+const shouldShowContractorStepErrors = computed(() =>
+    isEditing.value
+    || contractorWizardValidationRequested.value
+    || Object.keys(contractorForm.errors ?? {}).length > 0,
+);
+
+const contractorStepErrors = computed(() =>
+    contractorWizardSteps.map((_, index) => {
+        const stepNumber = index + 1;
+        if (!shouldShowContractorStepErrors.value) return false;
+
+        const checkLocalValidation = isEditing.value || stepNumber <= contractorWizardStep.value;
+        const hasLocalError = checkLocalValidation ? !isContractorStepValid(stepNumber) : false;
+
+        return hasLocalError || hasContractorFormErrorForStep(stepNumber);
+    }),
+);
+
 watch(
     () => filterForm.niche,
     () => {
@@ -282,6 +390,7 @@ const resetContractorForm = () => {
 const openCreate = () => {
     editingContractor.value = null;
     contractorWizardStep.value = 1;
+    contractorWizardValidationRequested.value = false;
     resetContractorForm();
     showModal.value = true;
 };
@@ -289,6 +398,7 @@ const openCreate = () => {
 const openEdit = (contractor) => {
     editingContractor.value = contractor;
     contractorWizardStep.value = 1;
+    contractorWizardValidationRequested.value = false;
     contractorForm.name = contractor.name ?? '';
     contractorForm.email = contractor.email ?? '';
     contractorForm.phone = formatPhone(contractor.phone ?? '');
@@ -314,6 +424,7 @@ const closeModal = () => {
     showModal.value = false;
     editingContractor.value = null;
     contractorWizardStep.value = 1;
+    contractorWizardValidationRequested.value = false;
     resetContractorForm();
 };
 
@@ -322,6 +433,7 @@ const goToWizardStep = (step) => {
 };
 
 const nextWizardStep = () => {
+    if (!validateCurrentContractorStepForCreate()) return;
     goToWizardStep(contractorWizardStep.value + 1);
 };
 
@@ -330,6 +442,13 @@ const previousWizardStep = () => {
 };
 
 const submitContractor = () => {
+    contractorWizardValidationRequested.value = true;
+    clearContractorStepLocalErrors(2);
+    if (!isContractorStepValid(2)) {
+        applyContractorStepLocalErrors(2);
+        return;
+    }
+
     contractorForm.clearErrors('phone', 'cnpj', 'brand_primary_color');
 
     const phoneRegex = /^\(\d{2}\)\s\d{5}-\d{4}$/;
@@ -558,8 +677,9 @@ const formatMoney = (value) => {
                 description="Preencha os dados do contratante."
                 :steps="contractorWizardSteps"
                 :current-step="contractorWizardStep"
-                :steps-clickable="true"
+                :steps-clickable="isEditing"
                 :max-clickable-step="contractorWizardSteps.length"
+                :step-errors="contractorStepErrors"
                 @step-change="goToWizardStep"
                 @close="closeModal"
             >
@@ -809,4 +929,3 @@ const formatMoney = (value) => {
         />
     </AuthenticatedLayout>
 </template>
-

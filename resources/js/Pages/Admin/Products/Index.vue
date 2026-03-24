@@ -134,6 +134,7 @@ const productToDelete = ref(null);
 const galleryInputRef = ref(null);
 const productWizardSteps = ['Informações', 'Preço e estoque', 'Galeria', 'Variações'];
 const productWizardStep = ref(1);
+const productWizardValidationRequested = ref(false);
 
 const createEmptyVariation = () => ({
     id: null,
@@ -198,6 +199,7 @@ const openCreate = () => {
     revokeGalleryPreviewUrls();
     editingProduct.value = null;
     productWizardStep.value = 1;
+    productWizardValidationRequested.value = false;
     resetProductForm();
     showModal.value = true;
 };
@@ -206,6 +208,7 @@ const openEdit = (product) => {
     revokeGalleryPreviewUrls();
     editingProduct.value = product;
     productWizardStep.value = 1;
+    productWizardValidationRequested.value = false;
     productForm.name = product.name ?? '';
     productForm.sku = product.sku ?? '';
     productForm.category_id = product.category_id ?? '';
@@ -248,6 +251,7 @@ const closeModal = () => {
     showModal.value = false;
     editingProduct.value = null;
     productWizardStep.value = 1;
+    productWizardValidationRequested.value = false;
     resetProductForm();
 };
 
@@ -421,6 +425,118 @@ const removeProduct = () => {
 const isFirstProductStep = computed(() => productWizardStep.value <= 1);
 const isLastProductStep = computed(() => productWizardStep.value >= productWizardSteps.length);
 
+const parseNumericInput = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    const normalized = String(value).replace(/\s/g, '').replace(',', '.');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const parseIntegerInput = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const isProductStepValid = (stepNumber) => {
+    if (stepNumber === 1) {
+        return String(productForm.name ?? '').trim() !== '';
+    }
+
+    if (stepNumber === 2) {
+        const salePrice = parseNumericInput(productForm.sale_price);
+        const stockQuantity = parseIntegerInput(productForm.stock_quantity);
+        const unit = String(productForm.unit ?? '').trim();
+
+        return salePrice !== null && salePrice >= 0
+            && stockQuantity !== null && stockQuantity >= 0
+            && unit !== '';
+    }
+
+    return true;
+};
+
+const clearProductStepLocalErrors = (stepNumber) => {
+    if (stepNumber === 1) {
+        productForm.clearErrors('name');
+        return;
+    }
+
+    if (stepNumber === 2) {
+        productForm.clearErrors('sale_price', 'stock_quantity', 'unit');
+    }
+};
+
+const applyProductStepLocalErrors = (stepNumber) => {
+    if (stepNumber === 1) {
+        if (String(productForm.name ?? '').trim() === '') {
+            productForm.setError('name', 'Informe o nome do produto.');
+        }
+        return;
+    }
+
+    if (stepNumber === 2) {
+        const salePrice = parseNumericInput(productForm.sale_price);
+        const stockQuantity = parseIntegerInput(productForm.stock_quantity);
+        const unit = String(productForm.unit ?? '').trim();
+
+        if (salePrice === null || salePrice < 0) {
+            productForm.setError('sale_price', 'Informe o preço de venda.');
+        }
+        if (stockQuantity === null || stockQuantity < 0) {
+            productForm.setError('stock_quantity', 'Informe a quantidade em estoque.');
+        }
+        if (unit === '') {
+            productForm.setError('unit', 'Selecione a unidade.');
+        }
+    }
+};
+
+const validateCurrentProductStepForCreate = () => {
+    if (isEditing.value) return true;
+
+    const currentStep = productWizardStep.value;
+    productWizardValidationRequested.value = true;
+    clearProductStepLocalErrors(currentStep);
+
+    if (isProductStepValid(currentStep)) return true;
+
+    applyProductStepLocalErrors(currentStep);
+    return false;
+};
+
+const productStepErrorKeyMap = {
+    1: ['name', 'sku', 'category_id', 'description', 'is_active'],
+    2: ['cost_price', 'sale_price', 'stock_quantity', 'unit'],
+    3: ['gallery_files', 'gallery_images', 'remove_gallery_ids', 'storage_quota'],
+    4: ['variations'],
+};
+
+const hasProductFormErrorForStep = (stepNumber) => {
+    const keys = Object.keys(productForm.errors ?? {});
+    const prefixes = productStepErrorKeyMap[stepNumber] ?? [];
+
+    return keys.some((key) => prefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}.`)));
+};
+
+const shouldShowProductStepErrors = computed(() =>
+    isEditing.value
+    || productWizardValidationRequested.value
+    || Object.keys(productForm.errors ?? {}).length > 0,
+);
+
+const productStepErrors = computed(() =>
+    productWizardSteps.map((_, index) => {
+        const stepNumber = index + 1;
+        if (!shouldShowProductStepErrors.value) return false;
+
+        const checkLocalValidation = isEditing.value || stepNumber <= productWizardStep.value;
+        const hasLocalError = checkLocalValidation ? !isProductStepValid(stepNumber) : false;
+
+        return hasLocalError || hasProductFormErrorForStep(stepNumber);
+    }),
+);
+
 const goToPreviousProductStep = () => {
     if (isFirstProductStep.value) return;
     productWizardStep.value -= 1;
@@ -428,6 +544,7 @@ const goToPreviousProductStep = () => {
 
 const goToNextProductStep = () => {
     if (isLastProductStep.value) return;
+    if (!validateCurrentProductStepForCreate()) return;
     productWizardStep.value += 1;
 };
 
@@ -717,6 +834,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                 :steps="productWizardSteps"
                 :current-step="productWizardStep"
                 :steps-clickable="isEditing"
+                :step-errors="productStepErrors"
                 @step-change="setProductWizardStep"
                 @close="closeModal"
             >

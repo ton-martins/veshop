@@ -31,6 +31,10 @@ const props = defineProps({
         type: Boolean,
         default: true,
     },
+    stepErrors: {
+        type: [Array, Object],
+        default: () => [],
+    },
 });
 
 const emit = defineEmits(['close', 'step-change']);
@@ -55,6 +59,18 @@ const stepsGridClass = computed(() => {
 });
 
 const hasFooter = computed(() => Boolean(slots.footer));
+
+const hasStepError = (stepNumber) => {
+    if (Array.isArray(props.stepErrors)) {
+        return Boolean(props.stepErrors[stepNumber - 1]);
+    }
+
+    if (props.stepErrors && typeof props.stepErrors === 'object') {
+        return Boolean(props.stepErrors[stepNumber]);
+    }
+
+    return false;
+};
 
 const isStepClickable = (stepNumber) => {
     if (!props.stepsClickable) return false;
@@ -106,11 +122,25 @@ const onStepClick = (stepNumber) => {
                 :disabled="!isStepClickable(index + 1)"
                 class="flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition disabled:cursor-default"
                 :class="[
-                    index + 1 === currentStepSafe ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600',
-                    isStepClickable(index + 1) ? 'hover:border-slate-300 hover:bg-slate-50' : '',
+                    hasStepError(index + 1) && index + 1 === currentStepSafe
+                        ? 'border-rose-600 bg-rose-600 text-white'
+                        : hasStepError(index + 1)
+                            ? 'border-rose-200 bg-rose-50 text-rose-700'
+                            : index + 1 === currentStepSafe
+                                ? 'border-slate-900 bg-slate-900 text-white'
+                                : 'border-slate-200 bg-white text-slate-600',
+                    isStepClickable(index + 1)
+                        ? (hasStepError(index + 1) ? 'hover:border-rose-300 hover:bg-rose-100' : 'hover:border-slate-300 hover:bg-slate-50')
+                        : '',
                 ]"
                 @click="onStepClick(index + 1)"
             >
+                <span
+                    v-if="hasStepError(index + 1)"
+                    class="inline-block h-2 w-2 flex-none rounded-full"
+                    :class="index + 1 === currentStepSafe ? 'bg-white' : 'bg-rose-500'"
+                    aria-hidden="true"
+                />
                 {{ step }}
             </button>
         </div>

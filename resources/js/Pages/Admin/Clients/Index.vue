@@ -65,6 +65,7 @@ const wizardSteps = ['Dados do cliente', 'Endereço'];
 const currentStep = ref(1);
 const cepLookupLoading = ref(false);
 const cepLookupError = ref('');
+const wizardValidationRequested = ref(false);
 
 watch(
     () => props.filters,
@@ -139,7 +140,69 @@ const deleteForm = useForm({});
 const isEditing = computed(() => Boolean(editingClient.value?.id));
 const isFirstStep = computed(() => currentStep.value === 1);
 const isLastStep = computed(() => currentStep.value === wizardSteps.length);
-const canAdvance = computed(() => String(clientForm.name ?? '').trim() !== '');
+
+const isWizardStepValid = (stepNumber) => {
+    if (stepNumber === 1) {
+        return String(clientForm.name ?? '').trim() !== '';
+    }
+
+    return true;
+};
+
+const clearStepLocalErrors = (stepNumber) => {
+    if (stepNumber === 1) {
+        clientForm.clearErrors('name');
+    }
+};
+
+const applyStepLocalErrors = (stepNumber) => {
+    if (stepNumber === 1 && String(clientForm.name ?? '').trim() === '') {
+        clientForm.setError('name', 'Informe o nome do cliente.');
+    }
+};
+
+const validateCurrentStepForCreate = () => {
+    if (isEditing.value) return true;
+
+    const step = currentStep.value;
+    wizardValidationRequested.value = true;
+    clearStepLocalErrors(step);
+
+    if (isWizardStepValid(step)) return true;
+
+    applyStepLocalErrors(step);
+    return false;
+};
+
+const stepErrorKeyMap = {
+    1: ['name', 'email', 'phone', 'document_type', 'document', 'is_active'],
+    2: ['cep', 'street', 'number', 'complement', 'neighborhood', 'city', 'state'],
+};
+
+const hasFormErrorForStep = (stepNumber) => {
+    const keys = Object.keys(clientForm.errors ?? {});
+    const prefixes = stepErrorKeyMap[stepNumber] ?? [];
+
+    return keys.some((key) => prefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}.`)));
+};
+
+const shouldShowStepErrors = computed(() =>
+    isEditing.value
+    || wizardValidationRequested.value
+    || Object.keys(clientForm.errors ?? {}).length > 0,
+);
+
+const wizardStepErrors = computed(() =>
+    wizardSteps.map((_, index) => {
+        const stepNumber = index + 1;
+        if (!shouldShowStepErrors.value) return false;
+
+        const checkLocalValidation = isEditing.value || stepNumber <= currentStep.value;
+        const hasLocalError = checkLocalValidation ? !isWizardStepValid(stepNumber) : false;
+
+        return hasLocalError || hasFormErrorForStep(stepNumber);
+    }),
+);
 
 const resetWizard = () => {
     currentStep.value = 1;
@@ -152,6 +215,7 @@ const openCreate = () => {
     clientForm.reset();
     clientForm.clearErrors();
     clientForm.is_active = true;
+    wizardValidationRequested.value = false;
     resetWizard();
     showModal.value = true;
 };
@@ -172,6 +236,7 @@ const openEdit = (client) => {
     clientForm.state = client.state ?? '';
     clientForm.is_active = Boolean(client.is_active);
     clientForm.clearErrors();
+    wizardValidationRequested.value = false;
     resetWizard();
     showModal.value = true;
 };
@@ -182,6 +247,7 @@ const closeModal = () => {
     clientForm.clearErrors();
     clientForm.defaults(buildClientDefaults());
     clientForm.reset();
+    wizardValidationRequested.value = false;
     resetWizard();
 };
 
@@ -246,12 +312,21 @@ const lookupCep = async () => {
 };
 
 const goNextStep = () => {
-    if (!canAdvance.value) return;
+    if (!validateCurrentStepForCreate()) return;
     currentStep.value = Math.min(wizardSteps.length, currentStep.value + 1);
 };
 
 const goPreviousStep = () => {
     currentStep.value = Math.max(1, currentStep.value - 1);
+};
+
+const setWizardStep = (step) => {
+    if (!isEditing.value) return;
+
+    const parsedStep = Number(step);
+    if (!Number.isFinite(parsedStep)) return;
+
+    currentStep.value = Math.min(wizardSteps.length, Math.max(1, Math.floor(parsedStep)));
 };
 
 const submitClient = () => {
@@ -454,6 +529,9 @@ const removeClient = () => {
                 description="Preencha os dados do cliente."
                 :steps="wizardSteps"
                 :current-step="currentStep"
+                :steps-clickable="isEditing"
+                :step-errors="wizardStepErrors"
+                @step-change="setWizardStep"
                 @close="closeModal"
             >
                 <div v-if="currentStep === 1" class="grid gap-3 md:grid-cols-2">
@@ -614,7 +692,6 @@ const removeClient = () => {
                                 v-if="!isLastStep"
                                 type="button"
                                 class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                                :disabled="!canAdvance"
                                 @click="goNextStep"
                             >
                                 Próximo
@@ -645,4 +722,3 @@ const removeClient = () => {
         />
     </AuthenticatedLayout>
 </template>
-
