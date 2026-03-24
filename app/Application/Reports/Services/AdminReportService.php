@@ -94,6 +94,9 @@ class AdminReportService
 
         $exportModules = $this->resolveExportModules($contractor);
         $defaultModuleCodes = $this->resolveDefaultModuleCodes($contractor, $exportModules);
+        /** @var User|null $user */
+        $user = $request->user();
+        $canManageExportFiles = $user instanceof User && $user->isAdmin();
 
         $exportsHistory = ReportExport::query()
             ->where('contractor_id', $contractor->id)
@@ -113,11 +116,11 @@ class AdminReportService
                 'when' => optional($item->created_at)?->format('d/m/Y H:i'),
                 'rows' => $item->row_count,
                 'error' => $item->error_message,
-                'download_url' => $item->status === ReportExport::STATUS_COMPLETED
-                    ? route('admin.reports.exports.download', ['reportExport' => $item->id])
+                'download_url' => $canManageExportFiles && $item->status === ReportExport::STATUS_COMPLETED
+                    ? route('admin.reports.exports.download', ['reportExport' => $item->id], false)
                     : null,
-                'preview_url' => $item->status === ReportExport::STATUS_COMPLETED
-                    ? route('admin.reports.exports.download', ['reportExport' => $item->id, 'inline' => 1])
+                'preview_url' => $canManageExportFiles && $item->status === ReportExport::STATUS_COMPLETED
+                    ? route('admin.reports.exports.download', ['reportExport' => $item->id, 'inline' => 1], false)
                     : null,
             ])
             ->values()
@@ -236,6 +239,10 @@ class AdminReportService
 
     public function download(Request $request, ReportExport $reportExport): HttpResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isAdmin(), 403);
+
         $contractor = $this->resolveCurrentContractor($request);
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
 

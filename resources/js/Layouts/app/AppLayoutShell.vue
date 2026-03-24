@@ -527,6 +527,51 @@ const ensureTableScrollWrapper = (table) => {
     wrapper.appendChild(table);
 };
 
+const isActionColumnLabel = (label) => {
+    const normalized = String(label ?? '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+
+    return normalized.includes('acao') || normalized.includes('actions');
+};
+
+const setCardCellKind = (cell, index, label) => {
+    if (cell.hasAttribute('colspan')) return;
+
+    if (index === 0) {
+        cell.setAttribute('data-card-kind', 'primary');
+        return;
+    }
+
+    cell.setAttribute('data-card-kind', isActionColumnLabel(label) ? 'actions' : 'field');
+};
+
+const isCardFieldCell = (cell, index) =>
+    !cell.hasAttribute('colspan')
+    && index > 0
+    && cell.getAttribute('data-card-kind') === 'field';
+
+const shouldSkipCardFieldWrap = (cell) =>
+    Boolean(cell.querySelector('button, a, input, select, textarea, form, iframe, video, audio'));
+
+const hydrateCardFieldValue = (cell, index) => {
+    if (!isCardFieldCell(cell, index)) return;
+    if (shouldSkipCardFieldWrap(cell)) return;
+    if (cell.querySelector('.veshop-card-field-value')) return;
+    if (cell.children.length > 0) return;
+
+    const rawValue = String(cell.textContent ?? '').trim();
+    if (!rawValue) return;
+
+    const value = document.createElement('span');
+    value.className = 'veshop-card-field-value';
+    value.textContent = rawValue;
+    cell.textContent = '';
+    cell.appendChild(value);
+};
+
 const hydrateAdaptiveTables = () => {
     const scope = appMainRef.value;
     if (!scope) {
@@ -558,10 +603,14 @@ const hydrateAdaptiveTables = () => {
 
             cells.forEach((cell, index) => {
                 const currentLabel = String(cell.getAttribute('data-label') ?? '').trim();
-                if (currentLabel) return;
+                const label = currentLabel || headerLabels[index] || `Coluna ${index + 1}`;
 
-                const label = headerLabels[index] || `Coluna ${index + 1}`;
-                cell.setAttribute('data-label', label);
+                if (!currentLabel) {
+                    cell.setAttribute('data-label', label);
+                }
+
+                setCardCellKind(cell, index, label);
+                hydrateCardFieldValue(cell, index);
             });
         });
     });
@@ -916,7 +965,7 @@ const handleGlobalKeydown = (event) => {
                     </button>
                 </div>
             </header>
-            <main ref="appMainRef" class="px-4 py-6 sm:px-6 lg:px-8"><slot /></main>
+            <main ref="appMainRef" class="veshop-admin-page-shell veshop-admin-page-content px-4 py-6 sm:px-6 lg:px-8"><slot /></main>
         </template>
 
         <template v-else>
@@ -1020,7 +1069,7 @@ const handleGlobalKeydown = (event) => {
                         ref="appMainRef"
                         class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-slate-100/80"
                     >
-                        <div class="px-4 py-6 pb-24 sm:px-6 lg:px-8 md:pb-6">
+                        <div class="veshop-admin-page-shell px-4 py-6 pb-24 sm:px-6 lg:px-8 md:pb-6">
                             <template v-if="hasHeaderSlot">
                                 <slot name="header" />
                             </template>
@@ -1086,7 +1135,7 @@ const handleGlobalKeydown = (event) => {
                                 </div>
                             </div>
 
-                            <div :class="showHeader ? 'mt-6' : ''"><slot /></div>
+                            <div :class="[showHeader ? 'mt-6' : '', 'veshop-admin-page-content']"><slot /></div>
                         </div>
                     </main>
 

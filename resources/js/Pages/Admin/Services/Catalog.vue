@@ -6,7 +6,7 @@ import Modal from '@/Components/Modal.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
-import { Head, router, useForm } from '@inertiajs/vue3';
+import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { Briefcase, CircleDollarSign, Clock3, Filter, Pencil, Plus, Search, Trash2, Upload } from 'lucide-vue-next';
 
@@ -100,6 +100,48 @@ const statusOptions = [
     { value: 'inactive', label: 'Inativos' },
 ];
 
+const page = usePage();
+const contractorBusinessType = computed(() =>
+    String(page.props?.contractorContext?.current?.business_type ?? '')
+        .trim()
+        .toLowerCase(),
+);
+
+const servicePlaceholderExamples = {
+    barbershop: {
+        name: 'Ex.: Corte degradê com navalha',
+        code: 'Ex.: CORTE-DEGRADE',
+    },
+    auto_electric: {
+        name: 'Ex.: Diagnóstico elétrico completo',
+        code: 'Ex.: DIAG-ELETRICO',
+    },
+    mechanic: {
+        name: 'Ex.: Troca de óleo e filtro',
+        code: 'Ex.: TROCA-OLEO',
+    },
+    accounting: {
+        name: 'Ex.: Fechamento contábil mensal',
+        code: 'Ex.: CONT-MENSAL',
+    },
+    general_services: {
+        name: 'Ex.: Manutenção preventiva mensal',
+        code: 'Ex.: MANUT-PREVENTIVA',
+    },
+};
+
+const serviceNamePlaceholder = computed(
+    () =>
+        servicePlaceholderExamples[contractorBusinessType.value]?.name
+        ?? 'Ex.: Serviço especializado',
+);
+
+const serviceCodePlaceholder = computed(
+    () =>
+        servicePlaceholderExamples[contractorBusinessType.value]?.code
+        ?? 'Ex.: SERVICO-PADRAO',
+);
+
 const categoryOptionsForForm = computed(() => [
     { value: '', label: 'Sem categoria' },
     ...(props.categories ?? []).map((category) => ({
@@ -149,15 +191,17 @@ const resetTemporaryPreview = () => {
 const MIN_DURATION_MINUTES = 5;
 const MAX_DURATION_MINUTES = 1440;
 
-const clampDurationTotal = (value) => {
-    const parsed = Number.parseInt(value ?? MIN_DURATION_MINUTES, 10);
-    if (!Number.isFinite(parsed)) return MIN_DURATION_MINUTES;
+const normalizeDurationTotal = (value, { enforceMinimum = true } = {}) => {
+    const fallback = enforceMinimum ? MIN_DURATION_MINUTES : 0;
+    const parsed = Number.parseInt(value ?? fallback, 10);
+    if (!Number.isFinite(parsed)) return fallback;
 
-    return Math.min(MAX_DURATION_MINUTES, Math.max(MIN_DURATION_MINUTES, parsed));
+    const minimum = enforceMinimum ? MIN_DURATION_MINUTES : 0;
+    return Math.min(MAX_DURATION_MINUTES, Math.max(minimum, parsed));
 };
 
-const setDurationFieldsFromTotal = (totalMinutes) => {
-    const safeTotal = clampDurationTotal(totalMinutes);
+const setDurationFieldsFromTotal = (totalMinutes, { enforceMinimum = true } = {}) => {
+    const safeTotal = normalizeDurationTotal(totalMinutes, { enforceMinimum });
     durationHours.value = Math.floor(safeTotal / 60);
     durationRemainder.value = safeTotal % 60;
     form.duration_minutes = safeTotal;
@@ -176,7 +220,7 @@ const syncDurationMinutes = () => {
     durationHours.value = safeHours;
     durationRemainder.value = safeMinutes;
 
-    const total = clampDurationTotal((safeHours * 60) + safeMinutes);
+    const total = normalizeDurationTotal((safeHours * 60) + safeMinutes, { enforceMinimum: false });
     durationHours.value = Math.floor(total / 60);
     durationRemainder.value = total % 60;
     form.duration_minutes = total;
@@ -246,6 +290,8 @@ const removeImage = () => {
 
 const submitService = () => {
     syncDurationMinutes();
+    form.duration_minutes = normalizeDurationTotal(form.duration_minutes);
+    setDurationFieldsFromTotal(form.duration_minutes);
 
     const onFinish = () => {
         form.transform((data) => data);
@@ -415,7 +461,7 @@ const resolveInitials = (value) => {
                             <tr v-for="service in rows" :key="service.id">
                                 <td class="px-4 py-3">
                                     <div class="flex items-center gap-3">
-                                        <div class="grid h-12 w-12 place-items-center overflow-hidden rounded-lg bg-slate-100 text-xs font-semibold text-slate-600">
+                                        <div class="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-100 text-xs font-semibold text-slate-600">
                                             <img v-if="service.image_url" :src="service.image_url" :alt="service.name" class="h-full w-full object-cover">
                                             <span v-else>{{ resolveInitials(service.name) }}</span>
                                         </div>
@@ -476,7 +522,7 @@ const resolveInitials = (value) => {
                             v-model="form.name"
                             type="text"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="Ex.: Fechamento contábil mensal"
+                            :placeholder="serviceNamePlaceholder"
                         >
                         <p v-if="form.errors.name" class="mt-1 text-xs text-rose-600">{{ form.errors.name }}</p>
                     </div>
@@ -487,7 +533,7 @@ const resolveInitials = (value) => {
                             v-model="form.code"
                             type="text"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="Ex.: CONT-MENSAL"
+                            :placeholder="serviceCodePlaceholder"
                         >
                         <p v-if="form.errors.code" class="mt-1 text-xs text-rose-600">{{ form.errors.code }}</p>
                     </div>

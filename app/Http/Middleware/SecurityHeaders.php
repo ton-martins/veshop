@@ -144,8 +144,15 @@ class SecurityHeaders
 
     private function shouldAllowSameOriginFrame(Request $request): bool
     {
-        return $request->routeIs('admin.services.accounting.documents.versions.download')
-            && ! $request->boolean('download');
+        if ($request->routeIs('admin.services.accounting.documents.versions.download')) {
+            return ! $request->boolean('download');
+        }
+
+        if ($request->routeIs('admin.reports.exports.download')) {
+            return $request->boolean('inline');
+        }
+
+        return false;
     }
 
     private function replaceCspDirective(string $policy, string $directive, string $value): string
