@@ -1320,10 +1320,10 @@ class PublicShopService
 
             $dayLabel = $this->resolveBusinessDayLabel($dayKey);
             $label = $offset === 0
-                ? "Abre hoje as {$open}"
+                ? "Abre hoje às {$open}"
                 : ($offset === 1
-                    ? "Abre amanhã as {$open}"
-                    : "Abre {$dayLabel} as {$open}");
+                    ? "Abre amanhã às {$open}"
+                    : "Abre {$dayLabel} às {$open}");
 
             return [
                 'day_key' => $dayKey,
