@@ -13,6 +13,7 @@ Route::get('/home', DashboardRedirectController::class)
 Route::middleware(['auth', '2fa', 'verified', 'contractor.module:notifications'])->group(function () {
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::post('/notifications/read', [NotificationController::class, 'markAsRead'])->name('notifications.read');
+    Route::post('/notifications/clear', [NotificationController::class, 'clear'])->name('notifications.clear');
 });
 
 Route::middleware(['auth', '2fa'])->group(function () {

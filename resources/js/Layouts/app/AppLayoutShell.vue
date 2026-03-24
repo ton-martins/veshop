@@ -777,6 +777,17 @@ const hasNotificationsActions = computed(() => {
     }
 });
 
+const hasNotificationsClearAction = computed(() => {
+    if (!notificationsEnabled.value) return false;
+    if (typeof route !== 'function') return false;
+
+    try {
+        return route().has('notifications.clear');
+    } catch {
+        return false;
+    }
+});
+
 const isNotificationsActive = computed(() => {
     if (!notificationsEnabled.value) return false;
     if (notificationsPanelOpen.value) return true;
@@ -806,6 +817,17 @@ const markOneNotificationAsRead = (id) => {
     markNotificationsForm
         .transform(() => ({ id: String(id) }))
         .post(route('notifications.read'), {
+            preserveScroll: true,
+            preserveState: true,
+        });
+};
+
+const clearAllNotifications = () => {
+    if (!hasNotificationsClearAction.value || notificationItems.value.length <= 0) return;
+
+    markNotificationsForm
+        .transform(() => ({ id: '' }))
+        .post(route('notifications.clear'), {
             preserveScroll: true,
             preserveState: true,
         });
@@ -1270,8 +1292,10 @@ const handleGlobalKeydown = (event) => {
                     :unread-notifications="unreadNotifications"
                     :notification-items="notificationItems"
                     :processing="markNotificationsForm.processing"
+                    :can-clear="hasNotificationsClearAction"
                     @close="closeNotificationsPanel"
                     @mark-all="markAllNotificationsAsRead"
+                    @clear-all="clearAllNotifications"
                     @mark-one="markOneNotificationAsRead"
                     @open-target="openNotificationTarget"
                 />

@@ -2,14 +2,20 @@
 import Modal from '@/Components/Modal.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useBranding } from '@/branding';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import {
-    BarChart3,
+    Activity,
+    AlertTriangle,
     Boxes,
     ChartNoAxesCombined,
+    Clock4,
     CircleDollarSign,
     Download,
+    Eye,
+    FileCheck,
+    Sparkles,
     ShoppingCart,
 } from 'lucide-vue-next';
 
@@ -79,8 +85,35 @@ const props = defineProps({
 });
 
 const page = usePage();
+const { glassGradient } = useBranding();
 const exportProcessing = ref(false);
 const exportModalOpen = ref(false);
+const previewModalOpen = ref(false);
+const previewDocumentUrl = ref('');
+const previewDocumentName = ref('');
+const currentContractor = computed(() => page.props?.contractorContext?.current ?? null);
+const contractorName = computed(() => (
+    currentContractor.value?.brand_name
+    || currentContractor.value?.name
+    || 'Contratante'
+));
+const contractorLogo = computed(() => (
+    currentContractor.value?.brand_logo_url
+    || currentContractor.value?.brand_avatar_url
+    || null
+));
+
+const getInitials = (value) => {
+    const safe = String(value ?? '').trim();
+    if (!safe) return 'CT';
+    const parts = safe.split(/\s+/).filter(Boolean);
+    const first = parts[0]?.charAt(0) ?? '';
+    const last = parts.length > 1 ? parts[parts.length - 1].charAt(0) : '';
+    const initials = `${first}${last}`.trim().toUpperCase();
+    return initials || 'CT';
+};
+
+const contractorInitials = computed(() => getInitials(contractorName.value));
 
 const iconByMetric = {
     commercial_revenue: CircleDollarSign,
@@ -197,7 +230,7 @@ const contextSummary = computed(() => {
     const plan = String(props.reportContext?.plan_name ?? '').trim();
     const blocks = [niche, business, plan].filter(Boolean);
 
-    return blocks.length ? blocks.join(' • ') : 'Visão operacional por módulos';
+    return blocks.length ? blocks.join(' - ') : 'Visão operacional por módulos';
 });
 
 const openExportModal = () => {
@@ -206,6 +239,21 @@ const openExportModal = () => {
 
 const closeExportModal = () => {
     exportModalOpen.value = false;
+};
+
+const openPdfPreview = (item) => {
+    const previewUrl = String(item?.preview_url ?? '').trim();
+    if (!previewUrl) return;
+
+    previewDocumentUrl.value = previewUrl;
+    previewDocumentName.value = String(item?.file ?? 'documento.pdf');
+    previewModalOpen.value = true;
+};
+
+const closePdfPreview = () => {
+    previewModalOpen.value = false;
+    previewDocumentUrl.value = '';
+    previewDocumentName.value = '';
 };
 
 const moduleIsSelected = (code) => exportForm.value.module_codes.includes(String(code));
@@ -309,17 +357,66 @@ const resolveMetricValue = (card) => {
                 {{ flashStatus }}
             </div>
 
-            <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-                <div class="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-                    <div>
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Relatórios operacionais</p>
-                        <h2 class="mt-1 text-base font-semibold text-slate-900 md:text-lg">Visão consolidada dos módulos habilitados</h2>
-                        <p class="mt-1 text-xs text-slate-500">{{ contextSummary }}</p>
-                        <p class="mt-1 text-xs text-slate-500">Período ativo: {{ filters.period_label }}</p>
+            <section class="relative overflow-hidden rounded-3xl border border-white/70 px-5 py-6 shadow-sm md:px-7 md:py-7">
+                <div class="pointer-events-none absolute inset-0" :style="{ background: glassGradient }" />
+
+                <div class="relative grid gap-5 xl:grid-cols-[1.5fr_1fr]">
+                    <div class="space-y-4">
+                        <span class="inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
+                            <Sparkles class="h-3.5 w-3.5" />
+                            Relatórios operacionais
+                        </span>
+
+                        <div class="flex items-center gap-3">
+                            <div
+                                class="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/95 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200/80"
+                            >
+                                <img
+                                    v-if="contractorLogo"
+                                    :src="contractorLogo"
+                                    :alt="contractorName"
+                                    class="h-9 w-9 rounded-xl object-contain"
+                                >
+                                <span v-else>{{ contractorInitials }}</span>
+                            </div>
+                            <div class="min-w-0">
+                                <p class="truncate text-sm font-semibold text-slate-900">{{ contractorName }}</p>
+                                <p class="truncate text-xs text-slate-600">{{ contextSummary }}</p>
+                            </div>
+                        </div>
+
+                        <h2 class="text-xl font-semibold tracking-tight text-slate-900 md:text-2xl">
+                            Visão consolidada dos módulos habilitados
+                        </h2>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200/80">
+                                <Activity class="h-3.5 w-3.5 text-emerald-600" />
+                                Nicho: {{ reportContext.niche_label }}
+                            </span>
+                            <span class="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200/80">
+                                <AlertTriangle class="h-3.5 w-3.5 text-amber-500" />
+                                Plano: {{ reportContext.plan_name }}
+                            </span>
+                            <span class="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200/80">
+                                <Clock4 class="h-3.5 w-3.5 text-sky-600" />
+                                Período: {{ filters.period_label }}
+                            </span>
+                        </div>
                     </div>
 
-                    <div class="space-y-2">
-                        <div class="grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <div class="rounded-2xl border border-emerald-100/70 bg-gradient-to-br from-white via-white to-emerald-50/60 p-4 shadow-lg backdrop-blur">
+                        <div class="mb-3 flex items-center gap-2">
+                            <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-900 text-white">
+                                <FileCheck class="h-4 w-4" />
+                            </span>
+                            <div>
+                                <p class="text-xs font-semibold text-slate-900">Ações de relatório</p>
+                                <p class="text-[11px] text-slate-500">Filtre e exporte com precisão</p>
+                            </div>
+                        </div>
+
+                        <div class="space-y-2">
                             <UiSelect
                                 v-model="filterForm.period"
                                 :options="periodOptions"
@@ -327,42 +424,51 @@ const resolveMetricValue = (card) => {
                                 button-class="w-full text-sm"
                                 @change="applyFilters"
                             />
+
+                            <div v-if="isCustomPeriod" class="grid gap-2 sm:grid-cols-2">
+                                <label class="text-xs font-medium text-slate-600">
+                                    Início
+                                    <input
+                                        v-model="filterForm.start_date"
+                                        type="date"
+                                        class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-700"
+                                        @change="applyFilters"
+                                    >
+                                </label>
+                                <label class="text-xs font-medium text-slate-600">
+                                    Fim
+                                    <input
+                                        v-model="filterForm.end_date"
+                                        type="date"
+                                        class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-700"
+                                        @change="applyFilters"
+                                    >
+                                </label>
+                            </div>
+
                             <button
                                 type="button"
-                                class="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
+                                class="inline-flex w-full items-center justify-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
                                 @click="openExportModal"
                             >
                                 <Download class="h-3.5 w-3.5" />
                                 Exportar dados
                             </button>
-                        </div>
 
-                        <div v-if="isCustomPeriod" class="grid gap-2 sm:grid-cols-2">
-                            <label class="text-xs font-medium text-slate-600">
-                                Início
-                                <input
-                                    v-model="filterForm.start_date"
-                                    type="date"
-                                    class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-700"
-                                    @change="applyFilters"
-                                >
-                            </label>
-                            <label class="text-xs font-medium text-slate-600">
-                                Fim
-                                <input
-                                    v-model="filterForm.end_date"
-                                    type="date"
-                                    class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-700"
-                                    @change="applyFilters"
-                                >
-                            </label>
+                            <p class="text-[11px] text-slate-500">
+                                {{ exportsHistory.length }} exportação(ões) registrada(s).
+                            </p>
                         </div>
                     </div>
                 </div>
             </section>
 
             <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <article v-for="stat in statCards" :key="stat.key" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <article
+                    v-for="stat in statCards"
+                    :key="stat.key"
+                    class="group rounded-2xl border border-emerald-100 bg-gradient-to-br from-white via-white to-emerald-50/60 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                >
                     <div class="flex items-start justify-between gap-3">
                         <div>
                             <p class="text-xs font-semibold text-slate-500">{{ stat.label }}</p>
@@ -378,7 +484,7 @@ const resolveMetricValue = (card) => {
 
             <div class="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
                 <div class="space-y-4">
-                    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+                    <section class="rounded-3xl border border-emerald-100 bg-gradient-to-br from-white via-white to-slate-50/80 p-4 shadow-sm backdrop-blur md:p-5">
                         <header class="mb-2">
                             <h3 class="text-sm font-semibold text-slate-900">{{ topItems.title || 'Itens em destaque' }}</h3>
                             <p class="mt-1 text-xs text-slate-500">{{ topItems.description }}</p>
@@ -388,7 +494,7 @@ const resolveMetricValue = (card) => {
                             <li
                                 v-for="(item, index) in topItems.items"
                                 :key="item.id"
-                                class="rounded-xl border border-slate-200 bg-white px-3 py-2"
+                                class="rounded-xl border border-slate-200 bg-white/90 px-3 py-2"
                             >
                                 <div class="flex items-center justify-between gap-3">
                                     <div class="flex min-w-0 items-center gap-2.5">
@@ -409,7 +515,7 @@ const resolveMetricValue = (card) => {
                         </div>
                     </section>
 
-                    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+                    <section class="rounded-3xl border border-emerald-100 bg-gradient-to-br from-white via-white to-emerald-50/50 p-4 shadow-sm backdrop-blur md:p-5">
                         <header class="mb-3 flex items-center justify-between gap-2">
                             <h3 class="text-sm font-semibold text-slate-900">Módulos disponíveis para exportação</h3>
                             <span class="text-xs font-medium text-slate-500">{{ exportModules.length }} módulo(s)</span>
@@ -419,7 +525,7 @@ const resolveMetricValue = (card) => {
                             <article
                                 v-for="module in exportModules"
                                 :key="module.code"
-                                class="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2"
+                                class="rounded-xl border border-slate-200 bg-white/85 px-3 py-2 shadow-sm"
                             >
                                 <p class="text-sm font-semibold text-slate-800">{{ module.label }}</p>
                                 <p class="mt-1 text-xs text-slate-500">{{ module.description }}</p>
@@ -432,28 +538,45 @@ const resolveMetricValue = (card) => {
                 </div>
 
                 <aside class="space-y-4">
-                    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+                    <section class="rounded-3xl border border-emerald-100 bg-gradient-to-br from-white via-white to-slate-50/80 p-4 shadow-sm backdrop-blur md:p-5">
                         <h3 class="text-sm font-semibold text-slate-900">Exportações recentes</h3>
                         <ul v-if="props.exportsHistory.length" class="mt-4 space-y-2">
-                            <li v-for="item in props.exportsHistory" :key="item.id" class="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+                            <li v-for="item in props.exportsHistory" :key="item.id" class="rounded-lg border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
                                         <p class="truncate text-sm font-semibold text-slate-800">{{ item.file }}</p>
-                                        <p class="text-xs text-slate-500">{{ item.by }} • {{ item.when }}</p>
+                                        <p class="text-xs text-slate-500">{{ item.by }} - {{ item.when }}</p>
                                         <p v-if="item.rows !== null" class="text-xs text-slate-500">{{ item.rows }} linhas</p>
                                         <p v-if="item.error" class="mt-1 text-xs text-rose-600">{{ item.error }}</p>
                                     </div>
                                     <div class="flex shrink-0 flex-col items-end gap-2">
+                                        <span class="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">
+                                            {{ item.format }}
+                                        </span>
                                         <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="item.status_tone">
                                             {{ item.status }}
                                         </span>
-                                        <a
-                                            v-if="item.download_url"
-                                            :href="item.download_url"
-                                            class="text-xs font-semibold text-slate-700 underline decoration-dotted underline-offset-2 hover:text-slate-900"
-                                        >
-                                            Baixar
-                                        </a>
+                                        <div class="flex items-center gap-1">
+                                            <button
+                                                v-if="item.is_pdf && item.preview_url"
+                                                type="button"
+                                                class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                                                title="Visualizar PDF"
+                                                aria-label="Visualizar PDF"
+                                                @click="openPdfPreview(item)"
+                                            >
+                                                <Eye class="h-4 w-4" />
+                                            </button>
+                                            <a
+                                                v-if="item.download_url"
+                                                :href="item.download_url"
+                                                class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                                                title="Baixar arquivo"
+                                                aria-label="Baixar arquivo"
+                                            >
+                                                <Download class="h-4 w-4" />
+                                            </a>
+                                        </div>
                                     </div>
                                 </div>
                             </li>
@@ -591,5 +714,33 @@ const resolveMetricValue = (card) => {
                 </footer>
             </div>
         </Modal>
+
+        <Modal :show="previewModalOpen" max-width="6xl" @close="closePdfPreview">
+            <div class="space-y-3 p-4">
+                <header class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <h3 class="truncate text-base font-semibold text-slate-900">Pré-visualização do PDF</h3>
+                        <p class="truncate text-xs text-slate-500">{{ previewDocumentName }}</p>
+                    </div>
+                    <button
+                        type="button"
+                        class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        @click="closePdfPreview"
+                    >
+                        Fechar
+                    </button>
+                </header>
+
+                <div class="h-[72vh] overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                    <iframe
+                        v-if="previewDocumentUrl"
+                        :src="previewDocumentUrl"
+                        class="h-full w-full"
+                        title="Pré-visualização da exportação em PDF"
+                    />
+                </div>
+            </div>
+        </Modal>
     </AuthenticatedLayout>
 </template>
+

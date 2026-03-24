@@ -22,4 +22,9 @@ class NotificationController extends Controller
     {
         return $this->service->markAsRead($request);
     }
+
+    public function clear(Request $request): RedirectResponse
+    {
+        return $this->service->clear($request);
+    }
 }

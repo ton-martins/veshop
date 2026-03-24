@@ -34,23 +34,28 @@
         .brand-initials {
             display: table-cell;
             vertical-align: middle;
-            width: 46px;
-            height: 46px;
+            width: 52px;
+            height: 52px;
             border-radius: 12px;
             overflow: hidden;
             text-align: center;
         }
+        .brand-logo {
+            border: 1px solid #dbe4ee;
+            background: #ffffff;
+        }
         .brand-logo img {
-            width: 46px;
-            height: 46px;
-            object-fit: cover;
+            width: 52px;
+            height: 52px;
+            object-fit: contain;
+            padding: 5px;
         }
         .brand-initials {
             background: #0b3c4a;
             color: #ffffff;
             font-size: 16px;
             font-weight: 700;
-            line-height: 46px;
+            line-height: 52px;
         }
         .brand-info {
             display: table-cell;

@@ -3,11 +3,13 @@ defineProps({
     unreadNotifications: { type: Number, default: 0 },
     notificationItems: { type: Array, default: () => [] },
     processing: { type: Boolean, default: false },
+    canClear: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
     'close',
     'mark-all',
+    'clear-all',
     'mark-one',
     'open-target',
 ]);
@@ -32,14 +34,25 @@ const emit = defineEmits([
                     ×
                 </button>
             </div>
-            <button
-                type="button"
-                class="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="processing || unreadNotifications <= 0"
-                @click="emit('mark-all')"
-            >
-                Marcar todas como lidas
-            </button>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                    type="button"
+                    class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="processing || unreadNotifications <= 0"
+                    @click="emit('mark-all')"
+                >
+                    Marcar todas como lidas
+                </button>
+                <button
+                    v-if="canClear"
+                    type="button"
+                    class="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="processing || notificationItems.length <= 0"
+                    @click="emit('clear-all')"
+                >
+                    Limpar notificações
+                </button>
+            </div>
         </div>
 
         <div class="flex-1 overflow-y-auto px-4 py-4 sm:px-5">

@@ -88,6 +88,23 @@ class NotificationCenterService
         return back()->with('status', 'Notificações marcadas como lidas.');
     }
 
+    public function clear(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        abort_unless($user, 403);
+
+        $contractorId = $this->resolveCurrentContractorId($request);
+        $query = $user->notifications();
+
+        if ($contractorId !== null) {
+            $query->where('data->contractor_id', $contractorId);
+        }
+
+        $query->delete();
+
+        return back()->with('status', 'Notificações removidas com sucesso.');
+    }
+
     private function resolveCurrentContractorId(Request $request): ?int
     {
         $user = $request->user();

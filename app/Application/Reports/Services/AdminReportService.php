@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 class AdminReportService
 {
@@ -104,6 +104,8 @@ class AdminReportService
             ->map(fn (ReportExport $item): array => [
                 'id' => (int) $item->id,
                 'file' => $this->resolveExportFilename($item),
+                'format' => $this->resolveExportFormat($item),
+                'is_pdf' => $this->resolveExportFormat($item) === ReportExport::FORMAT_PDF,
                 'status' => $this->statusLabel((string) $item->status),
                 'status_tone' => $this->statusTone((string) $item->status),
                 'status_value' => (string) $item->status,
@@ -113,6 +115,9 @@ class AdminReportService
                 'error' => $item->error_message,
                 'download_url' => $item->status === ReportExport::STATUS_COMPLETED
                     ? route('admin.reports.exports.download', ['reportExport' => $item->id])
+                    : null,
+                'preview_url' => $item->status === ReportExport::STATUS_COMPLETED
+                    ? route('admin.reports.exports.download', ['reportExport' => $item->id, 'inline' => 1])
                     : null,
             ])
             ->values()
@@ -229,7 +234,7 @@ class AdminReportService
         return back()->with('status', 'Exportação enfileirada. O processamento seguirá em segundo plano.');
     }
 
-    public function download(Request $request, ReportExport $reportExport): StreamedResponse
+    public function download(Request $request, ReportExport $reportExport): HttpResponse
     {
         $contractor = $this->resolveCurrentContractor($request);
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
@@ -239,9 +244,23 @@ class AdminReportService
         abort_unless($reportExport->file_disk && $reportExport->file_path, 404);
         abort_unless(Storage::disk($reportExport->file_disk)->exists($reportExport->file_path), 404);
 
+        $filename = $reportExport->file_name ?? basename((string) $reportExport->file_path);
+        $format = $this->resolveExportFormat($reportExport);
+        $inline = $request->boolean('inline') && $format === ReportExport::FORMAT_PDF;
+
+        if ($inline) {
+            $content = Storage::disk($reportExport->file_disk)->get($reportExport->file_path);
+
+            return response($content, 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="'.$filename.'"',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        }
+
         return Storage::disk($reportExport->file_disk)->download(
             $reportExport->file_path,
-            $reportExport->file_name ?? basename($reportExport->file_path),
+            $filename,
         );
     }
 
@@ -251,15 +270,35 @@ class AdminReportService
             return (string) $export->file_name;
         }
 
-        $filters = is_array($export->filters) ? $export->filters : [];
-        $format = strtolower(trim((string) ($filters['format'] ?? ReportExport::FORMAT_CSV)));
-        $extension = match ($format) {
+        $extension = match ($this->resolveExportFormat($export)) {
             ReportExport::FORMAT_PDF => 'pdf',
             ReportExport::FORMAT_EXCEL => 'xls',
             default => 'csv',
         };
 
         return strtoupper((string) $export->type)."-{$export->id}.{$extension}";
+    }
+
+    private function resolveExportFormat(ReportExport $export): string
+    {
+        $filters = is_array($export->filters) ? $export->filters : [];
+        $format = strtolower(trim((string) ($filters['format'] ?? '')));
+
+        if (in_array($format, ReportExport::availableFormats(), true)) {
+            return $format;
+        }
+
+        $filename = strtolower((string) ($export->file_name ?? ''));
+
+        if (str_ends_with($filename, '.pdf')) {
+            return ReportExport::FORMAT_PDF;
+        }
+
+        if (str_ends_with($filename, '.xls') || str_ends_with($filename, '.xlsx')) {
+            return ReportExport::FORMAT_EXCEL;
+        }
+
+        return ReportExport::FORMAT_CSV;
     }
 
     private function statusLabel(string $status): string

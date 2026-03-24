@@ -8,7 +8,7 @@ use App\Models\ReportExport;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 class ReportController extends Controller
 {
@@ -31,7 +31,7 @@ class ReportController extends Controller
         return $this->service->export($request);
     }
 
-    public function download(Request $request, ReportExport $reportExport): StreamedResponse
+    public function download(Request $request, ReportExport $reportExport): HttpResponse
     {
         return $this->service->download($request, $reportExport);
     }
