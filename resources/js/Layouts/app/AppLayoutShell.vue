@@ -1518,12 +1518,14 @@ const handleGlobalKeydown = (event) => {
                 role="status"
                 aria-live="polite"
             >
-                <div class="flex items-start gap-2">
-                    <div class="mt-0.5 h-2 w-2 rounded-full bg-emerald-500" />
-                    <p class="min-w-0 flex-1 text-sm font-medium text-slate-700">{{ statusToastMessage }}</p>
+                <div class="flex items-center gap-2.5">
+                    <span class="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+                        <span class="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                    </span>
+                    <p class="min-w-0 flex-1 text-sm font-medium leading-5 text-slate-700">{{ statusToastMessage }}</p>
                     <button
                         type="button"
-                        class="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                        class="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
                         aria-label="Fechar notificação"
                         @click="hideStatusToast"
                     >

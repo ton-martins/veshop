@@ -305,14 +305,6 @@ const operationSections = computed(() => [
                                 </article>
                             </div>
 
-                            <div
-                                v-if="module.business_types?.length"
-                                class="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600"
-                            >
-                                <span class="font-semibold text-slate-700">Aplicável para:</span>
-                                {{ module.business_types.join(', ') }}
-                            </div>
-
                             <div v-if="module.actions?.length" class="mt-3 flex flex-wrap items-center gap-2">
                                 <Link
                                     v-for="action in module.actions"
