@@ -26,6 +26,11 @@ class ReportController extends Controller
         return $this->service->exportSales($request);
     }
 
+    public function export(Request $request): RedirectResponse
+    {
+        return $this->service->export($request);
+    }
+
     public function download(Request $request, ReportExport $reportExport): StreamedResponse
     {
         return $this->service->download($request, $reportExport);

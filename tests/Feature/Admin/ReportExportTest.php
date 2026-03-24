@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Admin;
 
+use App\Jobs\GenerateReportExportJob;
 use App\Jobs\GenerateSalesExportJob;
 use App\Models\Contractor;
 use App\Models\ReportExport;
@@ -17,7 +18,7 @@ class ReportExportTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_admin_can_queue_sales_export(): void
+    public function test_admin_can_queue_dashboard_export_with_selected_modules_and_format(): void
     {
         Queue::fake();
 
@@ -30,23 +31,60 @@ class ReportExportTest extends TestCase
 
         $response = $this->actingAsWithTwoFactor($user)
             ->from(route('admin.reports.index'))
-            ->post(route('admin.reports.exports.sales'));
+            ->post(route('admin.reports.exports'), [
+                'format' => 'pdf',
+                'module_codes' => ['commercial', 'finance'],
+                'include_details' => true,
+                'date_from' => now()->startOfMonth()->toDateString(),
+                'date_to' => now()->endOfMonth()->toDateString(),
+            ]);
 
         $response->assertRedirect(route('admin.reports.index'));
-        $response->assertSessionHas('status', 'Export queued. Processing in background.');
+        $response->assertSessionHas('status', 'Exportação enfileirada. O processamento seguirá em segundo plano.');
 
         $export = ReportExport::query()->first();
 
         $this->assertNotNull($export);
         $this->assertSame((int) $contractor->id, (int) $export->contractor_id);
         $this->assertSame((int) $user->id, (int) $export->requested_by_user_id);
-        $this->assertSame(ReportExport::TYPE_SALES, (string) $export->type);
+        $this->assertSame(ReportExport::TYPE_DASHBOARD, (string) $export->type);
         $this->assertSame(ReportExport::STATUS_PENDING, (string) $export->status);
+        $this->assertSame('pdf', strtolower((string) ($export->filters['format'] ?? '')));
+        $this->assertSame(['commercial', 'finance'], $export->filters['module_codes'] ?? []);
 
-        Queue::assertPushed(GenerateSalesExportJob::class, function (GenerateSalesExportJob $job) use ($export): bool {
+        Queue::assertPushed(GenerateReportExportJob::class, function (GenerateReportExportJob $job) use ($export): bool {
             return (int) $job->reportExportId === (int) $export->id
                 && (string) $job->queue === (string) config('queue.workloads.exports.queue')
                 && (string) $job->connection === (string) config('queue.workloads.exports.connection');
+        });
+    }
+
+    public function test_admin_can_still_queue_legacy_sales_export_route(): void
+    {
+        Queue::fake();
+
+        $contractor = $this->createContractor('queue-legacy-sales-export');
+        $user = User::factory()->create([
+            'role' => User::ROLE_ADMIN,
+            'is_active' => true,
+        ]);
+        $user->contractors()->attach($contractor->id);
+
+        $response = $this->actingAsWithTwoFactor($user)
+            ->from(route('admin.reports.index'))
+            ->post(route('admin.reports.exports.sales'));
+
+        $response->assertRedirect(route('admin.reports.index'));
+        $response->assertSessionHas('status', 'Exportação enfileirada. O processamento seguirá em segundo plano.');
+
+        $export = ReportExport::query()->first();
+
+        $this->assertNotNull($export);
+        $this->assertSame(ReportExport::TYPE_SALES, (string) $export->type);
+        $this->assertSame('csv', strtolower((string) ($export->filters['format'] ?? '')));
+
+        Queue::assertPushed(GenerateSalesExportJob::class, function (GenerateSalesExportJob $job) use ($export): bool {
+            return (int) $job->reportExportId === (int) $export->id;
         });
     }
 
@@ -122,4 +160,3 @@ class ReportExportTest extends TestCase
         ]);
     }
 }
-

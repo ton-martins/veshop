@@ -28,9 +28,17 @@ class ReportExportReadyNotification extends Notification
      */
     public function toArray(mixed $notifiable): array
     {
+        $filters = is_array($this->reportExport->filters) ? $this->reportExport->filters : [];
+        $format = strtolower(trim((string) ($filters['format'] ?? 'csv')));
+        $formatLabel = match ($format) {
+            'pdf' => 'PDF',
+            'excel', 'xls', 'xlsx' => 'Excel',
+            default => 'CSV',
+        };
+
         return [
-            'title' => 'Export ready',
-            'message' => 'Your sales export is complete and available for download.',
+            'title' => 'Exportação pronta',
+            'message' => "Sua exportação de relatórios em {$formatLabel} está concluída e disponível para download.",
             'contractor_id' => (int) ($this->reportExport->contractor_id ?? 0),
             'target_url' => '/app/reports',
             'export_id' => (int) $this->reportExport->id,

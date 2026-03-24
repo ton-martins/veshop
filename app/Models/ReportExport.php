@@ -12,6 +12,14 @@ class ReportExport extends Model
 
     public const TYPE_SALES = 'sales';
 
+    public const TYPE_DASHBOARD = 'dashboard';
+
+    public const FORMAT_CSV = 'csv';
+
+    public const FORMAT_EXCEL = 'excel';
+
+    public const FORMAT_PDF = 'pdf';
+
     public const STATUS_PENDING = 'pending';
 
     public const STATUS_PROCESSING = 'processing';
@@ -64,5 +72,16 @@ class ReportExport extends Model
     {
         return $this->belongsTo(User::class, 'requested_by_user_id');
     }
-}
 
+    /**
+     * @return list<string>
+     */
+    public static function availableFormats(): array
+    {
+        return [
+            self::FORMAT_CSV,
+            self::FORMAT_EXCEL,
+            self::FORMAT_PDF,
+        ];
+    }
+}

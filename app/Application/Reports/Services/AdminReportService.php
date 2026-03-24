@@ -2,14 +2,18 @@
 
 namespace App\Application\Reports\Services;
 
+use App\Application\Reports\Support\ReportPeriod;
 use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
+use App\Jobs\GenerateReportExportJob;
 use App\Jobs\GenerateSalesExportJob;
+use App\Models\Contractor;
+use App\Models\Module;
 use App\Models\ReportExport;
-use App\Models\Sale;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -18,26 +22,78 @@ class AdminReportService
 {
     use ResolvesCurrentContractor;
 
+    /**
+     * @var array<int, array{code: string, label: string, description: string, requires: list<string>}>
+     */
+    private const EXPORT_MODULES = [
+        [
+            'code' => 'commercial',
+            'label' => 'Comercial',
+            'description' => 'Pedidos e faturamento do fluxo comercial.',
+            'requires' => ['commercial'],
+        ],
+        [
+            'code' => 'pdv',
+            'label' => 'PDV',
+            'description' => 'Vendas e desempenho do ponto de venda.',
+            'requires' => ['pdv'],
+        ],
+        [
+            'code' => 'orders',
+            'label' => 'Pedidos',
+            'description' => 'Pedidos da loja virtual e do catálogo.',
+            'requires' => ['orders', 'commercial'],
+        ],
+        [
+            'code' => 'finance',
+            'label' => 'Financeiro',
+            'description' => 'Contas a pagar, a receber e status de pagamentos.',
+            'requires' => ['finance'],
+        ],
+        [
+            'code' => 'catalog',
+            'label' => 'Catálogo de produtos',
+            'description' => 'Portfólio de produtos, preços e estoque.',
+            'requires' => ['catalog'],
+        ],
+        [
+            'code' => 'services',
+            'label' => 'Ordens de serviço',
+            'description' => 'Ordens, receitas e status operacionais.',
+            'requires' => ['services', 'service_orders'],
+        ],
+        [
+            'code' => 'schedule',
+            'label' => 'Agenda',
+            'description' => 'Atendimentos e agendamentos por período.',
+            'requires' => ['schedule'],
+        ],
+        [
+            'code' => 'services_catalog',
+            'label' => 'Catálogo de serviços',
+            'description' => 'Serviços ativos, duração e preço base.',
+            'requires' => ['services_catalog', 'services_storefront'],
+        ],
+    ];
+
+    public function __construct(
+        private readonly ReportAnalyticsService $analyticsService,
+        private readonly ReportProfileResolver $profileResolver,
+    ) {}
+
     public function index(Request $request): Response
     {
         $contractor = $this->resolveCurrentContractor($request);
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
 
         $timezone = (string) ($contractor->timezone ?: config('app.timezone', 'UTC'));
-        $monthStart = now($timezone)->startOfMonth()->utc();
-        $monthEnd = now($timezone)->endOfMonth()->utc();
+        $period = ReportPeriod::fromRequest($request, $timezone);
+        $profile = $this->profileResolver->resolveOverviewProfile($contractor);
+        $overview = $this->analyticsService->buildOverview($contractor, $period, $profile);
+        $stats = $this->resolveLegacyStats($overview['metric_cards'] ?? []);
 
-        $revenue = (float) Sale::query()
-            ->where('contractor_id', $contractor->id)
-            ->whereIn('status', [Sale::STATUS_PAID, Sale::STATUS_COMPLETED])
-            ->whereBetween('created_at', [$monthStart, $monthEnd])
-            ->sum('total_amount');
-
-        $orders = (int) Sale::query()
-            ->where('contractor_id', $contractor->id)
-            ->whereNotIn('status', [Sale::STATUS_DRAFT, Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED, Sale::STATUS_REFUNDED])
-            ->whereBetween('created_at', [$monthStart, $monthEnd])
-            ->count();
+        $exportModules = $this->resolveExportModules($contractor);
+        $defaultModuleCodes = $this->resolveDefaultModuleCodes($contractor, $exportModules);
 
         $exportsHistory = ReportExport::query()
             ->where('contractor_id', $contractor->id)
@@ -47,11 +103,11 @@ class AdminReportService
             ->get()
             ->map(fn (ReportExport $item): array => [
                 'id' => (int) $item->id,
-                'file' => (string) ($item->file_name ?: strtoupper($item->type)."-{$item->id}.csv"),
+                'file' => $this->resolveExportFilename($item),
                 'status' => $this->statusLabel((string) $item->status),
                 'status_tone' => $this->statusTone((string) $item->status),
                 'status_value' => (string) $item->status,
-                'by' => (string) ($item->requestedBy?->name ?? 'System'),
+                'by' => (string) ($item->requestedBy?->name ?? 'Sistema'),
                 'when' => optional($item->created_at)?->format('d/m/Y H:i'),
                 'rows' => $item->row_count,
                 'error' => $item->error_message,
@@ -63,14 +119,83 @@ class AdminReportService
             ->all();
 
         return Inertia::render('Admin/Reports/Index', [
-            'stats' => [
-                'revenue' => $revenue,
-                'orders' => $orders,
-                'stock_turn' => 0,
-                'margin' => 0,
-            ],
+            'stats' => $stats,
+            'metricCards' => $overview['metric_cards'] ?? [],
+            'topItems' => $overview['top_items'] ?? ['title' => '', 'description' => '', 'kind' => '', 'items' => []],
+            'filters' => array_merge($period->toArray(), [
+                'period_options' => ReportPeriod::options(),
+            ]),
+            'reportContext' => $this->reportContext($contractor, $timezone),
             'exportsHistory' => $exportsHistory,
+            'exportModules' => $exportModules,
+            'exportDefaults' => [
+                'format' => ReportExport::FORMAT_PDF,
+                'include_details' => true,
+                'module_codes' => $defaultModuleCodes,
+                'date_from' => $period->startDate(),
+                'date_to' => $period->endDate(),
+            ],
         ]);
+    }
+
+    public function export(Request $request): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $validated = $request->validate([
+            'format' => ['required', 'string', Rule::in(ReportExport::availableFormats())],
+            'module_codes' => ['nullable', 'array'],
+            'module_codes.*' => ['string', 'max:80'],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d'],
+            'include_details' => ['nullable', 'boolean'],
+        ]);
+
+        /** @var User|null $user */
+        $user = $request->user();
+
+        $queueConnection = (string) config('queue.workloads.exports.connection', config('queue.default'));
+        $queueName = (string) config('queue.workloads.exports.queue', 'exports');
+
+        $availableModuleCodes = collect($this->resolveExportModules($contractor))
+            ->pluck('code')
+            ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+            ->values();
+
+        $requestedModuleCodes = collect(is_array($validated['module_codes'] ?? null) ? $validated['module_codes'] : [])
+            ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+            ->filter()
+            ->unique()
+            ->filter(fn (string $code): bool => $availableModuleCodes->contains($code))
+            ->values()
+            ->all();
+
+        if ($requestedModuleCodes === []) {
+            $requestedModuleCodes = $this->resolveDefaultModuleCodes($contractor, $this->resolveExportModules($contractor));
+        }
+
+        $export = ReportExport::query()->create([
+            'contractor_id' => $contractor->id,
+            'requested_by_user_id' => $user?->id,
+            'type' => ReportExport::TYPE_DASHBOARD,
+            'status' => ReportExport::STATUS_PENDING,
+            'queue_connection' => $queueConnection,
+            'queue_name' => $queueName,
+            'filters' => [
+                'format' => strtolower((string) $validated['format']),
+                'module_codes' => $requestedModuleCodes,
+                'date_from' => $validated['date_from'] ?? null,
+                'date_to' => $validated['date_to'] ?? null,
+                'include_details' => (bool) ($validated['include_details'] ?? true),
+            ],
+        ]);
+
+        GenerateReportExportJob::dispatch((int) $export->id)
+            ->onConnection($queueConnection)
+            ->onQueue($queueName);
+
+        return back()->with('status', 'Exportação enfileirada. O processamento seguirá em segundo plano.');
     }
 
     public function exportSales(Request $request): RedirectResponse
@@ -93,6 +218,7 @@ class AdminReportService
             'queue_name' => $queueName,
             'filters' => [
                 'month' => now()->format('Y-m'),
+                'format' => ReportExport::FORMAT_CSV,
             ],
         ]);
 
@@ -100,7 +226,7 @@ class AdminReportService
             ->onConnection($queueConnection)
             ->onQueue($queueName);
 
-        return back()->with('status', 'Export queued. Processing in background.');
+        return back()->with('status', 'Exportação enfileirada. O processamento seguirá em segundo plano.');
     }
 
     public function download(Request $request, ReportExport $reportExport): StreamedResponse
@@ -117,6 +243,23 @@ class AdminReportService
             $reportExport->file_path,
             $reportExport->file_name ?? basename($reportExport->file_path),
         );
+    }
+
+    private function resolveExportFilename(ReportExport $export): string
+    {
+        if ($export->file_name !== null && trim((string) $export->file_name) !== '') {
+            return (string) $export->file_name;
+        }
+
+        $filters = is_array($export->filters) ? $export->filters : [];
+        $format = strtolower(trim((string) ($filters['format'] ?? ReportExport::FORMAT_CSV)));
+        $extension = match ($format) {
+            ReportExport::FORMAT_PDF => 'pdf',
+            ReportExport::FORMAT_EXCEL => 'xls',
+            default => 'csv',
+        };
+
+        return strtoupper((string) $export->type)."-{$export->id}.{$extension}";
     }
 
     private function statusLabel(string $status): string
@@ -139,5 +282,122 @@ class AdminReportService
             ReportExport::STATUS_FAILED => 'bg-rose-100 text-rose-700',
             default => 'bg-slate-100 text-slate-700',
         };
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $metricCards
+     * @return array{revenue: float, orders: int, stock_turn: float, margin: float}
+     */
+    private function resolveLegacyStats(array $metricCards): array
+    {
+        $cardsByKey = collect($metricCards)->keyBy(static fn (array $card): string => (string) ($card['key'] ?? ''));
+
+        $revenue = (float) (
+            $cardsByKey->get('commercial_revenue')['value']
+            ?? $cardsByKey->get('services_revenue')['value']
+            ?? 0
+        );
+
+        $orders = (int) (
+            $cardsByKey->get('commercial_orders')['value']
+            ?? $cardsByKey->get('services_completed_orders')['value']
+            ?? 0
+        );
+
+        return [
+            'revenue' => $revenue,
+            'orders' => $orders,
+            'stock_turn' => 0.0,
+            'margin' => 0.0,
+        ];
+    }
+
+    /**
+     * @return array<int, array{code: string, label: string, description: string}>
+     */
+    private function resolveExportModules(Contractor $contractor): array
+    {
+        $enabledModuleCodes = collect($contractor->enabledModules())
+            ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($enabledModuleCodes->isEmpty()) {
+            $enabledModuleCodes = collect($contractor->niche() === Contractor::NICHE_SERVICES ? ['services'] : ['commercial']);
+        }
+
+        $modulesByCode = Module::query()
+            ->whereIn('code', $enabledModuleCodes->all())
+            ->where('is_active', true)
+            ->get(['code', 'name'])
+            ->keyBy(static fn (Module $module): string => strtolower(trim((string) $module->code)));
+
+        return collect(self::EXPORT_MODULES)
+            ->filter(function (array $item) use ($enabledModuleCodes): bool {
+                $required = collect($item['requires'] ?? [])
+                    ->map(static fn (mixed $value): string => strtolower(trim((string) $value)))
+                    ->filter()
+                    ->values();
+
+                return $required->contains(fn (string $code): bool => $enabledModuleCodes->contains($code));
+            })
+            ->map(function (array $item) use ($modulesByCode): array {
+                $baseCode = collect($item['requires'] ?? [])->first();
+                $module = $baseCode ? $modulesByCode->get(strtolower(trim((string) $baseCode))) : null;
+
+                return [
+                    'code' => (string) $item['code'],
+                    'label' => (string) ($module?->name ?: $item['label']),
+                    'description' => (string) $item['description'],
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, array{code: string, label: string, description: string}>  $exportModules
+     * @return array<int, string>
+     */
+    private function resolveDefaultModuleCodes(Contractor $contractor, array $exportModules): array
+    {
+        $available = collect($exportModules)
+            ->pluck('code')
+            ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+            ->values();
+
+        $defaults = $contractor->niche() === Contractor::NICHE_SERVICES
+            ? ['services', 'schedule', 'services_catalog', 'finance']
+            : ['commercial', 'orders', 'catalog', 'finance'];
+
+        $resolved = collect($defaults)
+            ->filter(fn (string $code): bool => $available->contains($code))
+            ->values()
+            ->all();
+
+        if ($resolved !== []) {
+            return $resolved;
+        }
+
+        return $available->take(3)->values()->all();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function reportContext(Contractor $contractor, string $timezone): array
+    {
+        $niche = $contractor->niche();
+        $businessType = $contractor->businessType();
+
+        return [
+            'niche' => $niche,
+            'niche_label' => $niche === Contractor::NICHE_SERVICES ? 'Serviços' : 'Comércio',
+            'business_type' => $businessType,
+            'business_type_label' => Contractor::labelForBusinessType($businessType),
+            'plan_name' => $contractor->activePlanName(),
+            'timezone' => $timezone,
+        ];
     }
 }

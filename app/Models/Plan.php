@@ -66,6 +66,16 @@ class Plan extends Model
         return $this->hasMany(Contractor::class);
     }
 
+    public function reportProfiles(): HasMany
+    {
+        return $this->hasMany(ReportProfile::class);
+    }
+
+    public function reportMetricSnapshots(): HasMany
+    {
+        return $this->hasMany(ReportMetricSnapshot::class);
+    }
+
     public function modules(): BelongsToMany
     {
         return $this->belongsToMany(Module::class, 'plan_module')

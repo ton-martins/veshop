@@ -66,14 +66,14 @@ class GenerateSalesExportJob implements ShouldQueue
         $stream = fopen($absolutePath, 'wb');
 
         if ($stream === false) {
-            throw new RuntimeException('Unable to create CSV file for report export.');
+            throw new RuntimeException('Não foi possível criar o arquivo CSV da exportação.');
         }
 
         $rows = 0;
 
         try {
             fwrite($stream, "\xEF\xBB\xBF");
-            fputcsv($stream, ['code', 'source', 'status', 'total_amount', 'customer_name', 'created_at'], ';');
+            fputcsv($stream, ['codigo', 'origem', 'status', 'valor_total', 'cliente', 'criado_em'], ';');
 
             Sale::query()
                 ->where('contractor_id', $export->contractor_id)
@@ -91,7 +91,7 @@ class GenerateSalesExportJob implements ShouldQueue
                             (string) $sale->source,
                             (string) $sale->status,
                             number_format((float) $sale->total_amount, 2, '.', ''),
-                            (string) ($sale->client?->name ?? $sale->shopCustomer?->name ?? 'Final customer'),
+                            (string) ($sale->client?->name ?? $sale->shopCustomer?->name ?? 'Consumidor final'),
                             optional($sale->created_at)?->format('Y-m-d H:i:s'),
                         ], ';');
                     }
