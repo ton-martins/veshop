@@ -71,7 +71,7 @@ const emit = defineEmits([
                         </div>
                         <span
                             v-if="!item.read_at"
-                            class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700"
+                            class="inline-flex items-center rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-semibold text-gray-700"
                         >
                             Nova
                         </span>
@@ -90,7 +90,7 @@ const emit = defineEmits([
                         <button
                             v-if="!item.read_at"
                             type="button"
-                            class="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            class="inline-flex items-center rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
                             :disabled="processing"
                             @click="emit('mark-one', item.id)"
                         >

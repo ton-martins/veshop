@@ -41,7 +41,7 @@ class GenerateReportExportJob implements ShouldQueue
         public readonly int $reportExportId,
     ) {
         $this->connection = (string) config('queue.workloads.exports.connection', config('queue.default'));
-        $this->queue = (string) config('queue.workloads.exports.queue', 'exports');
+        $this->queue = (string) config('queue.workloads.exports.queue', 'default');
         $this->afterCommit = true;
     }
 

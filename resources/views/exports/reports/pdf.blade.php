@@ -29,14 +29,17 @@
             text-align: right;
             width: 40%;
         }
-        .brand-box { display: table; }
+        .brand-box {
+            white-space: nowrap;
+            font-size: 0;
+        }
         .brand-logo,
         .brand-initials {
-            display: table-cell;
+            display: inline-block;
             vertical-align: middle;
-            width: 52px;
-            height: 52px;
-            border-radius: 12px;
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
             overflow: hidden;
             text-align: center;
         }
@@ -45,22 +48,25 @@
             background: #ffffff;
         }
         .brand-logo img {
-            width: 52px;
-            height: 52px;
+            display: block;
+            width: 56px;
+            height: 56px;
             object-fit: contain;
-            padding: 5px;
+            padding: 8px;
         }
         .brand-initials {
             background: #0b3c4a;
             color: #ffffff;
             font-size: 16px;
             font-weight: 700;
-            line-height: 52px;
+            line-height: 56px;
         }
         .brand-info {
-            display: table-cell;
+            display: inline-block;
             vertical-align: middle;
-            padding-left: 10px;
+            padding-left: 12px;
+            max-width: 300px;
+            white-space: normal;
         }
         .brand-name {
             font-size: 16px;

@@ -11,6 +11,7 @@ RUN apk add --no-cache \
     libzip \
     nginx \
     oniguruma \
+    supervisor \
     tzdata \
     && apk add --no-cache --virtual .build-deps \
     $PHPIZE_DEPS \
@@ -75,9 +76,12 @@ COPY --from=assets /app/public/build /var/www/public/build
 COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY docker/nginx/default.conf /etc/nginx/http.d/default.conf
 COPY docker/php/custom.ini /usr/local/etc/php/conf.d/zz-custom.ini
+COPY docker/supervisor/supervisord.conf /etc/supervisord.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/queue-worker.sh /usr/local/bin/queue-worker.sh
 
 RUN chmod +x /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/queue-worker.sh \
     && rm -f /var/www/public/hot \
     && mkdir -p /run/nginx /var/lib/nginx/tmp \
     && mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache \
@@ -88,4 +92,4 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -fsS http://127.0.0.1/up || exit 1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["supervisord", "-n", "-c", "/etc/supervisord.conf"]

@@ -166,7 +166,7 @@ class AdminReportService
         $user = $request->user();
 
         $queueConnection = (string) config('queue.workloads.exports.connection', config('queue.default'));
-        $queueName = (string) config('queue.workloads.exports.queue', 'exports');
+        $queueName = (string) config('queue.workloads.exports.queue', 'default');
 
         $availableModuleCodes = collect($this->resolveExportModules($contractor))
             ->pluck('code')
@@ -217,7 +217,7 @@ class AdminReportService
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
 
         $queueConnection = (string) config('queue.workloads.exports.connection', config('queue.default'));
-        $queueName = (string) config('queue.workloads.exports.queue', 'exports');
+        $queueName = (string) config('queue.workloads.exports.queue', 'default');
 
         /** @var User|null $user */
         $user = $request->user();
@@ -256,7 +256,7 @@ class AdminReportService
         abort_unless($reportExport->file_disk && $reportExport->file_path, 404);
         abort_unless(Storage::disk($reportExport->file_disk)->exists($reportExport->file_path), 404);
 
-        $filename = $reportExport->file_name ?? basename((string) $reportExport->file_path);
+        $filename = $this->resolveExportFilename($reportExport);
         $format = $this->resolveExportFormat($reportExport);
         $inline = $request->boolean('inline') && $format === ReportExport::FORMAT_PDF;
 
@@ -282,11 +282,18 @@ class AdminReportService
             return (string) $export->file_name;
         }
 
-        $extension = match ($this->resolveExportFormat($export)) {
+        $format = $this->resolveExportFormat($export);
+        $extension = match ($format) {
             ReportExport::FORMAT_PDF => 'pdf',
             ReportExport::FORMAT_EXCEL => 'xls',
             default => 'csv',
         };
+
+        $filters = is_array($export->filters) ? $export->filters : [];
+        $customFileName = $this->sanitizeCustomFileName($filters['custom_file_name'] ?? null);
+        if ($customFileName !== null) {
+            return "{$customFileName}.{$extension}";
+        }
 
         return strtoupper((string) $export->type)."-{$export->id}.{$extension}";
     }

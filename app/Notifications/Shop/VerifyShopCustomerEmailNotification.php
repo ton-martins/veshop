@@ -18,7 +18,7 @@ class VerifyShopCustomerEmailNotification extends Notification implements Should
     public function __construct()
     {
         $this->connection = (string) config('queue.workloads.mail.connection', config('queue.default'));
-        $this->queue = (string) config('queue.workloads.mail.queue', 'emails');
+        $this->queue = (string) config('queue.workloads.mail.queue', 'default');
         $this->afterCommit = true;
     }
 
@@ -57,7 +57,7 @@ class VerifyShopCustomerEmailNotification extends Notification implements Should
             'error_class' => $exception::class,
             'error_message' => substr($exception->getMessage(), 0, 200),
             'mail_queue_connection' => (string) config('queue.workloads.mail.connection', config('queue.default')),
-            'mail_queue_name' => (string) config('queue.workloads.mail.queue', 'emails'),
+            'mail_queue_name' => (string) config('queue.workloads.mail.queue', 'default'),
             'mail_mailer' => (string) config('mail.default'),
         ]);
     }

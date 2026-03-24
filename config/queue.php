@@ -66,8 +66,8 @@ return [
 
         'redis' => [
             'driver' => 'redis',
-            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
-            'queue' => env('REDIS_QUEUE', 'default'),
+            'connection' => 'default',
+            'queue' => 'default',
             'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
             'block_for' => env('REDIS_QUEUE_BLOCK_FOR'),
             'after_commit' => (bool) env('REDIS_QUEUE_AFTER_COMMIT', false),
@@ -138,16 +138,16 @@ return [
 
     'workloads' => [
         'mail' => [
-            'connection' => env('QUEUE_MAIL_CONNECTION', env('QUEUE_CONNECTION', 'sync')),
-            'queue' => env('QUEUE_MAIL', 'emails'),
+            'connection' => env('QUEUE_CONNECTION', 'sync'),
+            'queue' => 'default',
         ],
         'exports' => [
-            'connection' => env('QUEUE_EXPORTS_CONNECTION', env('QUEUE_CONNECTION', 'sync')),
-            'queue' => env('QUEUE_EXPORTS', 'exports'),
+            'connection' => env('QUEUE_CONNECTION', 'sync'),
+            'queue' => 'default',
         ],
         'notifications' => [
-            'connection' => env('QUEUE_NOTIFICATIONS_CONNECTION', env('QUEUE_CONNECTION', 'sync')),
-            'queue' => env('QUEUE_NOTIFICATIONS', 'default'),
+            'connection' => env('QUEUE_CONNECTION', 'sync'),
+            'queue' => 'default',
         ],
     ],
 

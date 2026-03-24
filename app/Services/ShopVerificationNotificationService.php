@@ -101,7 +101,7 @@ class ShopVerificationNotificationService
             'shop_customer_id' => (int) $customer->id,
             'shop_customer_email_hash' => $email !== '' ? hash('sha256', $email) : null,
             'mail_queue_connection' => (string) config('queue.workloads.mail.connection', config('queue.default')),
-            'mail_queue_name' => (string) config('queue.workloads.mail.queue', 'emails'),
+            'mail_queue_name' => (string) config('queue.workloads.mail.queue', 'default'),
             'mail_mailer' => (string) config('mail.default'),
             'mail_host' => (string) config('mail.mailers.smtp.host', ''),
             'mail_port' => (int) config('mail.mailers.smtp.port', 0),

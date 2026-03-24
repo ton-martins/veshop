@@ -18,7 +18,7 @@ class ResetShopCustomerPasswordNotification extends Notification implements Shou
         private readonly ?string $contractorSlug = null,
     ) {
         $this->connection = (string) config('queue.workloads.mail.connection', config('queue.default'));
-        $this->queue = (string) config('queue.workloads.mail.queue', 'emails');
+        $this->queue = (string) config('queue.workloads.mail.queue', 'default');
         $this->afterCommit = true;
     }
 

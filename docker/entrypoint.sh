@@ -14,6 +14,4 @@ if [ ! -L /var/www/public/storage ]; then
     php artisan storage:link >/dev/null 2>&1 || true
 fi
 
-php-fpm -D
-
 exec "$@"
