@@ -34,7 +34,8 @@
             font-size: 0;
         }
         .brand-logo,
-        .brand-initials {
+        .brand-initials,
+        .brand-icon {
             display: inline-block;
             vertical-align: middle;
             width: 56px;
@@ -54,12 +55,39 @@
             object-fit: contain;
             padding: 8px;
         }
+        .brand-icon {
+            border: 1px solid #dbe4ee;
+            background: #ffffff;
+        }
+        .brand-icon img {
+            display: block;
+            width: 56px;
+            height: 56px;
+            object-fit: cover;
+        }
         .brand-initials {
             background: #0b3c4a;
             color: #ffffff;
             font-size: 16px;
             font-weight: 700;
             line-height: 56px;
+        }
+        .brand-logo-rect {
+            display: inline-block;
+            vertical-align: middle;
+            width: 164px;
+            height: 56px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #dbe4ee;
+            background: #ffffff;
+        }
+        .brand-logo-rect img {
+            display: block;
+            width: 164px;
+            height: 56px;
+            object-fit: contain;
+            padding: 6px 10px;
         }
         .brand-info {
             display: inline-block;
@@ -159,12 +187,16 @@
     <header class="header">
         <div class="brand-cell">
             <div class="brand-box">
-                @if(!empty($identity['logo_data_uri']))
-                    <div class="brand-logo">
-                        <img src="{{ $identity['logo_data_uri'] }}" alt="Logo">
+                @if(!empty($identity['rect_logo_data_uri']))
+                    <div class="brand-logo-rect">
+                        <img src="{{ $identity['rect_logo_data_uri'] }}" alt="Logo do contratante">
+                    </div>
+                @elseif(!empty($identity['square_icon_data_uri']))
+                    <div class="brand-icon">
+                        <img src="{{ $identity['square_icon_data_uri'] }}" alt="Ícone do contratante">
                     </div>
                 @else
-                    <div class="brand-initials">{{ $identity['initials'] ?? 'CT' }}</div>
+                    <div class="brand-initials" style="background: {{ $identity['badge_background'] ?? '#073341' }};">{{ $identity['initials'] ?? 'CT' }}</div>
                 @endif
                 <div class="brand-info">
                     <p class="brand-name">{{ $identity['name'] ?? ($contractor->brand_name ?? $contractor->name ?? 'Contratante') }}</p>

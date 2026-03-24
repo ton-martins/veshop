@@ -50,7 +50,7 @@ class GenerateReportExportJob implements ShouldQueue
         $export = ReportExport::query()
             ->with([
                 'requestedBy:id,name',
-                'contractor:id,name,brand_name,brand_logo_url,brand_avatar_url,timezone',
+                'contractor:id,name,brand_name,brand_logo_url,brand_avatar_url,brand_primary_color,timezone',
             ])
             ->find($this->reportExportId);
 
@@ -105,7 +105,7 @@ class GenerateReportExportJob implements ShouldQueue
             static fn (array $section): int => is_array($section['rows'] ?? null) ? count($section['rows']) : 0
         );
 
-        $disk = 'local';
+        $disk = $this->resolveExportDisk();
         $directory = "exports/contractors/{$export->contractor_id}";
         Storage::disk($disk)->makeDirectory($directory);
 
@@ -230,6 +230,16 @@ class GenerateReportExportJob implements ShouldQueue
             ReportExport::FORMAT_EXCEL => 'xls',
             default => 'csv',
         };
+    }
+
+    private function resolveExportDisk(): string
+    {
+        $configuredDisk = trim((string) config('filesystems.exports_disk', 'local'));
+        if ($configuredDisk === '' || ! config("filesystems.disks.{$configuredDisk}")) {
+            return 'local';
+        }
+
+        return $configuredDisk;
     }
 
     /**
@@ -977,7 +987,13 @@ class GenerateReportExportJob implements ShouldQueue
     }
 
     /**
-     * @return array{name: string, initials: string, logo_data_uri: string|null}
+     * @return array{
+     *     name: string,
+     *     initials: string,
+     *     badge_background: string,
+     *     rect_logo_data_uri: string|null,
+     *     square_icon_data_uri: string|null
+     * }
      */
     private function resolveContractorIdentity(Contractor $contractor): array
     {
@@ -996,16 +1012,48 @@ class GenerateReportExportJob implements ShouldQueue
             $initials = 'CT';
         }
 
-        $logoDataUri = $this->resolveImageDataUri((string) ($contractor->brand_logo_url ?? ''));
-        if ($logoDataUri === null) {
-            $logoDataUri = $this->resolveImageDataUri((string) ($contractor->brand_avatar_url ?? ''));
-        }
+        $rectLogoDataUri = $this->resolveImageDataUri((string) ($contractor->brand_logo_url ?? ''));
+        $squareIconDataUri = $rectLogoDataUri === null
+            ? $this->resolveImageDataUri((string) ($contractor->brand_avatar_url ?? ''))
+            : null;
 
         return [
             'name' => $name,
             'initials' => $initials,
-            'logo_data_uri' => $logoDataUri,
+            'badge_background' => $this->normalizeBrandColor((string) ($contractor->brand_primary_color ?? '')),
+            'rect_logo_data_uri' => $rectLogoDataUri,
+            'square_icon_data_uri' => $squareIconDataUri,
         ];
+    }
+
+    private function normalizeBrandColor(string $value): string
+    {
+        $raw = strtoupper(trim($value));
+        if ($raw === '') {
+            return '#073341';
+        }
+
+        if (! str_starts_with($raw, '#')) {
+            $raw = "#{$raw}";
+        }
+
+        if (! preg_match('/^#([A-F0-9]{3}|[A-F0-9]{6})$/', $raw)) {
+            return '#073341';
+        }
+
+        if (strlen($raw) === 4) {
+            $raw = sprintf(
+                '#%s%s%s%s%s%s',
+                $raw[1],
+                $raw[1],
+                $raw[2],
+                $raw[2],
+                $raw[3],
+                $raw[3],
+            );
+        }
+
+        return $raw;
     }
 
     private function resolveImageDataUri(string $reference): ?string

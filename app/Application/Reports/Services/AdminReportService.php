@@ -104,25 +104,34 @@ class AdminReportService
             ->latest('id')
             ->limit(12)
             ->get()
-            ->map(fn (ReportExport $item): array => [
-                'id' => (int) $item->id,
-                'file' => $this->resolveExportFilename($item),
-                'format' => $this->resolveExportFormat($item),
-                'is_pdf' => $this->resolveExportFormat($item) === ReportExport::FORMAT_PDF,
-                'status' => $this->statusLabel((string) $item->status),
-                'status_tone' => $this->statusTone((string) $item->status),
-                'status_value' => (string) $item->status,
-                'by' => (string) ($item->requestedBy?->name ?? 'Sistema'),
-                'when' => optional($item->created_at)?->format('d/m/Y H:i'),
-                'rows' => $item->row_count,
-                'error' => $item->error_message,
-                'download_url' => $canManageExportFiles && $item->status === ReportExport::STATUS_COMPLETED
-                    ? route('admin.reports.exports.download', ['reportExport' => $item->id], false)
-                    : null,
-                'preview_url' => $canManageExportFiles && $item->status === ReportExport::STATUS_COMPLETED
-                    ? route('admin.reports.exports.download', ['reportExport' => $item->id, 'inline' => 1], false)
-                    : null,
-            ])
+            ->map(function (ReportExport $item) use ($canManageExportFiles): array {
+                $isCompleted = (string) $item->status === ReportExport::STATUS_COMPLETED;
+                $storage = $isCompleted ? $this->resolveReadableExportStorage($item) : null;
+                $canOpenExportFile = $canManageExportFiles && $isCompleted && $storage !== null;
+                $fallbackError = $canManageExportFiles && $isCompleted && $storage === null
+                    ? 'Arquivo da exportação não encontrado no armazenamento atual. Gere uma nova exportação.'
+                    : null;
+
+                return [
+                    'id' => (int) $item->id,
+                    'file' => $this->resolveExportFilename($item),
+                    'format' => $this->resolveExportFormat($item),
+                    'is_pdf' => $this->resolveExportFormat($item) === ReportExport::FORMAT_PDF,
+                    'status' => $this->statusLabel((string) $item->status),
+                    'status_tone' => $this->statusTone((string) $item->status),
+                    'status_value' => (string) $item->status,
+                    'by' => (string) ($item->requestedBy?->name ?? 'Sistema'),
+                    'when' => optional($item->created_at)?->format('d/m/Y H:i'),
+                    'rows' => $item->row_count,
+                    'error' => (string) ($item->error_message ?: $fallbackError),
+                    'download_url' => $canOpenExportFile
+                        ? route('admin.reports.exports.download', ['reportExport' => $item->id], false)
+                        : null,
+                    'preview_url' => $canOpenExportFile
+                        ? route('admin.reports.exports.download', ['reportExport' => $item->id, 'inline' => 1], false)
+                        : null,
+                ];
+            })
             ->values()
             ->all();
 
@@ -253,15 +262,19 @@ class AdminReportService
 
         abort_unless((int) $reportExport->contractor_id === (int) $contractor->id, 404);
         abort_unless((string) $reportExport->status === ReportExport::STATUS_COMPLETED, 404);
-        abort_unless($reportExport->file_disk && $reportExport->file_path, 404);
-        abort_unless(Storage::disk($reportExport->file_disk)->exists($reportExport->file_path), 404);
+
+        $storage = $this->resolveReadableExportStorage($reportExport);
+        abort_unless($storage !== null, 404);
+
+        $disk = (string) $storage['disk'];
+        $path = (string) $storage['path'];
 
         $filename = $this->resolveExportFilename($reportExport);
         $format = $this->resolveExportFormat($reportExport);
         $inline = $request->boolean('inline') && $format === ReportExport::FORMAT_PDF;
 
         if ($inline) {
-            $content = Storage::disk($reportExport->file_disk)->get($reportExport->file_path);
+            $content = Storage::disk($disk)->get($path);
 
             return response($content, 200, [
                 'Content-Type' => 'application/pdf',
@@ -270,8 +283,8 @@ class AdminReportService
             ]);
         }
 
-        return Storage::disk($reportExport->file_disk)->download(
-            $reportExport->file_path,
+        return Storage::disk($disk)->download(
+            $path,
             $filename,
         );
     }
@@ -340,6 +353,96 @@ class AdminReportService
         }
 
         return mb_substr($candidate, 0, 120);
+    }
+
+    /**
+     * @return array{disk: string, path: string}|null
+     */
+    private function resolveReadableExportStorage(ReportExport $export): ?array
+    {
+        $path = $this->normalizeExportStoragePath($export->file_path);
+        if ($path === '') {
+            return null;
+        }
+
+        $expectedPrefix = "exports/contractors/{$export->contractor_id}/";
+        if (! str_starts_with($path, $expectedPrefix)) {
+            return null;
+        }
+
+        $primaryDisk = trim((string) ($export->file_disk ?? ''));
+        $candidates = collect([$primaryDisk, 'local', 'public'])
+            ->filter(static fn (mixed $disk): bool => is_string($disk) && trim($disk) !== '')
+            ->map(static fn (string $disk): string => trim($disk))
+            ->unique()
+            ->values()
+            ->all();
+
+        foreach ($candidates as $disk) {
+            if ($this->storageFileExists($disk, $path)) {
+                return [
+                    'disk' => $disk,
+                    'path' => $path,
+                ];
+            }
+        }
+
+        if ($this->migrateLegacyLocalExport($path) && $this->storageFileExists('local', $path)) {
+            return [
+                'disk' => 'local',
+                'path' => $path,
+            ];
+        }
+
+        return null;
+    }
+
+    private function normalizeExportStoragePath(mixed $value): string
+    {
+        $raw = trim((string) ($value ?? ''));
+        if ($raw === '') {
+            return '';
+        }
+
+        $path = parse_url($raw, PHP_URL_PATH);
+        $candidate = is_string($path) && $path !== '' ? $path : $raw;
+
+        return ltrim($candidate, '/');
+    }
+
+    private function storageFileExists(string $disk, string $path): bool
+    {
+        if (! config("filesystems.disks.{$disk}")) {
+            return false;
+        }
+
+        return Storage::disk($disk)->exists($path);
+    }
+
+    private function migrateLegacyLocalExport(string $path): bool
+    {
+        $legacyAbsolutePath = storage_path('app/'.$path);
+        if (! is_file($legacyAbsolutePath)) {
+            return false;
+        }
+
+        $targetDirectory = trim(dirname($path), './');
+        if ($targetDirectory !== '') {
+            Storage::disk('local')->makeDirectory($targetDirectory);
+        }
+
+        $stream = fopen($legacyAbsolutePath, 'rb');
+        if (! is_resource($stream)) {
+            return false;
+        }
+
+        try {
+            Storage::disk('local')->writeStream($path, $stream);
+        } finally {
+            fclose($stream);
+        }
+
+        return Storage::disk('local')->exists($path);
     }
 
     private function statusLabel(string $status): string

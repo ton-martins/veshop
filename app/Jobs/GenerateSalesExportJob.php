@@ -40,7 +40,7 @@ class GenerateSalesExportJob implements ShouldQueue
             return;
         }
 
-        $disk = 'local';
+        $disk = $this->resolveExportDisk();
         $directory = "exports/contractors/{$export->contractor_id}";
         $filename = sprintf(
             'sales-%d-%d-%s.csv',
@@ -119,6 +119,16 @@ class GenerateSalesExportJob implements ShouldQueue
         if ($export->requestedBy) {
             $export->requestedBy->notify(new ReportExportReadyNotification($export));
         }
+    }
+
+    private function resolveExportDisk(): string
+    {
+        $configuredDisk = trim((string) config('filesystems.exports_disk', 'local'));
+        if ($configuredDisk === '' || ! config("filesystems.disks.{$configuredDisk}")) {
+            return 'local';
+        }
+
+        return $configuredDisk;
     }
 
     public function failed(Throwable $exception): void
