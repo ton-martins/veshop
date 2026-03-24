@@ -37,6 +37,7 @@ const deletePlanTempId = ref('');
 const tempId = (prefix = 'plan') => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 const num = (value) => (value === null || value === undefined || String(value).trim() === '' ? '' : String(value));
 const normalizeCode = (value) => String(value ?? '').trim().toLowerCase();
+const MODULE_CODE_PDV = 'pdv';
 const nicheValues = computed(() => (props.niches ?? []).map((item) => String(item.value ?? '').trim().toLowerCase()).filter(Boolean));
 const defaultNiche = computed(() => nicheValues.value[0] ?? 'commercial');
 
@@ -172,9 +173,20 @@ const catalog = computed(() => {
         .filter(Boolean);
 });
 
+const moduleAllowedForNiche = (module, niche) => {
+    const safeNiche = normalizeNiche(niche);
+    const code = normalizeCode(module?.code);
+
+    if (safeNiche === 'services' && code === MODULE_CODE_PDV) {
+        return false;
+    }
+
+    return module?.niche === null || module?.niche === safeNiche;
+};
+
 const modulesForNiche = (niche) => {
     const safeNiche = normalizeNiche(niche);
-    return catalog.value.filter((item) => item.niche === null || item.niche === safeNiche);
+    return catalog.value.filter((item) => moduleAllowedForNiche(item, safeNiche));
 };
 
 const allowedModuleCodes = (niche) => modulesForNiche(niche).map((item) => item.code);

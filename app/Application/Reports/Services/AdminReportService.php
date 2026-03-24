@@ -363,6 +363,7 @@ class AdminReportService
      */
     private function resolveExportModules(Contractor $contractor): array
     {
+        $isServicesNiche = $contractor->niche() === Contractor::NICHE_SERVICES;
         $enabledModuleCodes = collect($contractor->enabledModules())
             ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
             ->filter()
@@ -380,6 +381,10 @@ class AdminReportService
             ->keyBy(static fn (Module $module): string => strtolower(trim((string) $module->code)));
 
         return collect(self::EXPORT_MODULES)
+            ->reject(static function (array $item) use ($isServicesNiche): bool {
+                return $isServicesNiche
+                    && strtolower(trim((string) ($item['code'] ?? ''))) === 'pdv';
+            })
             ->filter(function (array $item) use ($enabledModuleCodes): bool {
                 $required = collect($item['requires'] ?? [])
                     ->map(static fn (mixed $value): string => strtolower(trim((string) $value)))

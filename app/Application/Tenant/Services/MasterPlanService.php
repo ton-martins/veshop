@@ -87,6 +87,33 @@ class MasterPlanService
             ->withQueryString()
             ->through(function (Plan $plan): array {
                 $features = $this->normalizeFeatures($plan->features);
+                $rawModuleCodes = $plan->modules
+                    ->where('is_active', true)
+                    ->pluck('code')
+                    ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
+                    ->filter()
+                    ->values()
+                    ->all();
+                $moduleCodes = $this->contractorCapabilitiesService->resolvePlanModuleCodesForPersistence(
+                    $plan->niche,
+                    $rawModuleCodes,
+                );
+                $moduleNamesByCode = $plan->modules
+                    ->where('is_active', true)
+                    ->mapWithKeys(static function ($module): array {
+                        $code = strtolower(trim((string) ($module->code ?? '')));
+                        $name = trim((string) ($module->name ?? ''));
+                        if ($code === '' || $name === '') {
+                            return [];
+                        }
+
+                        return [$code => $name];
+                    });
+                $moduleNames = collect($moduleCodes)
+                    ->map(static fn (string $code): string => (string) ($moduleNamesByCode->get($code) ?? ''))
+                    ->filter()
+                    ->values()
+                    ->all();
 
                 return [
                     'id' => $plan->id,
@@ -106,20 +133,8 @@ class MasterPlanService
                     'description' => $plan->description,
                     'features' => $features,
                     'features_text' => $this->featuresToText($features),
-                    'module_codes' => $plan->modules
-                        ->where('is_active', true)
-                        ->pluck('code')
-                        ->map(static fn (mixed $code): string => strtolower(trim((string) $code)))
-                        ->filter()
-                        ->values()
-                        ->all(),
-                    'module_names' => $plan->modules
-                        ->where('is_active', true)
-                        ->pluck('name')
-                        ->map(static fn (mixed $name): string => trim((string) $name))
-                        ->filter()
-                        ->values()
-                        ->all(),
+                    'module_codes' => $moduleCodes,
+                    'module_names' => $moduleNames,
                     'is_active' => (bool) $plan->is_active,
                     'is_featured' => (bool) $plan->is_featured,
                     'show_on_landing' => (bool) $plan->show_on_landing,

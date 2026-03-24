@@ -311,6 +311,11 @@ class ContractorCapabilitiesService
 
     private function moduleSupportsNiche(Module $module, string $niche): bool
     {
+        $moduleCode = strtolower(trim((string) $module->code));
+        if ($niche === Contractor::NICHE_SERVICES && $moduleCode === 'pdv') {
+            return false;
+        }
+
         $moduleNiche = $module->niche !== null ? Contractor::normalizeNiche((string) $module->niche) : null;
 
         return $moduleNiche === null || $moduleNiche === $niche;
