@@ -177,8 +177,8 @@ const submit = () => {
         subtitle="Fluxo em duas etapas para acelerar compras e pedidos."
         :back-href="shopUrl"
         back-label="Voltar para loja"
-        hero-title="Cadastro no mesmo layout da loja"
-        hero-description="Experiência única para nicho comércio e serviços, com identidade da marca do contratante."
+        hero-title="Cadastro-se na loja"
+        hero-description="Aproveite as promoções e benefícios exclusivos."
     >
         <div class="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-3">
             <div class="flex items-center justify-between gap-3">

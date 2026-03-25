@@ -44,8 +44,8 @@ const submit = () => {
         subtitle="Entre para acompanhar pedidos, favoritos e checkout rápido."
         :back-href="shopUrl"
         back-label="Voltar para loja"
-        hero-title="Loja virtual no estilo app"
-        hero-description="Mesmo padrão visual em mobile, tablet e desktop para comércio e serviços."
+        hero-title="Acesse sua conta"
+        hero-description="Faça login para gerenciar seus pedidos, favoritos e aproveitar um checkout mais rápido."
     >
         <div v-if="flashStatus" class="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
             {{ flashStatus }}
