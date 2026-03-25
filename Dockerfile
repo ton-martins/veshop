@@ -7,6 +7,7 @@ RUN apk add --no-cache \
     freetype \
     icu-libs \
     libjpeg-turbo \
+    libwebp \
     libpng \
     libzip \
     nginx \
@@ -18,10 +19,11 @@ RUN apk add --no-cache \
     freetype-dev \
     icu-dev \
     libjpeg-turbo-dev \
+    libwebp-dev \
     libpng-dev \
     libzip-dev \
     oniguruma-dev \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j"$(nproc)" \
     bcmath \
     gd \

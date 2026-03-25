@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -220,7 +221,13 @@ class AdminServiceCatalogService
                 $this->deleteServiceImage($contractor, $currentStoragePath);
             }
 
-            $processed = $this->imageProcessor->processAndStore($uploadedImage, $contractor, 'services/catalog');
+            try {
+                $processed = $this->imageProcessor->processAndStore($uploadedImage, $contractor, 'services/catalog');
+            } catch (\Throwable) {
+                throw ValidationException::withMessages([
+                    'image_file' => 'Nao foi possivel processar a imagem enviada. Verifique se o servidor possui GD com suporte a WebP e tente novamente.',
+                ]);
+            }
             $data['image_url'] = $processed['url'];
         } elseif ($removeImage) {
             if ($currentStoragePath) {

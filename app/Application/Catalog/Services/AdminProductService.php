@@ -722,7 +722,42 @@ class AdminProductService
             ]);
         }
 
+        if ($this->isImageProcessingException($exception)) {
+            throw ValidationException::withMessages([
+                'gallery_files' => 'Não foi possível processar a imagem enviada. Verifique se o servidor possui GD com suporte a WebP e tente novamente.',
+                'image_file' => 'Não foi possível processar a imagem enviada. Verifique se o servidor possui GD com suporte a WebP e tente novamente.',
+            ]);
+        }
+
         throw $exception;
+    }
+
+    private function isImageProcessingException(\Throwable $exception): bool
+    {
+        $message = mb_strtolower((string) $exception->getMessage());
+
+        if ($exception instanceof \RuntimeException) {
+            return str_contains($message, 'extensao gd')
+                || str_contains($message, 'funcao image')
+                || str_contains($message, 'webp')
+                || str_contains($message, 'arquivo de imagem')
+                || str_contains($message, 'formato de imagem')
+                || str_contains($message, 'dimensao de imagem')
+                || str_contains($message, 'imagem otimizada')
+                || str_contains($message, 'imagem processada');
+        }
+
+        if ($exception instanceof \Error) {
+            return str_contains($message, 'undefined function')
+                && (
+                    str_contains($message, 'imagewebp')
+                    || str_contains($message, 'imagecreatefromstring')
+                    || str_contains($message, 'imagecreatetruecolor')
+                    || str_contains($message, 'imagecopyresampled')
+                );
+        }
+
+        return false;
     }
 
     private function isVariationSkuUniqueConstraint(QueryException $exception): bool

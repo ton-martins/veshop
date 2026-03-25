@@ -15,6 +15,8 @@ class ProductImageProcessor
      */
     public function processAndStore(UploadedFile $file, Contractor $contractor, string $directory = 'products/gallery'): array
     {
+        $this->assertGdWebpSupport();
+
         $raw = $file->getContent();
         if ($raw === false) {
             throw new RuntimeException('Falha ao ler o arquivo de imagem enviado.');
@@ -72,7 +74,10 @@ class ProductImageProcessor
         $filename = Str::lower(Str::uuid()->toString()).'.webp';
         $path = "contractors/{$contractor->id}/{$directory}/{$filename}";
 
-        Storage::disk('public')->put($path, $binary);
+        $stored = Storage::disk('public')->put($path, $binary);
+        if (! $stored) {
+            throw new RuntimeException('Nao foi possivel salvar a imagem processada no armazenamento configurado.');
+        }
 
         return [
             'path' => $path,
@@ -81,6 +86,25 @@ class ProductImageProcessor
             'width' => $targetWidth,
             'height' => $targetHeight,
         ];
+    }
+
+    private function assertGdWebpSupport(): void
+    {
+        if (! extension_loaded('gd') || ! function_exists('gd_info')) {
+            throw new RuntimeException('Extensao GD nao encontrada no servidor para processar imagens.');
+        }
+
+        foreach (['imagecreatefromstring', 'imagecreatetruecolor', 'imagecopyresampled', 'imagewebp'] as $function) {
+            if (! function_exists($function)) {
+                throw new RuntimeException("Funcao {$function} indisponivel no servidor para processar imagens.");
+            }
+        }
+
+        $gdInfo = gd_info();
+        $webpSupport = isset($gdInfo['WebP Support']) ? (bool) $gdInfo['WebP Support'] : true;
+        if (! $webpSupport) {
+            throw new RuntimeException('GD instalado sem suporte a WebP.');
+        }
     }
 
     /**
@@ -99,4 +123,3 @@ class ProductImageProcessor
         return [$targetWidth, $targetHeight];
     }
 }
-
