@@ -93,7 +93,17 @@ const formatMoney = (value) => currency.format(toMoney(value));
 const isServicesMode = computed(() => String(props.mode ?? '').toLowerCase() === 'services');
 const storeSlug = computed(() => String(props.contractor?.slug || 'shop'));
 const storeName = computed(() => String(props.contractor?.brand_name || props.contractor?.name || 'Loja'));
-const storeAccent = computed(() => normalizeHex(props.contractor?.primary_color, '#FF5C35'));
+const storeTheme = computed(() => {
+    const theme = props.storefront?.theme ?? {};
+    const menuButtonColor = normalizeHex(theme.menu_button_color || props.contractor?.primary_color, '#FF5C35');
+    return {
+        menuButtonColor,
+        cartButtonColor: normalizeHex(theme.cart_button_color, '#F58D1D'),
+        favoriteButtonColor: normalizeHex(theme.favorite_button_color, '#FF3B30'),
+        addButtonColor: normalizeHex(theme.add_button_color, '#F59E0B'),
+    };
+});
+const storeAccent = computed(() => storeTheme.value.menuButtonColor);
 const storeLogo = computed(() => {
     const safe = String(props.contractor?.avatar_url || props.contractor?.logo_url || '').trim();
     return safe !== '' ? safe : null;
@@ -112,6 +122,11 @@ const themeVars = computed(() => ({
     '--idx-primary-dark': withAlpha(storeAccent.value, 0.92),
     '--idx-primary-soft': withAlpha(storeAccent.value, 0.16),
     '--idx-primary-border': withAlpha(storeAccent.value, 0.4),
+    '--idx-menu-button': storeTheme.value.menuButtonColor,
+    '--idx-menu-button-soft': withAlpha(storeTheme.value.menuButtonColor, 0.14),
+    '--idx-cart-button': storeTheme.value.cartButtonColor,
+    '--idx-favorite-button': storeTheme.value.favoriteButtonColor,
+    '--idx-add-button': storeTheme.value.addButtonColor,
 }));
 
 const loginUrl = computed(() => `/shop/${storeSlug.value}/entrar`);
@@ -269,7 +284,6 @@ const configuredBanners = computed(() => {
             badge: String(banner?.badge || '').trim(),
             image: String(banner?.image_url || '').trim() || fallbackImage.value,
             ctaLabel: String(banner?.cta_label || '').trim() || 'Ver mais',
-            ctaUrl: String(banner?.cta_url || '').trim(),
             backgroundColor: normalizeHex(String(banner?.background_color || ''), storeAccent.value),
         }))
         .slice(0, 6);
@@ -295,7 +309,6 @@ const fallbackBanners = computed(() => featuredCatalog.value.slice(0, 6).map((it
     badge: index === 0 ? 'Destaque' : '',
     image: item.image,
     ctaLabel: isServicesMode.value ? 'Agendar' : 'Comprar',
-    ctaUrl: '',
     backgroundColor: storeAccent.value,
 })));
 
@@ -928,7 +941,14 @@ onBeforeUnmount(() => {
                             <button v-if="activeTab !== 'home'" type="button" class="text-gray-400 md:hidden" @click="activeTab = 'home'">
                                 <ArrowLeft :size="18" />
                             </button>
-                            <h2 class="text-lg font-bold md:hidden">{{ activeTab === 'home' ? 'Catálogo' : activeTab === 'favorites' ? 'Favoritos' : activeTab === 'orders' ? (isServicesMode ? 'Agendamentos' : 'Pedidos') : 'Conta' }}</h2>
+                            <div v-if="activeTab === 'home'" class="md:hidden flex items-center gap-2 min-w-0">
+                                <div class="w-8 h-8 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center shrink-0 border border-gray-200">
+                                    <img v-if="storeLogo" :src="storeLogo" :alt="storeName" class="w-full h-full object-cover">
+                                    <span v-else class="text-[10px] font-bold text-gray-700">{{ storeInitials }}</span>
+                                </div>
+                                <h2 class="text-sm font-bold truncate text-slate-900">{{ storeName }}</h2>
+                            </div>
+                            <h2 v-else class="text-lg font-bold md:hidden">{{ activeTab === 'favorites' ? 'Favoritos' : activeTab === 'orders' ? (isServicesMode ? 'Agendamentos' : 'Pedidos') : 'Conta' }}</h2>
                             <div class="hidden md:flex items-center bg-gray-100 rounded-full px-4 py-2 w-full">
                                 <Search :size="15" class="text-gray-400 mr-2" />
                                 <input v-model="search" type="text" placeholder="Buscar" class="bg-transparent border-none focus:outline-none w-full text-sm">
@@ -990,15 +1010,14 @@ onBeforeUnmount(() => {
                                             </span>
                                             <h3 class="mt-2 text-base font-extrabold leading-tight">{{ banner.title }}</h3>
                                             <p v-if="banner.subtitle" class="mt-1 line-clamp-2 text-xs text-white/90">{{ banner.subtitle }}</p>
-                                            <a
-                                                v-if="banner.ctaUrl"
-                                                :href="banner.ctaUrl"
-                                                target="_blank"
-                                                rel="noopener noreferrer"
+                                            <button
+                                                v-if="banner.ctaLabel"
+                                                type="button"
                                                 class="mt-3 inline-flex rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold text-white"
+                                                @click="applyHeroCta"
                                             >
                                                 {{ banner.ctaLabel || 'Ver mais' }}
-                                            </a>
+                                            </button>
                                         </div>
                                     </article>
                                 </div>
@@ -1016,15 +1035,14 @@ onBeforeUnmount(() => {
                                         <p class="text-xs uppercase tracking-[0.16em]">{{ storeName }}</p>
                                         <h3 class="mt-2 text-2xl font-black leading-tight">{{ banner.title }}</h3>
                                         <p v-if="banner.subtitle" class="mt-1 max-w-md text-sm text-white/90">{{ banner.subtitle }}</p>
-                                        <a
-                                            v-if="banner.ctaUrl"
-                                            :href="banner.ctaUrl"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
+                                        <button
+                                            v-if="banner.ctaLabel"
+                                            type="button"
                                             class="mt-4 inline-flex rounded-full bg-white/20 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur"
+                                            @click="applyHeroCta"
                                         >
                                             {{ banner.ctaLabel || 'Ver mais' }}
-                                        </a>
+                                        </button>
                                     </div>
                                 </article>
                             </div>
@@ -1080,7 +1098,7 @@ onBeforeUnmount(() => {
                                         </div>
                                         <div class="flex justify-between items-center mt-2">
                                             <span class="text-gray-700 text-xs font-semibold">{{ formatMoney(item.price) }}</span>
-                                            <button class="bg-[#F59E0B] text-white text-xs px-3 py-1 rounded-full font-medium" @click="addToCart(item)">
+                                            <button class="text-white text-xs px-3 py-1 rounded-full font-medium" :style="{ backgroundColor: 'var(--idx-add-button)' }" @click="addToCart(item)">
                                                 {{ isServicesMode ? 'Agendar' : 'Adicionar' }}
                                             </button>
                                         </div>
@@ -1205,7 +1223,7 @@ onBeforeUnmount(() => {
                     </button>
 
                     <div class="relative -top-5">
-                        <button class="bg-[#FF3B30] text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center" @click="activeTab = 'favorites'">
+                        <button class="text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center" :style="{ backgroundColor: 'var(--idx-favorite-button)' }" @click="activeTab = 'favorites'">
                             <Heart :size="20" :class="{ 'fill-white': activeTab === 'favorites' }" />
                         </button>
                         <span class="text-[10px] font-medium text-gray-400 absolute -bottom-4 left-1/2 transform -translate-x-1/2">Favoritos</span>
@@ -1276,7 +1294,7 @@ onBeforeUnmount(() => {
                             <div v-if="!isServicesMode" class="flex items-center gap-2">
                                 <button type="button" class="w-6 h-6 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center" @click="decrease(entry.id)"><Minus :size="12" /></button>
                                 <span class="text-xs font-semibold">{{ entry.quantity }}</span>
-                                <button type="button" class="w-6 h-6 rounded-full bg-[var(--idx-primary)] text-white flex items-center justify-center" @click="increase(entry.id)"><Plus :size="12" /></button>
+                                <button type="button" class="w-6 h-6 rounded-full text-white flex items-center justify-center" :style="{ backgroundColor: 'var(--idx-add-button)' }" @click="increase(entry.id)"><Plus :size="12" /></button>
                             </div>
                             <span class="text-gray-500 text-sm">{{ formatMoney(entry.lineTotal) }}</span>
                         </div>
@@ -1302,7 +1320,8 @@ onBeforeUnmount(() => {
                     </div>
                     <button
                         type="button"
-                        class="w-full bg-[#F58D1D] hover:bg-orange-500 transition-colors text-white font-medium py-4 rounded-full shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                        class="w-full transition-colors text-white font-medium py-4 rounded-full shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                        :style="{ backgroundColor: 'var(--idx-cart-button)' }"
                         :disabled="isServicesMode ? bookingForm.processing || !cartEntries.length : checkoutForm.processing || !cartEntries.length"
                         @click="isServicesMode ? submitQuickBooking() : submitQuickCheckout()"
                     >

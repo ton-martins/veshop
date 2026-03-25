@@ -23,6 +23,8 @@ class AdminStorefrontService
 
     private const TAB_STOREFRONT = 'vitrine';
 
+    private const TAB_BUSINESS_HOURS = 'horario';
+
     private const TAB_SHIPPING = 'frete';
 
     public function edit(Request $request): Response
@@ -171,12 +173,16 @@ class AdminStorefrontService
             'banners.*.image_file' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
             'banners.*.image_url' => ['nullable', 'string', 'max:255'],
             'banners.*.cta_label' => ['nullable', 'string', 'max:40'],
-            'banners.*.cta_url' => ['nullable', 'string', 'max:255'],
             'banners.*.background_color' => [
                 'nullable',
                 'string',
                 'regex:/^#([A-Fa-f0-9]{3}|[A-Fa-f0-9]{6})$/',
             ],
+            'theme' => ['nullable', 'array'],
+            'theme.menu_button_color' => ['nullable', 'string', 'regex:/^#([A-Fa-f0-9]{3}|[A-Fa-f0-9]{6})$/'],
+            'theme.cart_button_color' => ['nullable', 'string', 'regex:/^#([A-Fa-f0-9]{3}|[A-Fa-f0-9]{6})$/'],
+            'theme.favorite_button_color' => ['nullable', 'string', 'regex:/^#([A-Fa-f0-9]{3}|[A-Fa-f0-9]{6})$/'],
+            'theme.add_button_color' => ['nullable', 'string', 'regex:/^#([A-Fa-f0-9]{3}|[A-Fa-f0-9]{6})$/'],
             'promotions_enabled' => ['required', 'boolean'],
             'promotions_title' => ['nullable', 'string', 'max:80'],
             'promotions_subtitle' => ['nullable', 'string', 'max:220'],
@@ -279,6 +285,16 @@ class AdminStorefrontService
             'catalog' => [
                 'title' => $validated['catalog_title'] ?? '',
                 'subtitle' => $validated['catalog_subtitle'] ?? '',
+            ],
+            'theme' => [
+                'menu_button_color' => $validated['theme']['menu_button_color']
+                    ?? ($previousStorefront['theme']['menu_button_color'] ?? '#FF5C35'),
+                'cart_button_color' => $validated['theme']['cart_button_color']
+                    ?? ($previousStorefront['theme']['cart_button_color'] ?? '#F58D1D'),
+                'favorite_button_color' => $validated['theme']['favorite_button_color']
+                    ?? ($previousStorefront['theme']['favorite_button_color'] ?? '#FF3B30'),
+                'add_button_color' => $validated['theme']['add_button_color']
+                    ?? ($previousStorefront['theme']['add_button_color'] ?? '#F59E0B'),
             ],
         ]);
 
@@ -404,7 +420,6 @@ class AdminStorefrontService
                 'image_url' => $imageUrl,
                 'image_path' => $imagePath ?: '',
                 'cta_label' => (string) ($banner['cta_label'] ?? ''),
-                'cta_url' => (string) ($banner['cta_url'] ?? ''),
                 'background_color' => (string) ($banner['background_color'] ?? ''),
             ];
         }
@@ -499,13 +514,14 @@ class AdminStorefrontService
 
     private function resolveTab(Request $request, bool $supportsShipping): string
     {
-        if (! $supportsShipping) {
-            return self::TAB_STOREFRONT;
+        $tab = trim((string) $request->string('tab')->toString());
+        $allowedTabs = [self::TAB_STOREFRONT, self::TAB_BUSINESS_HOURS];
+
+        if ($supportsShipping) {
+            $allowedTabs[] = self::TAB_SHIPPING;
         }
 
-        $tab = trim((string) $request->string('tab')->toString());
-
-        return in_array($tab, [self::TAB_STOREFRONT, self::TAB_SHIPPING], true)
+        return in_array($tab, $allowedTabs, true)
             ? $tab
             : self::TAB_STOREFRONT;
     }

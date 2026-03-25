@@ -54,6 +54,7 @@ class StorefrontSettings
         $rawBusinessHours = is_array($settings['business_hours'] ?? null) ? $settings['business_hours'] : [];
 
         $defaultColor = self::normalizeHex((string) ($contractor->brand_primary_color ?? ''), '#073341');
+        $defaultMenuButtonColor = self::normalizeHex((string) ($contractor->brand_primary_color ?? ''), '#FF5C35');
 
         return [
             'template' => $template,
@@ -114,6 +115,7 @@ class StorefrontSettings
                     220
                 ),
             ],
+            'theme' => self::normalizeTheme($settings['theme'] ?? [], $defaultMenuButtonColor),
             'business_hours' => self::normalizeBusinessHours($rawBusinessHours),
         ];
     }
@@ -162,7 +164,6 @@ class StorefrontSettings
                 $imageUrl
             );
             $ctaLabel = self::normalizeText($item['cta_label'] ?? null, '', 40);
-            $ctaUrl = self::normalizeText($item['cta_url'] ?? null, '', 255);
             $backgroundColor = self::normalizeHex(
                 (string) ($item['background_color'] ?? ''),
                 $fallbackColor
@@ -179,7 +180,6 @@ class StorefrontSettings
                 'image_url' => $imageUrl,
                 'image_path' => $imagePath,
                 'cta_label' => $ctaLabel,
-                'cta_url' => $ctaUrl,
                 'background_color' => $backgroundColor,
             ];
 
@@ -189,6 +189,22 @@ class StorefrontSettings
         }
 
         return array_values($items);
+    }
+
+    /**
+     * @param  array<string, mixed>|mixed  $raw
+     * @return array<string, string>
+     */
+    public static function normalizeTheme(mixed $raw, string $fallbackMenuColor = '#FF5C35'): array
+    {
+        $theme = is_array($raw) ? $raw : [];
+
+        return [
+            'menu_button_color' => self::normalizeHex((string) ($theme['menu_button_color'] ?? ''), $fallbackMenuColor),
+            'cart_button_color' => self::normalizeHex((string) ($theme['cart_button_color'] ?? ''), '#F58D1D'),
+            'favorite_button_color' => self::normalizeHex((string) ($theme['favorite_button_color'] ?? ''), '#FF3B30'),
+            'add_button_color' => self::normalizeHex((string) ($theme['add_button_color'] ?? ''), '#F59E0B'),
+        ];
     }
 
     /**
