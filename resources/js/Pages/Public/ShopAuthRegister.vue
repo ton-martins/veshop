@@ -79,7 +79,7 @@ const lookupCep = async () => {
 
     if (!form.cep) return;
     if (form.cep.length !== 9) {
-        cepLookupError.value = 'CEP invalido. Digite os 8 numeros.';
+        cepLookupError.value = 'CEP inválido. Digite os 8 números.';
         return;
     }
 
@@ -92,7 +92,7 @@ const lookupCep = async () => {
 
         const payload = await response.json();
         if (payload?.erro) {
-            cepLookupError.value = 'CEP nao encontrado.';
+            cepLookupError.value = 'CEP não encontrado.';
             return;
         }
 
@@ -107,7 +107,7 @@ const lookupCep = async () => {
             form.complement = parsed.complement || '';
         }
     } catch {
-        cepLookupError.value = 'Nao foi possivel consultar o CEP agora. Preencha manualmente.';
+        cepLookupError.value = 'Não foi possível consultar o CEP agora. Preencha manualmente.';
     } finally {
         cepLookupLoading.value = false;
     }
@@ -120,13 +120,13 @@ const goToStepTwo = () => {
 
     requiredStepOneFields.forEach((field) => {
         if (!String(form[field] ?? '').trim()) {
-            form.setError(field, 'Campo obrigatorio.');
+            form.setError(field, 'Campo obrigatório.');
             hasError = true;
         }
     });
 
     if (form.password && form.password_confirmation && form.password !== form.password_confirmation) {
-        form.setError('password_confirmation', 'A confirmacao de senha nao confere.');
+        form.setError('password_confirmation', 'A confirmação de senha não confere.');
         hasError = true;
     }
 
@@ -150,7 +150,7 @@ const submit = () => {
 
     requiredStepTwoFields.forEach((field) => {
         if (!String(form[field] ?? '').trim()) {
-            form.setError(field, 'Campo obrigatorio.');
+            form.setError(field, 'Campo obrigatório.');
             hasError = true;
         }
     });
@@ -178,7 +178,7 @@ const submit = () => {
         :back-href="shopUrl"
         back-label="Voltar para loja"
         hero-title="Cadastro no mesmo layout da loja"
-        hero-description="Experiencia unica para nicho comercio e servicos, com identidade da marca do contratante."
+        hero-description="Experiência única para nicho comércio e serviços, com identidade da marca do contratante."
     >
         <div class="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-3">
             <div class="flex items-center justify-between gap-3">
@@ -222,7 +222,7 @@ const submit = () => {
                         type="email"
                         autocomplete="email"
                         class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 shadow-sm outline-none transition focus:border-[var(--store-auth-primary-border)] focus:ring-2 focus:ring-[var(--store-auth-ring)]"
-                        placeholder="voce@exemplo.com"
+                        placeholder="você@exemplo.com"
                     >
                     <InputError :message="form.errors.email" class="mt-1" />
                 </div>
@@ -308,7 +308,7 @@ const submit = () => {
                 </div>
 
                 <div>
-                    <label class="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Numero</label>
+                    <label class="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Número</label>
                     <input
                         v-model="form.number"
                         type="text"
@@ -398,7 +398,7 @@ const submit = () => {
         </form>
 
         <p class="mt-6 text-center text-sm text-slate-500">
-            Ja tem conta?
+            Já tem conta?
             <Link :href="loginUrl" class="font-semibold text-[var(--store-auth-primary)]">Entrar</Link>
         </p>
     </AuthNativeShell>

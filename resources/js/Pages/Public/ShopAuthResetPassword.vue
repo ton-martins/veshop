@@ -50,8 +50,8 @@ const submit = () => {
         subtitle="Atualize suas credenciais para voltar ao painel da loja."
         :back-href="loginUrl"
         back-label="Voltar para login"
-        hero-title="Recuperacao com padrao nativo"
-        hero-description="Mesmo sistema de componentes usado na vitrine, carrinho e navegacao da loja."
+        hero-title="Recuperação com padrão nativo"
+        hero-description="Mesmo sistema de componentes usado na vitrine, carrinho e navegação da loja."
     >
         <div v-if="props.status" class="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
             {{ props.status }}
@@ -66,7 +66,7 @@ const submit = () => {
                     autocomplete="email"
                     required
                     class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 shadow-sm outline-none transition focus:border-[var(--store-auth-primary-border)] focus:ring-2 focus:ring-[var(--store-auth-ring)]"
-                    placeholder="voce@exemplo.com"
+                    placeholder="você@exemplo.com"
                 >
             </label>
             <InputError :message="form.errors.email" class="-mt-2" />
@@ -108,7 +108,7 @@ const submit = () => {
         </form>
 
         <p class="mt-5 text-center text-sm text-slate-500">
-            Ja possui acesso?
+            Já possui acesso?
             <Link :href="loginUrl" class="font-semibold text-[var(--store-auth-primary)]">Entrar</Link>
         </p>
     </AuthNativeShell>

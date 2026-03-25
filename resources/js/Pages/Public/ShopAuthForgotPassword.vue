@@ -34,13 +34,13 @@ const submit = () => {
 
     <AuthNativeShell
         :contractor="contractor"
-        badge="Recuperacao"
+        badge="Recuperação"
         title="Esqueci minha senha"
-        subtitle="Informe o email da conta para receber o link de recuperacao."
+        subtitle="Informe o e-mail da conta para receber o link de recuperação."
         :back-href="loginUrl"
         back-label="Voltar para login"
-        hero-title="Recuperacao integrada ao app"
-        hero-description="A tela segue o mesmo padrao visual da loja para manter consistencia em toda a jornada."
+        hero-title="Recuperação integrada ao app"
+        hero-description="A tela segue o mesmo padrão visual da loja para manter consistência em toda a jornada."
     >
         <div v-if="props.status" class="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
             {{ props.status }}
@@ -56,7 +56,7 @@ const submit = () => {
                     required
                     autofocus
                     class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 shadow-sm outline-none transition focus:border-[var(--store-auth-primary-border)] focus:ring-2 focus:ring-[var(--store-auth-ring)]"
-                    placeholder="voce@exemplo.com"
+                    placeholder="você@exemplo.com"
                 >
             </label>
             <InputError :message="form.errors.email" class="-mt-2" />
@@ -67,7 +67,7 @@ const submit = () => {
                 style="background: var(--store-auth-primary-strong)"
                 :disabled="form.processing"
             >
-                {{ form.processing ? 'Enviando...' : 'Enviar link de recuperacao' }}
+                {{ form.processing ? 'Enviando...' : 'Enviar link de recuperação' }}
             </button>
         </form>
 
@@ -81,7 +81,7 @@ const submit = () => {
                 :href="shopUrl"
                 class="inline-flex items-center justify-center rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20"
             >
-                Ver vitrine publica
+                Ver vitrine pública
             </Link>
         </template>
     </AuthNativeShell>

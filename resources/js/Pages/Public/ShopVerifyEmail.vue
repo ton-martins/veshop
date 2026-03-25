@@ -36,28 +36,28 @@ const logout = () => {
 </script>
 
 <template>
-    <Head :title="`Verificar email | ${storeName}`" />
+    <Head :title="`Verificar e-mail | ${storeName}`" />
 
     <AuthNativeShell
         :contractor="contractor"
-        badge="Validacao"
-        title="Verifique seu email"
-        subtitle="Confirme o email para liberar checkout e recursos da conta."
+        badge="Validação"
+        title="Verifique seu e-mail"
+        subtitle="Confirme o e-mail para liberar checkout e recursos da conta."
         :back-href="shopUrl"
         back-label="Voltar para loja"
-        hero-title="Protecao ativa de conta"
-        hero-description="A verificacao de email faz parte do fluxo padrao e garante seguranca no cadastro."
+        hero-title="Proteção ativa de conta"
+        hero-description="A verificação de e-mail faz parte do fluxo padrão e garante segurança no cadastro."
     >
         <div class="space-y-4">
             <div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                Link enviado para <span class="font-semibold">{{ customerEmail || 'seu email cadastrado' }}</span>.
+                Link enviado para <span class="font-semibold">{{ customerEmail || 'seu e-mail cadastrado' }}</span>.
             </div>
 
             <div
                 v-if="verificationLinkSent"
                 class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
             >
-                Enviamos um novo link de verificacao para seu email.
+                Enviamos um novo link de verificação para seu e-mail.
             </div>
 
             <div
@@ -74,14 +74,14 @@ const logout = () => {
                 :disabled="resendForm.processing"
                 @click="resendVerification"
             >
-                {{ resendForm.processing ? 'Enviando...' : 'Reenviar verificacao' }}
+                {{ resendForm.processing ? 'Enviando...' : 'Reenviar verificação' }}
             </button>
 
             <Link
                 :href="accountUrl"
                 class="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
-                Ja confirmei meu email
+                Já confirmei meu e-mail
             </Link>
 
             <button

@@ -3,7 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, useForm } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Store, Truck } from 'lucide-vue-next';
 
 const props = defineProps({
@@ -41,6 +41,29 @@ const normalizeHour = (value, fallback = '00:00') => {
     const safe = String(value ?? '').trim();
     return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(safe) ? safe : fallback;
 };
+
+const normalizeHexColor = (value, fallback = '#073341') => {
+    const safe = String(value ?? '').trim();
+    if (/^#[0-9a-fA-F]{3}$/.test(safe) || /^#[0-9a-fA-F]{6}$/.test(safe)) return safe.toUpperCase();
+    if (/^[0-9a-fA-F]{3}$/.test(safe) || /^[0-9a-fA-F]{6}$/.test(safe)) return `#${safe.toUpperCase()}`;
+    return fallback.toUpperCase();
+};
+
+const MAX_BANNERS = 6;
+
+const createEmptyBanner = () => ({
+    title: '',
+    subtitle: '',
+    badge: '',
+    existing_image_path: '',
+    image_url: '',
+    image_file: null,
+    remove_image: false,
+    cta_label: '',
+    cta_url: '',
+    background_color: normalizeHexColor(props.contractor?.primary_color || '#073341'),
+    preview_url: '',
+});
 
 const normalizeBusinessHours = (value) => {
     const base = emptyBusinessHours();
@@ -95,6 +118,9 @@ const storefrontForm = useForm({
     hero_enabled: true,
     hero_title: '',
     hero_subtitle: '',
+    hero_cta_label: '',
+    banners_enabled: true,
+    banners: [createEmptyBanner()],
     promotions_enabled: true,
     promotions_title: '',
     promotions_subtitle: '',
@@ -128,6 +154,23 @@ const hydrateStorefront = () => {
     storefrontForm.hero_enabled = blocks.hero ?? true;
     storefrontForm.hero_title = hero.title ?? '';
     storefrontForm.hero_subtitle = hero.subtitle ?? '';
+    storefrontForm.hero_cta_label = hero.cta_label ?? '';
+    storefrontForm.banners_enabled = blocks.banners ?? true;
+    storefrontForm.banners = Array.isArray(storefront.banners) && storefront.banners.length
+        ? storefront.banners.map((banner) => ({
+            title: String(banner?.title ?? ''),
+            subtitle: String(banner?.subtitle ?? ''),
+            badge: String(banner?.badge ?? ''),
+            existing_image_path: String(banner?.image_path ?? ''),
+            image_url: String(banner?.image_url ?? ''),
+            image_file: null,
+            remove_image: false,
+            cta_label: String(banner?.cta_label ?? ''),
+            cta_url: String(banner?.cta_url ?? ''),
+            background_color: normalizeHexColor(banner?.background_color ?? props.contractor?.primary_color ?? '#073341'),
+            preview_url: String(banner?.image_url ?? ''),
+        }))
+        : [createEmptyBanner(), createEmptyBanner()];
     storefrontForm.promotions_enabled = blocks.promotions ?? true;
     storefrontForm.promotions_title = promotions.title ?? '';
     storefrontForm.promotions_subtitle = promotions.subtitle ?? '';
@@ -261,6 +304,13 @@ const promotionErrorMessage = computed(() =>
     storefrontForm.errors.promotion_service_ids || storefrontForm.errors.promotion_product_ids || '',
 );
 
+const bannerErrorMessage = computed(() => {
+    if (storefrontForm.errors.banners) return storefrontForm.errors.banners;
+
+    const dynamicErrorKey = Object.keys(storefrontForm.errors).find((key) => key.startsWith('banners.'));
+    return dynamicErrorKey ? storefrontForm.errors[dynamicErrorKey] : '';
+});
+
 const previewBrandName = computed(() => props.contractor?.brand_name || props.contractor?.name || 'Loja');
 const previewSlug = computed(() => String(storefrontForm.slug ?? props.contractor?.slug ?? '').trim().toLowerCase());
 const previewShopPath = computed(() => `/shop/${previewSlug.value || String(props.contractor?.slug ?? '').trim()}`);
@@ -280,8 +330,52 @@ const previewShopUrl = computed(() => {
     return original || `/shop/${slug}`;
 });
 const activeBlocksCount = computed(() =>
-    [storefrontForm.hero_enabled, storefrontForm.promotions_enabled, storefrontForm.categories_enabled, storefrontForm.catalog_enabled].filter(Boolean).length,
+    [
+        storefrontForm.hero_enabled,
+        storefrontForm.banners_enabled,
+        storefrontForm.promotions_enabled,
+        storefrontForm.categories_enabled,
+        storefrontForm.catalog_enabled,
+    ].filter(Boolean).length,
 );
+
+const canAddBanner = computed(() => storefrontForm.banners.length < MAX_BANNERS);
+
+const revokePreview = (url) => {
+    const safe = String(url ?? '').trim();
+    if (!safe.startsWith('blob:')) return;
+    URL.revokeObjectURL(safe);
+};
+
+const addBanner = () => {
+    if (!canAddBanner.value) return;
+    storefrontForm.banners = [...storefrontForm.banners, createEmptyBanner()];
+};
+
+const removeBanner = (index) => {
+    const next = [...storefrontForm.banners];
+    revokePreview(next[index]?.preview_url);
+    next.splice(index, 1);
+    storefrontForm.banners = next.length ? next : [createEmptyBanner()];
+};
+
+const onBannerFileChange = (index, event) => {
+    const file = event?.target?.files?.[0] ?? null;
+    if (!file) return;
+
+    revokePreview(storefrontForm.banners[index].preview_url);
+    storefrontForm.banners[index].image_file = file;
+    storefrontForm.banners[index].remove_image = false;
+    storefrontForm.banners[index].preview_url = URL.createObjectURL(file);
+};
+
+const clearBannerImage = (index) => {
+    revokePreview(storefrontForm.banners[index].preview_url);
+    storefrontForm.banners[index].image_file = null;
+    storefrontForm.banners[index].preview_url = '';
+    storefrontForm.banners[index].image_url = '';
+    storefrontForm.banners[index].remove_image = true;
+};
 
 const addPromotionFromSelect = () => {
     const value = String(promotionSelectValue.value || '').trim();
@@ -370,8 +464,24 @@ const submitStorefront = () => {
             .replace(/[^a-z0-9-]/g, '-')
             .replace(/-{2,}/g, '-')
             .replace(/^-+|-+$/g, ''),
-        banners_enabled: false,
-        banners: [],
+        hero_cta_label: String(data.hero_cta_label || '').trim(),
+        banners_enabled: Boolean(data.banners_enabled),
+        banners: (data.banners ?? [])
+            .map((banner) => ({
+                title: String(banner?.title || '').trim(),
+                subtitle: String(banner?.subtitle || '').trim(),
+                badge: String(banner?.badge || '').trim(),
+                existing_image_path: String(banner?.existing_image_path || '').trim(),
+                image_file: banner?.image_file ?? null,
+                remove_image: Boolean(banner?.remove_image),
+                image_url: String(banner?.image_url || '').trim(),
+                cta_label: String(banner?.cta_label || '').trim(),
+                cta_url: String(banner?.cta_url || '').trim(),
+                background_color: normalizeHexColor(
+                    banner?.background_color || props.contractor?.primary_color || '#073341'
+                ),
+            }))
+            .slice(0, MAX_BANNERS),
         promotion_product_ids: (data.promotion_product_ids ?? [])
             .map((id) => Number(id))
             .filter((id) => Number.isInteger(id) && id > 0),
@@ -403,6 +513,10 @@ const submitShipping = () => {
         preserveScroll: true,
     });
 };
+
+onBeforeUnmount(() => {
+    storefrontForm.banners.forEach((banner) => revokePreview(banner?.preview_url));
+});
 </script>
 
 <template>
@@ -484,6 +598,10 @@ const submitShipping = () => {
                     <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                         <span>Hero principal</span>
                         <input v-model="storefrontForm.hero_enabled" type="checkbox" class="rounded border-slate-300">
+                    </label>
+                    <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <span>Banners</span>
+                        <input v-model="storefrontForm.banners_enabled" type="checkbox" class="rounded border-slate-300">
                     </label>
                     <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                         <span>Promoções</span>
@@ -571,12 +689,154 @@ const submitShipping = () => {
                     </div>
                 </section>
 
-                <div class="grid gap-3 md:grid-cols-2">
-                    <input v-model="storefrontForm.hero_title" type="text" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Título da vitrine">
-                    <input v-model="storefrontForm.promotions_title" type="text" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Título dos destaques">
-                    <textarea v-model="storefrontForm.hero_subtitle" rows="2" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Subtítulo da vitrine" />
-                    <textarea v-model="storefrontForm.promotions_subtitle" rows="2" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Subtítulo dos destaques" />
-                </div>
+                <section class="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Textos principais da vitrine</p>
+                    <div class="grid gap-3 md:grid-cols-2">
+                        <input
+                            v-model="storefrontForm.hero_title"
+                            type="text"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                            placeholder="Título da vitrine"
+                        >
+                        <input
+                            v-model="storefrontForm.promotions_title"
+                            type="text"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                            placeholder="Título dos destaques"
+                        >
+                        <textarea
+                            v-model="storefrontForm.hero_subtitle"
+                            rows="2"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                            placeholder="Subtítulo da vitrine"
+                        ></textarea>
+                        <textarea
+                            v-model="storefrontForm.promotions_subtitle"
+                            rows="2"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                            placeholder="Subtítulo dos destaques"
+                        ></textarea>
+                        <input
+                            v-model="storefrontForm.hero_cta_label"
+                            type="text"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"
+                            placeholder="Texto do botão principal (ex.: Ver catálogo)"
+                        >
+                    </div>
+                </section>
+
+                <section class="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Banners da loja</p>
+                            <p class="mt-1 text-[11px] text-slate-500">
+                                Use os mesmos banners em desktop e mobile. No app mobile, eles aparecem em rolagem horizontal.
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="!canAddBanner"
+                            @click="addBanner"
+                        >
+                            Adicionar banner
+                        </button>
+                    </div>
+
+                    <p class="text-[11px] text-slate-500">
+                        Banners configurados: {{ storefrontForm.banners.length }} de {{ MAX_BANNERS }}
+                    </p>
+
+                    <div class="space-y-3">
+                        <article
+                            v-for="(banner, index) in storefrontForm.banners"
+                            :key="`banner-${index}`"
+                            class="rounded-xl border border-slate-200 bg-white p-3"
+                        >
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Banner {{ index + 1 }}</p>
+                                <button
+                                    type="button"
+                                    class="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="storefrontForm.banners.length <= 1"
+                                    @click="removeBanner(index)"
+                                >
+                                    Remover
+                                </button>
+                            </div>
+
+                            <div class="mt-3 grid gap-2 md:grid-cols-2">
+                                <input
+                                    v-model="banner.title"
+                                    type="text"
+                                    class="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                                    placeholder="Título do banner"
+                                >
+                                <input
+                                    v-model="banner.badge"
+                                    type="text"
+                                    class="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                                    placeholder="Badge (ex.: Oferta)"
+                                >
+                                <textarea
+                                    v-model="banner.subtitle"
+                                    rows="2"
+                                    class="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"
+                                    placeholder="Subtítulo do banner"
+                                ></textarea>
+                                <input
+                                    v-model="banner.cta_label"
+                                    type="text"
+                                    class="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                                    placeholder="Texto do CTA"
+                                >
+                                <input
+                                    v-model="banner.cta_url"
+                                    type="text"
+                                    class="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                                    placeholder="URL do CTA (opcional)"
+                                >
+                            </div>
+
+                            <div class="mt-2 grid gap-2 md:grid-cols-[1fr_180px_auto]">
+                                <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cor</span>
+                                    <input v-model="banner.background_color" type="color" class="h-8 w-10 cursor-pointer rounded border border-slate-300 bg-white p-0.5">
+                                    <input
+                                        v-model="banner.background_color"
+                                        type="text"
+                                        class="w-full rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                                        placeholder="#FF5C35"
+                                    >
+                                </label>
+
+                                <label class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                                    <span class="font-semibold uppercase tracking-wide text-slate-500">Imagem</span>
+                                    <input
+                                        type="file"
+                                        accept="image/png,image/jpeg,image/jpg,image/webp"
+                                        class="mt-1 block w-full text-[11px]"
+                                        @change="onBannerFileChange(index, $event)"
+                                    >
+                                </label>
+
+                                <button
+                                    type="button"
+                                    class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                    @click="clearBannerImage(index)"
+                                >
+                                    Limpar imagem
+                                </button>
+                            </div>
+
+                            <div v-if="banner.preview_url || banner.image_url" class="mt-3 overflow-hidden rounded-xl border border-slate-200">
+                                <img :src="banner.preview_url || banner.image_url" :alt="banner.title || `Banner ${index + 1}`" class="h-32 w-full object-cover">
+                            </div>
+                        </article>
+                    </div>
+                </section>
+
+                <p v-if="bannerErrorMessage" class="text-xs font-medium text-rose-600">{{ bannerErrorMessage }}</p>
 
                 <div class="space-y-3">
                     <div class="flex flex-wrap items-center justify-between gap-2">

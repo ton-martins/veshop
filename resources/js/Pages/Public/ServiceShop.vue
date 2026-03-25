@@ -1,6 +1,6 @@
 ﻿<script setup>
 /* eslint-disable vue/prop-name-casing */
-import NativeStorefrontApp from '@/Components/Public/Storefront/NativeStorefrontApp.vue';
+import StorefrontTemplateIndex6 from '@/Components/Public/Storefront/StorefrontTemplateIndex6.vue';
 import { Head } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
@@ -24,7 +24,7 @@ const storeName = computed(() => String(props.contractor?.brand_name || props.co
 <template>
     <Head :title="storeName" />
 
-    <NativeStorefrontApp
+    <StorefrontTemplateIndex6
         mode="services"
         :contractor="contractor"
         :categories="categories"
@@ -36,6 +36,3 @@ const storeName = computed(() => String(props.contractor?.brand_name || props.co
         :bookings="bookings"
     />
 </template>
-
-
-

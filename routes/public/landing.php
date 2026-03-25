@@ -14,10 +14,6 @@ Route::get('/politica-de-privacidade', static function () {
     return Inertia::render('Public/Legal/Privacy');
 })->name('legal.privacy');
 
-Route::get('/mockups/loja-app-nativo', static function () {
-    return Inertia::render('Public/StorefrontNativeMockup');
-})->name('mockups.storefront.native');
-
 Route::get('/catalogo/{slug}', static function (string $slug) {
     return redirect()->route('shop.show', ['slug' => $slug], 301);
 })->name('catalog.show');
