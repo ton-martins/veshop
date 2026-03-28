@@ -127,6 +127,41 @@ class ShopServiceBookingTest extends TestCase
         $this->assertSame(ServiceOrder::STATUS_OPEN, (string) $order->status);
     }
 
+    public function test_service_booking_requires_time_that_fits_service_duration_inside_business_hours(): void
+    {
+        $contractor = $this->createServiceContractor('servicos-faixa-horaria');
+        $contractor->settings = array_replace((array) $contractor->settings, [
+            'shop_storefront' => [
+                'store_online' => true,
+                'business_hours' => $this->businessHoursNineToSix(),
+            ],
+        ]);
+        $contractor->save();
+
+        [$service] = $this->createServiceCatalogData($contractor);
+        $service->duration_minutes = 90;
+        $service->save();
+
+        $customer = $this->createVerifiedShopCustomer($contractor, 'cliente-faixa-horaria');
+        $scheduledFor = now('America/Sao_Paulo')->addDays(1)->setTime(17, 30)->format('Y-m-d\TH:i');
+
+        $response = $this
+            ->actingAs($customer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.services.book', ['slug' => $contractor->slug]), [
+                'service_catalog_id' => $service->id,
+                'scheduled_for' => $scheduledFor,
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+        $response->assertSessionHasErrors('scheduled_for');
+
+        $this->assertDatabaseMissing('service_orders', [
+            'contractor_id' => $contractor->id,
+            'service_catalog_id' => $service->id,
+        ]);
+    }
+
     private function createServiceContractor(string $slug): Contractor
     {
         return Contractor::query()->create([

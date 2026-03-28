@@ -13,7 +13,9 @@ use App\Models\ShopCustomerFavorite;
 use App\Support\BrazilData;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ShopAccountController extends Controller
 {
@@ -129,6 +131,36 @@ class ShopAccountController extends Controller
         $customer->unreadNotifications->markAsRead();
 
         return back();
+    }
+
+    public function updatePassword(Request $request, string $slug): RedirectResponse
+    {
+        $contractor = $this->resolveActiveContractorBySlug($slug);
+        /** @var ShopCustomer|null $customer */
+        $customer = $request->user('shop');
+        abort_unless($customer, 403);
+        abort_unless((int) $customer->contractor_id === (int) $contractor->id, 403);
+
+        $validated = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ], [
+            'current_password.required' => 'Informe a senha atual.',
+            'password.required' => 'Informe a nova senha.',
+            'password.confirmed' => 'A confirmação da senha não confere.',
+        ]);
+
+        if (! Hash::check((string) $validated['current_password'], (string) $customer->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => 'A senha atual informada é inválida.',
+            ]);
+        }
+
+        $customer->forceFill([
+            'password' => (string) $validated['password'],
+        ])->save();
+
+        return back()->with('status', 'Senha atualizada com sucesso.');
     }
 
     private function resolveActiveContractorBySlug(string $slug): Contractor
@@ -276,7 +308,7 @@ class ShopAccountController extends Controller
             'qr_code' => $qrCode,
             'qr_code_base64' => $qrCodeBase64,
             'expires_at' => $expiresAt,
-            'is_pix' => $paymentMethodCode === PaymentMethod::CODE_PIX && $qrCode !== '',
+            'is_pix' => $this->hasPixPaymentData($paymentMethodCode, $qrCode, $qrCodeBase64, $ticketUrl),
         ];
     }
 
@@ -291,6 +323,17 @@ class ShopAccountController extends Controller
             SalePayment::STATUS_FAILED => 'Falhou',
             default => ucfirst(strtolower(trim($status))),
         };
+    }
+
+    private function hasPixPaymentData(
+        string $paymentMethodCode,
+        string $qrCode,
+        string $qrCodeBase64,
+        string $ticketUrl
+    ): bool {
+        return trim($qrCode) !== ''
+            || trim($qrCodeBase64) !== ''
+            || trim($ticketUrl) !== '';
     }
 
     /**

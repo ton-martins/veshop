@@ -2,7 +2,7 @@
 import Modal from '@/Components/Modal.vue';
 import { AlertTriangle } from 'lucide-vue-next';
 
-const props = defineProps({
+defineProps({
     show: {
         type: Boolean,
         default: false,
@@ -42,7 +42,7 @@ const emit = defineEmits(['close', 'confirm']);
 
 <template>
     <Modal :show="show" :max-width="maxWidth" @close="emit('close')">
-        <div class="space-y-4 p-6">
+        <div class="space-y-4 rounded-3xl p-6">
             <div class="flex items-start gap-3">
                 <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
                     <AlertTriangle class="h-5 w-5" />

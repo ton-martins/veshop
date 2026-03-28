@@ -91,7 +91,7 @@ const onStepClick = (stepNumber) => {
 </script>
 
 <template>
-    <div class="space-y-4 bg-white p-5 sm:p-6">
+    <div class="veshop-wizard-modal-frame space-y-4 rounded-3xl bg-white p-5 sm:p-6">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0">
                 <h3 class="text-lg font-semibold text-slate-900">{{ title }}</h3>
@@ -152,3 +152,9 @@ const onStepClick = (stepNumber) => {
         </div>
     </div>
 </template>
+
+<style scoped>
+.veshop-wizard-modal-frame {
+    border-radius: 1.5rem;
+}
+</style>

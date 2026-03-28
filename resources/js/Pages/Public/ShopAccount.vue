@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Bell, Check, Copy, Heart, Home, LogOut, QrCode, ShoppingBag, X } from 'lucide-vue-next';
 import { useBranding } from '@/branding';
 import { BRAZIL_STATES, formatCepBR, formatPhoneBR, normalizeStateCode, viaCepToAddress } from '@/utils/br';
+import QRCode from 'qrcode';
 
 const props = defineProps({
     contractor: { type: Object, required: true },
@@ -214,6 +215,9 @@ const normalizeOrderPayment = (payment) => {
 
     const methodCode = String(payment.method_code ?? '').trim().toLowerCase();
     const qrCode = String(payment.qr_code ?? '').trim();
+    const qrCodeBase64 = String(payment.qr_code_base64 ?? '').trim();
+    const ticketUrl = String(payment.ticket_url ?? '').trim();
+    const hasPixData = qrCode !== '' || qrCodeBase64 !== '' || ticketUrl !== '';
 
     return {
         status: String(payment.status ?? '').trim().toLowerCase(),
@@ -223,11 +227,11 @@ const normalizeOrderPayment = (payment) => {
         provider: String(payment.provider ?? ''),
         transaction_reference: String(payment.transaction_reference ?? ''),
         amount: Number(payment.amount ?? 0),
-        ticket_url: String(payment.ticket_url ?? ''),
+        ticket_url: ticketUrl,
         qr_code: qrCode,
-        qr_code_base64: String(payment.qr_code_base64 ?? '').trim(),
+        qr_code_base64: qrCodeBase64,
         expires_at: payment.expires_at ?? null,
-        is_pix: Boolean(payment.is_pix ?? (methodCode === 'pix' && qrCode !== '')),
+        is_pix: Boolean(payment.is_pix ?? (methodCode === 'pix' && hasPixData)),
     };
 };
 
@@ -236,6 +240,9 @@ const normalizeCheckoutPayment = (payload) => {
 
     const methodCode = String(payload.payment_method_code ?? '').trim().toLowerCase();
     const qrCode = String(payload.qr_code ?? '').trim();
+    const qrCodeBase64 = String(payload.qr_code_base64 ?? '').trim();
+    const ticketUrl = String(payload.ticket_url ?? '').trim();
+    const hasPixData = qrCode !== '' || qrCodeBase64 !== '' || ticketUrl !== '';
 
     return {
         status: String(payload.payment_status ?? '').trim().toLowerCase(),
@@ -245,11 +252,11 @@ const normalizeCheckoutPayment = (payload) => {
         provider: String(payload.provider ?? ''),
         transaction_reference: String(payload.transaction_reference ?? ''),
         amount: Number(payload.amount ?? 0),
-        ticket_url: String(payload.ticket_url ?? ''),
+        ticket_url: ticketUrl,
         qr_code: qrCode,
-        qr_code_base64: String(payload.qr_code_base64 ?? '').trim(),
+        qr_code_base64: qrCodeBase64,
         expires_at: payload.expires_at ?? null,
-        is_pix: methodCode === 'pix' && qrCode !== '',
+        is_pix: Boolean(payload.is_pix ?? (methodCode === 'pix' && hasPixData)),
     };
 };
 
@@ -292,12 +299,37 @@ const activePixStatusUrl = computed(() => {
     return `/shop/${storeSlug.value}/checkout/pagamento/${orderId}`;
 });
 
-const activePixQrImageSrc = computed(() => {
+const activePixQrImageSrc = ref('');
+const resolveActivePixQrImage = async () => {
     const base64 = String(activePixPayment.value?.qr_code_base64 ?? '').trim();
-    if (!base64) return '';
+    if (base64 !== '') {
+        activePixQrImageSrc.value = base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`;
+        return;
+    }
 
-    return `data:image/png;base64,${base64}`;
-});
+    const qrCode = String(activePixPayment.value?.qr_code ?? '').trim();
+    if (qrCode === '') {
+        activePixQrImageSrc.value = '';
+        return;
+    }
+
+    try {
+        activePixQrImageSrc.value = await QRCode.toDataURL(qrCode, {
+            width: 416,
+            margin: 1,
+            color: {
+                dark: '#0f172a',
+                light: '#ffffff',
+            },
+        });
+    } catch {
+        activePixQrImageSrc.value = '';
+    }
+};
+
+watch(activePixPayment, () => {
+    void resolveActivePixQrImage();
+}, { immediate: true, deep: true });
 
 const shouldPollActivePixPayment = computed(() => {
     const status = String(activePixPayment.value?.status ?? '').trim().toLowerCase();
@@ -849,4 +881,3 @@ onBeforeUnmount(() => {
     opacity: 0;
 }
 </style>
-

@@ -12,8 +12,7 @@
         "test": "npm run test:php",
         "test:php": "php artisan test",
         "build": "vite build",
-        "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1",
-        "dev:raw": "vite"
+        "dev": "vite"
     },
     "devDependencies": {
         "@eslint/js": "^9.39.1",

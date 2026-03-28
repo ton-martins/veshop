@@ -420,6 +420,205 @@ class ShopCheckoutTest extends TestCase
         $this->assertSame('TX-MP-001', data_get($payment->gateway_payload, 'payment_intent.transaction_reference'));
     }
 
+    public function test_checkout_pix_enriches_qr_payload_when_create_response_has_no_qr_data(): void
+    {
+        $contractor = $this->createContractor('loja-mp-enrich');
+
+        $gateway = PaymentGateway::query()->create([
+            'contractor_id' => $contractor->id,
+            'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            'name' => 'Mercado Pago',
+            'is_active' => true,
+            'is_default' => true,
+            'is_sandbox' => true,
+            'credentials' => [
+                'access_token' => 'APP_USR_TEST_TOKEN',
+                'webhook_secret' => 'mp-webhook-token',
+            ],
+            'settings' => null,
+        ]);
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Produto Pix Enriquecido',
+            'sku' => 'MP-ENRICH-001',
+            'sale_price' => 59.90,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => $gateway->id,
+            'code' => PaymentMethod::CODE_PIX,
+            'name' => 'Pix Mercado Pago',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente MP Enrich',
+            'email' => 'cliente-mp-enrich@example.com',
+            'phone' => '71999990123',
+            'cep' => '41810-000',
+            'street' => 'Rua Pix',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        Http::fake([
+            'https://api.mercadopago.com/v1/payments' => Http::response([
+                'id' => 'TX-MP-ENRICH-001',
+                'status' => 'pending',
+                'external_reference' => 'PED-MP-ENRICH',
+                'date_of_expiration' => now()->addMinutes(30)->toIso8601String(),
+            ], 201),
+            'https://api.mercadopago.com/v1/payments/TX-MP-ENRICH-001' => Http::response([
+                'id' => 'TX-MP-ENRICH-001',
+                'status' => 'pending',
+                'external_reference' => 'PED-MP-ENRICH',
+                'date_of_expiration' => now()->addMinutes(30)->toIso8601String(),
+                'point_of_interaction' => [
+                    'transaction_data' => [
+                        'qr_code' => '0002010102ENRICH...',
+                        'ticket_url' => 'https://www.mercadopago.com.br/payments/qr/TX-MP-ENRICH-001',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), [
+                'customer_name' => 'Cliente MP Enrich',
+                'customer_phone' => '(71) 99999-0123',
+                'customer_email' => 'cliente-mp-enrich@example.com',
+                'payment_method_id' => $paymentMethod->id,
+                'idempotency_key' => 'checkout-mp-enrich-001',
+                'items' => [
+                    ['product_id' => $product->id, 'quantity' => 1],
+                ],
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+        $response->assertSessionHas('checkout_payment');
+
+        $checkoutPayment = $response->getSession()->get('checkout_payment');
+        $this->assertSame('TX-MP-ENRICH-001', data_get($checkoutPayment, 'transaction_reference'));
+        $this->assertSame('0002010102ENRICH...', data_get($checkoutPayment, 'qr_code'));
+
+        Http::assertSent(static function (\Illuminate\Http\Client\Request $request): bool {
+            return str_contains($request->url(), '/v1/payments/TX-MP-ENRICH-001')
+                && $request->method() === 'GET';
+        });
+    }
+
+    public function test_checkout_pix_intent_is_created_for_legacy_pix_method_codes(): void
+    {
+        $contractor = $this->createContractor('loja-mp-legado');
+
+        $gateway = PaymentGateway::query()->create([
+            'contractor_id' => $contractor->id,
+            'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            'name' => 'Mercado Pago',
+            'is_active' => true,
+            'is_default' => true,
+            'is_sandbox' => true,
+            'credentials' => [
+                'access_token' => 'APP_USR_TEST_TOKEN',
+                'webhook_secret' => 'mp-webhook-token',
+            ],
+            'settings' => null,
+        ]);
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Produto Pix Legado',
+            'sku' => 'MP-LEGADO-001',
+            'sale_price' => 69.90,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => $gateway->id,
+            'code' => 'pix_mercadopago_legado',
+            'name' => 'Pix Mercado Pago Legado',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente MP Legado',
+            'email' => 'cliente-mp-legado@example.com',
+            'phone' => '71999990123',
+            'cep' => '41810-000',
+            'street' => 'Rua Pix',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        Http::fake([
+            'https://api.mercadopago.com/v1/payments' => Http::response([
+                'id' => 'TX-MP-LEGADO-001',
+                'status' => 'pending',
+                'external_reference' => 'PED-MP-LEGADO',
+                'date_of_expiration' => now()->addMinutes(30)->toIso8601String(),
+                'point_of_interaction' => [
+                    'transaction_data' => [
+                        'qr_code' => '0002010102LEGADO...',
+                        'ticket_url' => 'https://www.mercadopago.com.br/payments/qr/TX-MP-LEGADO-001',
+                    ],
+                ],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), [
+                'customer_name' => 'Cliente MP Legado',
+                'customer_phone' => '(71) 99999-0123',
+                'customer_email' => 'cliente-mp-legado@example.com',
+                'payment_method_id' => $paymentMethod->id,
+                'items' => [
+                    ['product_id' => $product->id, 'quantity' => 1],
+                ],
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+        $response->assertSessionHas('checkout_payment');
+
+        $checkoutPayment = $response->getSession()->get('checkout_payment');
+        $this->assertSame('0002010102LEGADO...', data_get($checkoutPayment, 'qr_code'));
+    }
+
     public function test_authenticated_shop_customer_can_consult_pix_payment_status_for_own_order(): void
     {
         $contractor = $this->createContractor('loja-consulta-pix');

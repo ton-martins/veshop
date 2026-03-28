@@ -34,12 +34,15 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
 
             if (in_array($status, [401, 403], true)) {
                 throw new PaymentProviderException(
-                    'Access token do Mercado Pago invalido ou sem permissao.'
+                    'Access token do Mercado Pago inválido ou sem permissão.'
                 );
             }
 
+            $providerMessage = $this->resolveProviderErrorMessage($body);
+
             throw new PaymentProviderException(
-                'Falha ao validar conexao com Mercado Pago: HTTP '.$status
+                'Falha ao validar conexão com Mercado Pago: HTTP '.$status
+                .($providerMessage !== '' ? ' - '.$providerMessage : '')
             );
         }
 
@@ -70,6 +73,7 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
         $payerEmail = trim((string) ($context['payer_email'] ?? ''));
         $description = trim((string) ($context['description'] ?? 'Pedido '.$sale->code));
         $expiresAt = $context['expires_at'] ?? now()->addMinutes(30);
+        $dateOfExpiration = $this->formatDateOfExpiration($expiresAt);
 
         $payload = [
             'transaction_amount' => round((float) $salePayment->amount, 2),
@@ -77,9 +81,7 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
             'payment_method_id' => 'pix',
             'external_reference' => (string) $sale->code,
             'notification_url' => $notificationUrl !== '' ? $notificationUrl : null,
-            'date_of_expiration' => $expiresAt instanceof \DateTimeInterface
-                ? $expiresAt->format(\DateTimeInterface::ATOM)
-                : null,
+            'date_of_expiration' => $dateOfExpiration,
             'payer' => [
                 'email' => $payerEmail !== '' ? $payerEmail : $this->fallbackPayerEmail(),
             ],
@@ -102,8 +104,11 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
         $response = $request->post('/v1/payments', $payload);
 
         if (! $response->successful()) {
+            $providerMessage = $this->resolveProviderErrorMessage($response->json());
+
             throw new PaymentProviderException(
                 'Falha ao criar pagamento Pix no Mercado Pago: HTTP '.$response->status()
+                .($providerMessage !== '' ? ' - '.$providerMessage : '')
             );
         }
 
@@ -116,17 +121,32 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
             );
         }
 
-        $transactionData = (array) data_get($body, 'point_of_interaction.transaction_data', []);
+        $pixPayload = $this->extractPixPayload($body);
+        if (! $this->hasPixPayload($pixPayload)) {
+            try {
+                $latestPayment = $this->fetchPaymentById($gateway, $transactionReference);
+                $latestPixPayload = $this->extractPixPayload($latestPayment);
+
+                if ($this->hasPixPayload($latestPixPayload)) {
+                    $body = $latestPayment;
+                    $pixPayload = $latestPixPayload;
+                }
+            } catch (PaymentProviderException) {
+                // Keep original payload when enrichment fails.
+            }
+        }
+
+        $status = strtolower(trim((string) ($body['status'] ?? 'pending')));
 
         return [
             'provider' => $this->providerCode(),
             'transaction_reference' => $transactionReference,
-            'status' => strtolower(trim((string) ($body['status'] ?? 'pending'))),
+            'status' => $status,
             'external_reference' => trim((string) ($body['external_reference'] ?? '')),
             'date_of_expiration' => data_get($body, 'date_of_expiration'),
-            'qr_code' => (string) ($transactionData['qr_code'] ?? ''),
-            'qr_code_base64' => (string) ($transactionData['qr_code_base64'] ?? ''),
-            'ticket_url' => (string) ($transactionData['ticket_url'] ?? ''),
+            'qr_code' => $pixPayload['qr_code'],
+            'qr_code_base64' => $pixPayload['qr_code_base64'],
+            'ticket_url' => $pixPayload['ticket_url'],
             'raw' => $body,
         ];
     }
@@ -200,8 +220,11 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
         $response = $this->baseRequest($gateway)->get('/v1/payments/'.$paymentId);
 
         if (! $response->successful()) {
+            $providerMessage = $this->resolveProviderErrorMessage($response->json());
+
             throw new PaymentProviderException(
                 'Falha ao consultar pagamento Pix no Mercado Pago: HTTP '.$response->status()
+                .($providerMessage !== '' ? ' - '.$providerMessage : '')
             );
         }
 
@@ -249,5 +272,121 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
         $mailFrom = trim((string) config('mail.from.address', ''));
 
         return $mailFrom !== '' ? $mailFrom : 'contato@veshop.com.br';
+    }
+
+    private function formatDateOfExpiration(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d\TH:i:s.vP');
+        }
+
+        try {
+            return \Carbon\Carbon::parse((string) $value)->format('Y-m-d\TH:i:s.vP');
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payment
+     * @return array{qr_code:string, qr_code_base64:string, ticket_url:string}
+     */
+    private function extractPixPayload(array $payment): array
+    {
+        $transactionData = data_get($payment, 'point_of_interaction.transaction_data');
+        $transactionData = is_array($transactionData) ? $transactionData : [];
+
+        $qrCode = trim((string) ($transactionData['qr_code'] ?? data_get($payment, 'point_of_interaction.transaction_data.qr_code', '')));
+        $qrCodeBase64 = trim((string) ($transactionData['qr_code_base64'] ?? data_get($payment, 'point_of_interaction.transaction_data.qr_code_base64', '')));
+        $ticketUrl = trim((string) (
+            $transactionData['ticket_url']
+            ?? data_get($payment, 'point_of_interaction.transaction_data.ticket_url')
+            ?? data_get($payment, 'transaction_details.external_resource_url', '')
+        ));
+
+        if ($qrCodeBase64 !== '' && ! str_starts_with($qrCodeBase64, 'data:')) {
+            $qrCodeBase64 = preg_replace('/\s+/', '', $qrCodeBase64) ?: $qrCodeBase64;
+        }
+
+        return [
+            'qr_code' => $qrCode,
+            'qr_code_base64' => $qrCodeBase64,
+            'ticket_url' => $ticketUrl,
+        ];
+    }
+
+    /**
+     * @param  array{qr_code:string, qr_code_base64:string, ticket_url:string}  $payload
+     */
+    private function hasPixPayload(array $payload): bool
+    {
+        return trim($payload['qr_code']) !== ''
+            || trim($payload['qr_code_base64']) !== ''
+            || trim($payload['ticket_url']) !== '';
+    }
+
+    private function resolveProviderErrorMessage(mixed $body): string
+    {
+        if (! is_array($body)) {
+            return '';
+        }
+
+        $message = trim((string) ($body['message'] ?? ''));
+        $error = trim((string) ($body['error'] ?? ''));
+        $causes = collect($body['cause'] ?? [])
+            ->filter(static fn (mixed $item): bool => is_array($item))
+            ->map(static function (array $item): string {
+                $description = trim((string) ($item['description'] ?? ''));
+                if ($description !== '') {
+                    return $description;
+                }
+
+                $code = trim((string) ($item['code'] ?? ''));
+
+                return $code !== '' ? 'cause_code='.$code : '';
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        $parts = array_filter([
+            $error !== '' ? strtoupper($error) : '',
+            $message,
+            ! empty($causes) ? implode('; ', $causes) : '',
+        ], static fn (string $part): bool => $part !== '');
+
+        $uniqueParts = [];
+        foreach ($parts as $part) {
+            $normalized = strtolower(trim($part));
+            if ($normalized === '') {
+                continue;
+            }
+
+            if (in_array($normalized, $uniqueParts, true)) {
+                continue;
+            }
+
+            $uniqueParts[] = $normalized;
+        }
+
+        if (empty($uniqueParts)) {
+            return '';
+        }
+
+        $originals = [];
+        foreach ($parts as $part) {
+            $normalized = strtolower(trim($part));
+            if ($normalized === '' || ! in_array($normalized, $uniqueParts, true)) {
+                continue;
+            }
+
+            $originals[$normalized] = $part;
+        }
+
+        return implode(' | ', array_values($originals));
     }
 }

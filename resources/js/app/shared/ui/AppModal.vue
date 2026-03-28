@@ -17,7 +17,7 @@ defineEmits(['close']);
 
 <template>
     <Modal :show="show" :max-width="maxWidth" @close="$emit('close')">
-        <div class="space-y-4 p-6">
+        <div class="space-y-4 rounded-3xl p-6">
             <slot />
         </div>
     </Modal>

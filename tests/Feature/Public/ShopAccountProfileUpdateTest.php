@@ -5,6 +5,7 @@ namespace Tests\Feature\Public;
 use App\Models\Contractor;
 use App\Models\ShopCustomer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -77,6 +78,60 @@ class ShopAccountProfileUpdateTest extends TestCase
             'state' => 'SP',
             'is_active' => 1,
         ]);
+    }
+
+    public function test_shop_customer_can_update_password_from_account_page(): void
+    {
+        $contractor = $this->createContractor('loja-conta-senha');
+
+        $customer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Senha',
+            'email' => 'cliente-senha@example.com',
+            'password' => 'Password@123',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($customer, 'shop')
+            ->patch(route('shop.account.password.update', ['slug' => $contractor->slug]), [
+                'current_password' => 'Password@123',
+                'password' => 'NovaSenha@456',
+                'password_confirmation' => 'NovaSenha@456',
+            ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('status', 'Senha atualizada com sucesso.');
+
+        $this->assertTrue(Hash::check('NovaSenha@456', (string) $customer->fresh()->password));
+    }
+
+    public function test_shop_customer_cannot_update_password_when_current_password_is_invalid(): void
+    {
+        $contractor = $this->createContractor('loja-conta-senha-invalida');
+
+        $customer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Senha Inválida',
+            'email' => 'cliente-senha-invalida@example.com',
+            'password' => 'Password@123',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($customer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->patch(route('shop.account.password.update', ['slug' => $contractor->slug]), [
+                'current_password' => 'SenhaErrada@000',
+                'password' => 'NovaSenha@456',
+                'password_confirmation' => 'NovaSenha@456',
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+        $response->assertSessionHasErrors(['current_password']);
+        $this->assertTrue(Hash::check('Password@123', (string) $customer->fresh()->password));
     }
 
     private function createContractor(string $slug): Contractor

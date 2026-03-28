@@ -132,13 +132,17 @@ class AdminFinanceService
 
         $methods = PaymentMethod::query()
             ->where('contractor_id', $contractor->id)
-            ->with('paymentGateway:id,name,provider')
+            ->with('paymentGateway:id,name,provider,is_active,is_default,is_sandbox,credentials')
             ->orderByDesc('is_default')
             ->orderByDesc('is_active')
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get()
             ->map(static function (PaymentMethod $method): array {
+                $gatewayCredentials = is_array($method->paymentGateway?->credentials)
+                    ? $method->paymentGateway->credentials
+                    : [];
+
                 return [
                     'id' => $method->id,
                     'code' => $method->code,
@@ -146,6 +150,20 @@ class AdminFinanceService
                     'payment_gateway_id' => $method->payment_gateway_id,
                     'payment_gateway_name' => $method->paymentGateway?->name,
                     'payment_gateway_provider' => $method->paymentGateway?->provider,
+                    'payment_gateway_is_active' => $method->paymentGateway?->is_active !== null
+                        ? (bool) $method->paymentGateway->is_active
+                        : null,
+                    'payment_gateway_is_default' => $method->paymentGateway?->is_default !== null
+                        ? (bool) $method->paymentGateway->is_default
+                        : null,
+                    'payment_gateway_is_sandbox' => $method->paymentGateway?->is_sandbox !== null
+                        ? (bool) $method->paymentGateway->is_sandbox
+                        : null,
+                    'payment_gateway_credentials_status' => [
+                        'access_token_configured' => trim((string) ($gatewayCredentials['access_token'] ?? '')) !== '',
+                        'webhook_secret_configured' => trim((string) ($gatewayCredentials['webhook_secret'] ?? '')) !== '',
+                    ],
+                    'checkout_mode' => $method->payment_gateway_id ? 'integrated' : 'manual',
                     'is_active' => (bool) $method->is_active,
                     'is_default' => (bool) $method->is_default,
                     'allows_installments' => (bool) $method->allows_installments,

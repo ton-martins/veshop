@@ -101,8 +101,12 @@ class StoreProductRequest extends FormRequest
         return $parsed > 0 ? $parsed : null;
     }
 
-    private function normalizeInteger(mixed $value): int
+    private function normalizeInteger(mixed $value): ?int
     {
+        if ($value === null || trim((string) $value) === '') {
+            return null;
+        }
+
         $parsed = (int) $value;
 
         return max(0, $parsed);
@@ -164,7 +168,9 @@ class StoreProductRequest extends FormRequest
                     'sku' => $this->normalizeNullableText($row['sku'] ?? null),
                     'sale_price' => isset($row['sale_price']) ? (float) $row['sale_price'] : null,
                     'cost_price' => isset($row['cost_price']) && $row['cost_price'] !== '' ? (float) $row['cost_price'] : null,
-                    'stock_quantity' => isset($row['stock_quantity']) ? max(0, (int) $row['stock_quantity']) : 0,
+                    'stock_quantity' => isset($row['stock_quantity']) && $row['stock_quantity'] !== ''
+                        ? max(0, (int) $row['stock_quantity'])
+                        : null,
                     'is_active' => filter_var($row['is_active'] ?? true, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? true,
                     'sort_order' => isset($row['sort_order']) ? max(0, (int) $row['sort_order']) : 0,
                     'attributes' => $attributes,

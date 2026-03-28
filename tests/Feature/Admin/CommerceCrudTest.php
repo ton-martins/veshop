@@ -173,6 +173,44 @@ class CommerceCrudTest extends TestCase
         ]);
     }
 
+    public function test_admin_cannot_create_product_when_quantity_is_missing(): void
+    {
+        $contractor = $this->createContractor('contratante-sem-qtd', Contractor::NICHE_COMMERCIAL);
+        $category = Category::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Padaria',
+            'slug' => 'padaria',
+            'description' => null,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $user = $this->createAdminUser([$contractor]);
+
+        $response = $this
+            ->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->from(route('admin.products.index'))
+            ->post(route('admin.products.store'), [
+                'name' => 'Produto sem quantidade',
+                'sku' => 'SEM-QTD-001',
+                'category_id' => $category->id,
+                'description' => 'Teste sem quantidade',
+                'sale_price' => 9.99,
+                'unit' => 'un',
+                'is_active' => true,
+            ]);
+
+        $response->assertRedirect(route('admin.products.index'));
+        $response->assertSessionHasErrors(['stock_quantity']);
+        $this->assertDatabaseMissing('products', [
+            'contractor_id' => $contractor->id,
+            'sku' => 'SEM-QTD-001',
+        ]);
+    }
+
     public function test_admin_cannot_use_category_from_another_contractor_when_creating_product(): void
     {
         $contractorA = $this->createContractor('contratante-a', Contractor::NICHE_COMMERCIAL);

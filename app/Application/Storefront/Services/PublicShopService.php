@@ -30,6 +30,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -224,16 +225,16 @@ class PublicShopService
 
         $timezone = $this->resolveContractorTimezone($contractor);
         $scheduledFor = Carbon::parse((string) $validated['scheduled_for'], $timezone);
+        $durationMinutes = max(15, (int) ($service->duration_minutes ?? 60));
         $businessHours = is_array($storeAvailability['business_hours'] ?? null)
             ? $storeAvailability['business_hours']
             : StorefrontSettings::normalizeBusinessHours([]);
-        $hoursCheck = $this->validateDateTimeAgainstBusinessHours($scheduledFor, $businessHours);
+        $hoursCheck = $this->validateDateTimeAgainstBusinessHours($scheduledFor, $businessHours, $durationMinutes);
         if (! (bool) ($hoursCheck['allowed'] ?? false)) {
             throw ValidationException::withMessages([
                 'scheduled_for' => (string) ($hoursCheck['message'] ?? 'Escolha um horário dentro do funcionamento da loja.'),
             ]);
         }
-        $durationMinutes = max(15, (int) ($service->duration_minutes ?? 60));
         $endsAt = $scheduledFor->copy()->addMinutes($durationMinutes);
 
         $client = $this->resolveOrCreateCheckoutClient($contractor, [
@@ -1207,6 +1208,7 @@ class PublicShopService
             'current_day' => $todayKey,
             'current_time' => $now->format('H:i'),
             'business_hours' => $businessHours,
+            'booking_slots' => $this->resolveBookingSlotsFromBusinessHours($businessHours, $now),
         ];
     }
 
@@ -1214,7 +1216,7 @@ class PublicShopService
      * @param  array<string, array{enabled: bool, open: string, close: string}>  $businessHours
      * @return array{allowed: bool, message: string}
      */
-    private function validateDateTimeAgainstBusinessHours(Carbon $dateTime, array $businessHours): array
+    private function validateDateTimeAgainstBusinessHours(Carbon $dateTime, array $businessHours, int $durationMinutes = 0): array
     {
         $dayKey = $this->resolveBusinessDayKey($dateTime);
         $dayLabel = $this->resolveBusinessDayLabel($dayKey);
@@ -1238,10 +1240,22 @@ class PublicShopService
             ];
         }
 
-        if (! $this->isTimeWithinWindow($dateTime, $dayHours)) {
+        $slotStartMinutes = ((int) $dateTime->format('H') * 60) + (int) $dateTime->format('i');
+        $openMinutes = $this->hourToMinutes($open);
+        $closeMinutes = $this->hourToMinutes($close);
+
+        if ($slotStartMinutes < $openMinutes || $slotStartMinutes >= $closeMinutes) {
             return [
                 'allowed' => false,
                 'message' => "Escolha um horário entre {$open} e {$close} em {$dayLabel}.",
+            ];
+        }
+
+        $safeDuration = max(1, $durationMinutes);
+        if (($slotStartMinutes + $safeDuration) > $closeMinutes) {
+            return [
+                'allowed' => false,
+                'message' => "Escolha um horário que termine até {$close} em {$dayLabel}.",
             ];
         }
 
@@ -1249,6 +1263,83 @@ class PublicShopService
             'allowed' => true,
             'message' => '',
         ];
+    }
+
+    /**
+     * @param  array<string, array{enabled: bool, open: string, close: string}>  $businessHours
+     * @return array<int, array{
+     *   day_key: string,
+     *   day_label: string,
+     *   date: string,
+     *   label: string,
+     *   open: string,
+     *   close: string,
+     *   slots: array<int, array{value: string, label: string}>
+     * }>
+     */
+    private function resolveBookingSlotsFromBusinessHours(
+        array $businessHours,
+        Carbon $referenceDateTime,
+        int $horizonDays = 14,
+        int $slotIntervalMinutes = 30
+    ): array {
+        $days = [];
+        $safeHorizonDays = max(1, min(31, $horizonDays));
+        $safeInterval = max(5, min(120, $slotIntervalMinutes));
+        $reference = $referenceDateTime->copy()->seconds(0);
+
+        for ($offset = 0; $offset < $safeHorizonDays; $offset++) {
+            $date = $reference->copy()->startOfDay()->addDays($offset);
+            $dayKey = $this->resolveBusinessDayKey($date);
+            $dayLabel = $this->resolveBusinessDayLabel($dayKey);
+            $dayHours = is_array($businessHours[$dayKey] ?? null)
+                ? $businessHours[$dayKey]
+                : ['enabled' => false, 'open' => '00:00', 'close' => '23:59'];
+
+            if (! (bool) ($dayHours['enabled'] ?? false)) {
+                continue;
+            }
+
+            $open = trim((string) ($dayHours['open'] ?? '00:00'));
+            $close = trim((string) ($dayHours['close'] ?? '23:59'));
+            $openMinutes = $this->hourToMinutes($open);
+            $closeMinutes = $this->hourToMinutes($close);
+
+            if ($closeMinutes <= $openMinutes) {
+                continue;
+            }
+
+            $slotRows = [];
+
+            for ($minute = $openMinutes; $minute < $closeMinutes; $minute += $safeInterval) {
+                $slot = $date->copy()->addMinutes($minute);
+
+                if ($slot->lessThanOrEqualTo($reference)) {
+                    continue;
+                }
+
+                $slotRows[] = [
+                    'value' => $slot->format('Y-m-d\TH:i'),
+                    'label' => $slot->format('H:i'),
+                ];
+            }
+
+            if ($slotRows === []) {
+                continue;
+            }
+
+            $days[] = [
+                'day_key' => $dayKey,
+                'day_label' => $dayLabel,
+                'date' => $date->format('Y-m-d'),
+                'label' => $dayLabel.', '.$date->format('d/m'),
+                'open' => $open,
+                'close' => $close,
+                'slots' => $slotRows,
+            ];
+        }
+
+        return $days;
     }
 
     private function resolveContractorTimezone(Contractor $contractor): string
@@ -1712,6 +1803,8 @@ class PublicShopService
         if ($requiresEmailVerification && ! $customer->hasVerifiedEmail()) {
             return [
                 'orders' => [],
+                'notifications' => [],
+                'notifications_unread_count' => 0,
             ];
         }
 
@@ -1737,8 +1830,54 @@ class PublicShopService
             ->values()
             ->all();
 
+        $statusNotifications = $customer->notifications()
+            ->latest()
+            ->limit(40)
+            ->get()
+            ->filter(fn (DatabaseNotification $notification): bool => $this->isShopStatusNotification($notification))
+            ->take(20)
+            ->values();
+
+        $notifications = $statusNotifications
+            ->map(fn (DatabaseNotification $notification): array => $this->toShopStatusNotificationPayload($notification))
+            ->values()
+            ->all();
+
+        $notificationsUnreadCount = $statusNotifications
+            ->filter(fn (DatabaseNotification $notification): bool => $notification->read_at === null)
+            ->count();
+
         return [
             'orders' => $orders,
+            'notifications' => $notifications,
+            'notifications_unread_count' => $notificationsUnreadCount,
+        ];
+    }
+
+    private function isShopStatusNotification(DatabaseNotification $notification): bool
+    {
+        $data = is_array($notification->data) ? $notification->data : [];
+
+        return isset($data['order_status'])
+            || isset($data['service_order_status']);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function toShopStatusNotificationPayload(DatabaseNotification $notification): array
+    {
+        $data = is_array($notification->data) ? $notification->data : [];
+
+        return [
+            'id' => (string) $notification->id,
+            'title' => trim((string) ($data['title'] ?? 'Atualização')),
+            'message' => trim((string) ($data['message'] ?? '')),
+            'target_url' => trim((string) ($data['target_url'] ?? '')),
+            'created_at' => optional($notification->created_at)?->toIso8601String(),
+            'created_at_label' => optional($notification->created_at)?->timezone(config('app.timezone'))->format('d/m/Y H:i'),
+            'read_at' => optional($notification->read_at)?->toIso8601String(),
+            'is_read' => $notification->read_at !== null,
         ];
     }
 
@@ -1821,7 +1960,7 @@ class PublicShopService
             'qr_code' => $qrCode,
             'qr_code_base64' => $qrCodeBase64,
             'expires_at' => $expiresAt,
-            'is_pix' => $paymentMethodCode === PaymentMethod::CODE_PIX && $qrCode !== '',
+            'is_pix' => $this->hasPixCheckoutData($paymentMethodCode, $qrCode, $qrCodeBase64, $ticketUrl),
         ];
     }
 
@@ -1869,8 +2008,16 @@ class PublicShopService
 
     private function shouldCreatePixIntent(PaymentMethod $paymentMethod, PaymentGateway $paymentGateway): bool
     {
-        return (string) $paymentMethod->code === PaymentMethod::CODE_PIX
-            && (string) $paymentGateway->provider === PaymentGateway::PROVIDER_MERCADO_PAGO;
+        if ((string) $paymentGateway->provider !== PaymentGateway::PROVIDER_MERCADO_PAGO) {
+            return false;
+        }
+
+        $methodCode = strtolower(trim((string) $paymentMethod->code));
+        $methodName = strtolower(trim((string) $paymentMethod->name));
+
+        return $methodCode === PaymentMethod::CODE_PIX
+            || str_contains($methodCode, 'pix')
+            || str_contains($methodName, 'pix');
     }
 
     private function createCheckoutPixIntent(
@@ -1892,6 +2039,8 @@ class PublicShopService
             $notificationUrl .= (str_contains($notificationUrl, '?') ? '&' : '?')
                 .'token='.rawurlencode($webhookSecret);
         }
+
+        $notificationUrl = $this->normalizePixWebhookNotificationUrl($notificationUrl);
 
         $payerEmail = trim((string) data_get($sale->metadata, 'customer_email', ''));
         $idempotency = $checkoutIdempotencyKey !== null && $checkoutIdempotencyKey !== ''
@@ -1915,7 +2064,7 @@ class PublicShopService
             report($exception);
 
             throw ValidationException::withMessages([
-                'order' => 'Não foi possível iniciar o pagamento Pix agora. Tente novamente em instantes.',
+                'order' => $this->resolveCheckoutPixProviderErrorMessage($exception),
             ]);
         }
 
@@ -2021,6 +2170,7 @@ class PublicShopService
             'qr_code' => $qrCode,
             'qr_code_base64' => $qrCodeBase64,
             'expires_at' => $expiresAt,
+            'is_pix' => $this->hasPixCheckoutData($paymentMethodCode, $qrCode, $qrCodeBase64, $ticketUrl),
         ];
     }
 
@@ -2029,8 +2179,88 @@ class PublicShopService
      */
     private function isPixPaymentPayload(array $checkoutPayment): bool
     {
-        return (string) ($checkoutPayment['payment_method_code'] ?? '') === PaymentMethod::CODE_PIX
-            && trim((string) ($checkoutPayment['qr_code'] ?? '')) !== '';
+        $paymentMethodCode = strtolower(trim((string) ($checkoutPayment['payment_method_code'] ?? '')));
+        $provider = strtolower(trim((string) ($checkoutPayment['provider'] ?? '')));
+        $transactionReference = trim((string) ($checkoutPayment['transaction_reference'] ?? ''));
+
+        if ($this->hasPixCheckoutData(
+            $paymentMethodCode,
+            (string) ($checkoutPayment['qr_code'] ?? ''),
+            (string) ($checkoutPayment['qr_code_base64'] ?? ''),
+            (string) ($checkoutPayment['ticket_url'] ?? '')
+        )) {
+            return true;
+        }
+
+        return $provider === PaymentGateway::PROVIDER_MERCADO_PAGO
+            && ($paymentMethodCode === PaymentMethod::CODE_PIX
+                || str_contains($paymentMethodCode, 'pix')
+                || $transactionReference !== '');
+    }
+
+    private function hasPixCheckoutData(
+        string $paymentMethodCode,
+        string $qrCode,
+        string $qrCodeBase64,
+        string $ticketUrl
+    ): bool {
+        return trim($qrCode) !== ''
+            || trim($qrCodeBase64) !== ''
+            || trim($ticketUrl) !== '';
+    }
+
+    private function normalizePixWebhookNotificationUrl(string $url): ?string
+    {
+        $safeUrl = trim($url);
+        if ($safeUrl === '') {
+            return null;
+        }
+
+        $scheme = strtolower((string) parse_url($safeUrl, PHP_URL_SCHEME));
+        $host = strtolower((string) parse_url($safeUrl, PHP_URL_HOST));
+
+        if ($scheme !== 'https') {
+            return null;
+        }
+
+        if ($host === '' || in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
+            return null;
+        }
+
+        foreach (['.local', '.test', '.localhost', '.invalid'] as $suffix) {
+            if (str_ends_with($host, $suffix)) {
+                return null;
+            }
+        }
+
+        return $safeUrl;
+    }
+
+    private function resolveCheckoutPixProviderErrorMessage(PaymentProviderException $exception): string
+    {
+        $rawMessage = trim((string) $exception->getMessage());
+        $normalized = strtolower($rawMessage);
+        $default = 'Não foi possível iniciar o pagamento Pix agora. Tente novamente em instantes.';
+
+        if ($normalized === '') {
+            return $default;
+        }
+
+        if (str_contains($normalized, 'unauthorized use of live credentials')) {
+            return 'Mercado Pago recusou as credenciais informadas para este ambiente. '
+                .'Revise as credenciais de teste/produção no gateway.';
+        }
+
+        if (str_contains($normalized, 'notification_url') || str_contains($normalized, 'notificaction_url')) {
+            return 'Mercado Pago rejeitou a URL de notificação da loja. '
+                .'Use uma URL pública HTTPS ou finalize sem webhook em ambiente local.';
+        }
+
+        if ((bool) config('app.debug')) {
+            return $rawMessage;
+        }
+
+        return $default;
     }
 
     private function resolveSalePaymentStatusLabel(string $status): string

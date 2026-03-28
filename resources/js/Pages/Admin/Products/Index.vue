@@ -8,7 +8,7 @@ import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Box, Boxes, CircleDollarSign, AlertTriangle, Plus, Search, Filter, ChevronRight, Tags, Pencil, Trash2 } from 'lucide-vue-next';
 
 const props = defineProps({
@@ -375,6 +375,8 @@ const submitProduct = () => {
         productForm.transform((data) => ({
             ...data,
             _method: 'put',
+            sale_price: resolveProductSalePriceForPayload(),
+            stock_quantity: Math.max(0, Number.parseInt(String(data.stock_quantity ?? 0), 10) || 0),
             remove_gallery_ids: JSON.stringify(Array.isArray(data.remove_gallery_ids) ? data.remove_gallery_ids : []),
             variations: JSON.stringify(normalizeVariationPayload(data.variations)),
         })).post(route('admin.products.update', editingProduct.value.id), {
@@ -391,6 +393,8 @@ const submitProduct = () => {
 
     productForm.transform((data) => ({
         ...data,
+        sale_price: resolveProductSalePriceForPayload(),
+        stock_quantity: Math.max(0, Number.parseInt(String(data.stock_quantity ?? 0), 10) || 0),
         remove_gallery_ids: JSON.stringify(Array.isArray(data.remove_gallery_ids) ? data.remove_gallery_ids : []),
         variations: JSON.stringify(normalizeVariationPayload(data.variations)),
     })).post(route('admin.products.store'), {
@@ -436,6 +440,46 @@ const parseIntegerInput = (value) => {
     if (value === null || value === undefined || value === '') return null;
     const parsed = Number.parseInt(String(value), 10);
     return Number.isFinite(parsed) ? parsed : null;
+};
+
+const activeVariationsInForm = computed(() => (Array.isArray(productForm.variations) ? productForm.variations : [])
+    .filter((variation) => {
+        if (!(variation?.is_active ?? true)) return false;
+        if (String(variation?.name ?? '').trim() === '') return false;
+
+        const salePrice = parseNumericInput(variation?.sale_price);
+        return salePrice !== null && salePrice >= 0;
+    }));
+
+const hasActiveVariationsInForm = computed(() => activeVariationsInForm.value.length > 0);
+
+const derivedSalePriceFromVariations = computed(() => {
+    if (!hasActiveVariationsInForm.value) return null;
+
+    const minPrice = activeVariationsInForm.value.reduce((lowest, variation) => {
+        const salePrice = parseNumericInput(variation?.sale_price);
+        if (salePrice === null || salePrice < 0) return lowest;
+        if (lowest === null) return salePrice;
+        return Math.min(lowest, salePrice);
+    }, null);
+
+    if (minPrice === null) return null;
+
+    return Number(minPrice.toFixed(2));
+});
+
+watch([hasActiveVariationsInForm, derivedSalePriceFromVariations], ([hasActiveVariations, derivedSalePrice]) => {
+    if (!hasActiveVariations || derivedSalePrice === null) return;
+    productForm.sale_price = derivedSalePrice.toFixed(2);
+});
+
+const resolveProductSalePriceForPayload = () => {
+    if (hasActiveVariationsInForm.value && derivedSalePriceFromVariations.value !== null) {
+        return Number(derivedSalePriceFromVariations.value.toFixed(2));
+    }
+
+    const parsed = parseNumericInput(productForm.sale_price);
+    return parsed !== null && parsed >= 0 ? Number(parsed.toFixed(2)) : 0;
 };
 
 const isProductStepValid = (stepNumber) => {
@@ -944,9 +988,13 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                         <BrlMoneyInput
                             v-model="productForm.sale_price"
                             :allow-empty="false"
+                            :disabled="hasActiveVariationsInForm"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                             placeholder="R$ 0,00"
                         />
+                        <p v-if="hasActiveVariationsInForm" class="mt-1 text-xs text-slate-500">
+                            Com variações ativas, o preço base é calculado automaticamente pelo menor valor da variação.
+                        </p>
                         <p v-if="productForm.errors.sale_price" class="mt-1 text-xs text-rose-600">{{ productForm.errors.sale_price }}</p>
                     </div>
 

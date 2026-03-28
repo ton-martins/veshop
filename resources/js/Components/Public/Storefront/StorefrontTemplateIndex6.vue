@@ -1,9 +1,11 @@
 <script setup>
 /* eslint-disable vue/prop-name-casing */
 import InputError from '@/Components/InputError.vue';
+import UiSelect from '@/Components/App/UiSelect.vue';
 import { BRAZIL_STATES, formatCepBR, formatPhoneBR, normalizeStateCode } from '@/utils/br';
 import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import QRCode from 'qrcode';
 import {
     ArrowLeft,
     Bell,
@@ -43,7 +45,7 @@ const props = defineProps({
             favorite_product_ids: [],
         }),
     },
-    shop_account: { type: Object, default: () => ({ orders: [] }) },
+    shop_account: { type: Object, default: () => ({ orders: [], notifications: [], notifications_unread_count: 0 }) },
     bookings: { type: Array, default: () => [] },
 });
 
@@ -136,6 +138,8 @@ const logoutUrl = computed(() => `/shop/${storeSlug.value}/sair`);
 const checkoutUrl = computed(() => `/shop/${storeSlug.value}/checkout`);
 const serviceBookUrl = computed(() => `/shop/${storeSlug.value}/servicos/agendar`);
 const accountUpdateUrl = computed(() => `/shop/${storeSlug.value}/conta`);
+const accountPasswordUpdateUrl = computed(() => `/shop/${storeSlug.value}/conta/senha`);
+const accountNotificationsReadUrl = computed(() => `/shop/${storeSlug.value}/conta/notificacoes/ler`);
 const favoriteUrl = (id) => `/shop/${storeSlug.value}/favoritos/${id}`;
 
 const isAuthenticated = computed(() => Boolean(props.shop_auth?.authenticated));
@@ -147,8 +151,114 @@ const customer = computed(() => props.shop_auth?.customer ?? null);
 
 const flashStatus = computed(() => String(page.props?.flash?.status ?? '').trim());
 const checkoutPayment = computed(() => page.props?.flash?.checkout_payment ?? null);
+const checkoutLivePayment = ref(null);
 const checkoutManual = computed(() => page.props?.flash?.checkout_manual ?? null);
 const bookingWhatsappUrl = computed(() => String(page.props?.flash?.service_booking_whatsapp_url ?? '').trim());
+const checkoutPixRefreshLoading = ref(false);
+const checkoutPixRefreshError = ref('');
+const checkoutEffectivePayment = computed(() => checkoutLivePayment.value ?? checkoutPayment.value);
+const checkoutPaymentStatusUrl = computed(() => {
+    const saleId = toInt(checkoutEffectivePayment.value?.sale_id, 0);
+    return saleId > 0 ? `/shop/${storeSlug.value}/checkout/pagamento/${saleId}` : null;
+});
+const checkoutHasVisiblePixData = computed(() => {
+    return String(checkoutEffectivePayment.value?.qr_code ?? '').trim() !== ''
+        || String(checkoutEffectivePayment.value?.qr_code_base64 ?? '').trim() !== ''
+        || String(checkoutEffectivePayment.value?.ticket_url ?? '').trim() !== '';
+});
+const checkoutHasPixPayload = computed(() => {
+    if (checkoutHasVisiblePixData.value) {
+        return true;
+    }
+
+    const provider = String(checkoutEffectivePayment.value?.provider ?? '').trim().toLowerCase();
+    const methodCode = String(checkoutEffectivePayment.value?.payment_method_code ?? '').trim().toLowerCase();
+    const transactionReference = String(checkoutEffectivePayment.value?.transaction_reference ?? '').trim();
+
+    return provider === 'mercado_pago'
+        && (methodCode.includes('pix') || transactionReference !== '');
+});
+const checkoutPixQrImageSrc = ref('');
+const refreshCheckoutPixPayment = async () => {
+    const url = String(checkoutPaymentStatusUrl.value ?? '').trim();
+    if (url === '') {
+        return;
+    }
+
+    checkoutPixRefreshLoading.value = true;
+    checkoutPixRefreshError.value = '';
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('not_found');
+        }
+
+        const data = await response.json();
+        const payment = data?.payment;
+
+        if (payment && typeof payment === 'object') {
+            checkoutLivePayment.value = payment;
+        }
+    } catch {
+        checkoutPixRefreshError.value = 'Não foi possível atualizar a cobrança Pix agora.';
+    } finally {
+        checkoutPixRefreshLoading.value = false;
+    }
+};
+
+const ensureCheckoutPixPayload = async () => {
+    if (!checkoutHasPixPayload.value || checkoutHasVisiblePixData.value) {
+        return;
+    }
+
+    await refreshCheckoutPixPayment();
+};
+
+const resolveCheckoutPixQrImage = async () => {
+    const base64 = String(checkoutEffectivePayment.value?.qr_code_base64 ?? '').trim();
+    if (base64 !== '') {
+        checkoutPixQrImageSrc.value = base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`;
+        return;
+    }
+
+    const qrCode = String(checkoutEffectivePayment.value?.qr_code ?? '').trim();
+    if (qrCode === '') {
+        checkoutPixQrImageSrc.value = '';
+        return;
+    }
+
+    try {
+        checkoutPixQrImageSrc.value = await QRCode.toDataURL(qrCode, {
+            width: 288,
+            margin: 1,
+            color: {
+                dark: '#0f172a',
+                light: '#ffffff',
+            },
+        });
+    } catch {
+        checkoutPixQrImageSrc.value = '';
+    }
+};
+
+watch(checkoutPayment, () => {
+    checkoutLivePayment.value = checkoutPayment.value ? { ...checkoutPayment.value } : null;
+    checkoutPixRefreshError.value = '';
+    void ensureCheckoutPixPayload();
+    void resolveCheckoutPixQrImage();
+}, { immediate: true, deep: true });
+
+watch(checkoutLivePayment, () => {
+    void resolveCheckoutPixQrImage();
+}, { deep: true });
 
 const fallbackImage = computed(() => (
     storeLogo.value || 'https://placehold.co/800x600/e5e7eb/334155?text=Loja'
@@ -188,19 +298,26 @@ const normalizedCatalog = computed(() => {
     if (isServicesMode.value) {
         const safe = Array.isArray(props.services) ? props.services : [];
         return safe
-            .map((service) => ({
-                id: toInt(service?.id, 0),
-                categoryId: toInt(service?.service_category_id, 0),
-                title: String(service?.name || 'Serviço'),
-                subtitle: String(service?.category_name || service?.code || 'Atendimento'),
-                description: String(service?.description || 'Sem descrição informada.'),
-                price: toMoney(service?.base_price, 0),
-                image: String(service?.image_url || '').trim() || fallbackImage.value,
-                badge: String(service?.coupon_label || 'Destaque'),
-                rating: toMoney(service?.rating, 5),
-                reviews: 200 + (toInt(service?.id, 1) % 7) * 48,
-                durationLabel: String(service?.duration_label || '60 min'),
-            }))
+            .map((service) => {
+                const primaryImage = String(service?.image_url || '').trim();
+                const images = [primaryImage].filter((image) => image !== '');
+
+                return {
+                    id: toInt(service?.id, 0),
+                    categoryId: toInt(service?.service_category_id, 0),
+                    title: String(service?.name || 'Serviço'),
+                    subtitle: String(service?.category_name || service?.code || 'Atendimento'),
+                    description: String(service?.description || 'Sem descrição informada.'),
+                    price: toMoney(service?.base_price, 0),
+                    image: primaryImage || fallbackImage.value,
+                    images: images.length ? images : [fallbackImage.value],
+                    badge: String(service?.coupon_label || 'Destaque'),
+                    rating: toMoney(service?.rating, 5),
+                    reviews: 200 + (toInt(service?.id, 1) % 7) * 48,
+                    durationLabel: String(service?.duration_label || '60 min'),
+                    durationMinutes: Math.max(15, toInt(service?.duration_minutes, 60)),
+                };
+            })
             .filter((item) => item.id > 0);
     }
 
@@ -208,9 +325,12 @@ const normalizedCatalog = computed(() => {
     return safe
         .map((product) => {
             const id = toInt(product?.id, 0);
-            const firstImage = Array.isArray(product?.images)
-                ? product.images.find((row) => String(row?.image_url || '').trim() !== '')
-                : null;
+            const imageList = Array.isArray(product?.images)
+                ? product.images
+                    .map((row) => String(row?.image_url || '').trim())
+                    .filter((image) => image !== '')
+                : [];
+            const firstImage = imageList[0] || String(product?.image_url || '').trim();
 
             return {
                 id,
@@ -219,7 +339,8 @@ const normalizedCatalog = computed(() => {
                 subtitle: String(product?.category_name || product?.sku || 'Produto'),
                 description: String(product?.description || 'Sem descrição informada.'),
                 price: toMoney(product?.sale_price, 0),
-                image: String(firstImage?.image_url || product?.image_url || '').trim() || fallbackImage.value,
+                image: firstImage || fallbackImage.value,
+                images: imageList.length ? imageList : [firstImage || fallbackImage.value],
                 badge: product?.has_variations ? 'Variações' : 'Destaque',
                 rating: 4.5 + ((id % 4) * 0.1),
                 reviews: 180 + (id % 9) * 62,
@@ -256,6 +377,11 @@ const selectedId = ref(null);
 const variationByProduct = ref({});
 const uiMessage = ref('');
 const cartToast = ref({ visible: false, title: '', description: '' });
+const isDetailsOpen = ref(false);
+const detailsImageIndex = ref(0);
+const detailsVariationId = ref(null);
+const detailsQuantity = ref(1);
+const showNotificationsPanel = ref(false);
 
 watch(normalizedCatalog, (items) => {
     if (!items.length) {
@@ -270,6 +396,39 @@ watch(normalizedCatalog, (items) => {
 
 const selectedItem = computed(() => (
     normalizedCatalog.value.find((item) => item.id === selectedId.value) ?? null
+));
+
+const selectedItemImages = computed(() => {
+    if (!selectedItem.value) return [fallbackImage.value];
+    const images = Array.isArray(selectedItem.value.images)
+        ? selectedItem.value.images
+            .map((image) => String(image || '').trim())
+            .filter((image) => image !== '')
+        : [];
+
+    if (images.length) return images;
+    return [String(selectedItem.value.image || '').trim() || fallbackImage.value];
+});
+
+const detailsVariationOptions = computed(() => {
+    if (!selectedItem.value || !Array.isArray(selectedItem.value.variations)) return [];
+
+    return selectedItem.value.variations
+        .map((variation) => ({
+            value: variation.id,
+            label: `${variation.name} - ${formatMoney(variation.price)}`,
+        }))
+        .filter((variation) => toInt(variation.value, 0) > 0);
+});
+
+const detailsUnitPrice = computed(() => {
+    if (!selectedItem.value) return 0;
+    return resolveVariationPrice(selectedItem.value, toInt(detailsVariationId.value, 0) || null);
+});
+
+const detailsLineTotal = computed(() => Number((detailsUnitPrice.value * Math.max(1, toInt(detailsQuantity.value, 1))).toFixed(2)));
+const detailsPrimaryActionLabel = computed(() => (
+    isServicesMode.value ? 'Selecionar para agendar' : 'Adicionar ao carrinho'
 ));
 
 const configuredBanners = computed(() => {
@@ -463,11 +622,18 @@ const resolveVariationPrice = (item, variationId) => {
     return variation ? toMoney(variation.price, toMoney(item?.price, 0)) : toMoney(item?.price, 0);
 };
 
-const addToCart = (item, qty = 1) => {
+const addToCart = (item, options = 1) => {
     if (!item) return;
 
     const id = toInt(item.id, 0);
     if (id <= 0) return;
+    const payload = typeof options === 'object' && options !== null && !Array.isArray(options)
+        ? options
+        : { quantity: options };
+    const quantity = Math.max(1, toInt(payload.quantity, 1));
+    const explicitVariationId = payload.variationId !== undefined && payload.variationId !== null
+        ? toInt(payload.variationId, 0)
+        : null;
 
     if (isServicesMode.value) {
         cart.value = {
@@ -495,8 +661,10 @@ const addToCart = (item, qty = 1) => {
     cart.value = {
         ...cart.value,
         [id]: {
-            quantity: Math.max(1, toInt(current.quantity, 0) + Math.max(1, toInt(qty, 1))),
-            variation_id: variationId && variationId > 0 ? variationId : current.variation_id,
+            quantity: Math.max(1, toInt(current.quantity, 0) + quantity),
+            variation_id: explicitVariationId && explicitVariationId > 0
+                ? explicitVariationId
+                : (variationId && variationId > 0 ? variationId : current.variation_id),
         },
     };
 
@@ -577,6 +745,8 @@ const paymentMethods = computed(() => (
             .map((method) => ({
                 id: toInt(method?.id, 0),
                 name: String(method?.name || 'Pagamento'),
+                code: String(method?.code || '').trim().toLowerCase(),
+                checkoutMode: String(method?.checkout_mode || 'manual').trim().toLowerCase(),
                 feeFixed: toMoney(method?.fee_fixed, 0),
                 feePercent: toMoney(method?.fee_percent, 0),
             }))
@@ -584,7 +754,24 @@ const paymentMethods = computed(() => (
         : []
 ));
 
-const firstPaymentMethod = computed(() => paymentMethods.value[0] ?? null);
+const paymentMethodSelectOptions = computed(() =>
+    paymentMethods.value.map((method) => {
+        const feeText = method.feePercent > 0 || method.feeFixed > 0
+            ? ` (+ ${method.feePercent.toFixed(2)}% / ${formatMoney(method.feeFixed)})`
+            : '';
+        const modeText = method.checkoutMode === 'integrated' ? ' • gateway' : ' • manual';
+
+        return {
+            value: method.id,
+            label: `${method.name}${feeText}${modeText}`,
+        };
+    }));
+
+const selectedPaymentMethod = computed(() => {
+    const selectedId = toInt(checkoutForm.payment_method_id, 0);
+    if (selectedId <= 0) return null;
+    return paymentMethods.value.find((method) => method.id === selectedId) ?? null;
+});
 
 const shippingConfig = computed(() => ({
     deliveryEnabled: Boolean(props.shipping_config?.delivery_enabled ?? true),
@@ -601,8 +788,8 @@ const deliveryFee = computed(() => {
 });
 
 const paymentFee = computed(() => {
-    if (!firstPaymentMethod.value) return 0;
-    const fee = subtotal.value * (firstPaymentMethod.value.feePercent / 100) + firstPaymentMethod.value.feeFixed;
+    if (!selectedPaymentMethod.value) return 0;
+    const fee = subtotal.value * (selectedPaymentMethod.value.feePercent / 100) + selectedPaymentMethod.value.feeFixed;
     return Number(fee.toFixed(2));
 });
 
@@ -641,9 +828,20 @@ const syncCheckoutData = () => {
 
 watch(customer, () => syncCheckoutData(), { immediate: true, deep: true });
 
-watch(firstPaymentMethod, (method) => {
-    checkoutForm.payment_method_id = method?.id ?? null;
-}, { immediate: true });
+watch(paymentMethods, (methods) => {
+    const selectedId = toInt(checkoutForm.payment_method_id, 0);
+    if (selectedId > 0 && methods.some((method) => method.id === selectedId)) {
+        return;
+    }
+
+    checkoutForm.payment_method_id = methods[0]?.id ?? null;
+}, { immediate: true, deep: true });
+
+watch(() => checkoutForm.payment_method_id, (value) => {
+    if (toInt(value, 0) > 0) {
+        checkoutForm.clearErrors('payment_method_id');
+    }
+});
 
 const submitQuickCheckout = () => {
     uiMessage.value = '';
@@ -670,6 +868,12 @@ const submitQuickCheckout = () => {
         return;
     }
 
+    if (!selectedPaymentMethod.value) {
+        checkoutForm.setError('payment_method_id', 'Selecione uma forma de pagamento para finalizar o pedido.');
+        uiMessage.value = 'Escolha uma forma de pagamento para continuar.';
+        return;
+    }
+
     checkoutForm.clearErrors();
     checkoutForm.customer_phone = formatPhoneBR(checkoutForm.customer_phone);
     checkoutForm.shipping_postal_code = formatCepBR(checkoutForm.shipping_postal_code);
@@ -689,6 +893,18 @@ const submitQuickCheckout = () => {
             isCartOpen.value = false;
             activeTab.value = 'orders';
         },
+        onError: (errors) => {
+            const orderError = String(errors?.order || checkoutForm.errors?.order || '').trim();
+            const paymentError = String(errors?.payment_method_id || checkoutForm.errors?.payment_method_id || '').trim();
+            if (orderError !== '') {
+                uiMessage.value = orderError;
+            } else if (paymentError !== '') {
+                uiMessage.value = paymentError;
+            } else {
+                uiMessage.value = 'Não foi possível finalizar o pedido. Revise os dados e tente novamente.';
+            }
+            isCartOpen.value = true;
+        },
     });
 };
 const bookingForm = useForm({
@@ -697,15 +913,178 @@ const bookingForm = useForm({
     notes: '',
 });
 
-const nextTwoHours = () => {
-    const now = new Date();
-    now.setHours(now.getHours() + 2);
-    now.setMinutes(0, 0, 0);
-    const tzOffset = now.getTimezoneOffset() * 60000;
-    return new Date(now.getTime() - tzOffset).toISOString().slice(0, 16);
+const hourToMinutes = (time) => {
+    const safe = String(time ?? '').trim();
+    const match = safe.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+    if (!match) return -1;
+    return (Number.parseInt(match[1], 10) * 60) + Number.parseInt(match[2], 10);
 };
 
-bookingForm.scheduled_for = nextTwoHours();
+const activeBookingItem = computed(() => (cartEntries.value[0] ?? selectedItem.value ?? null));
+const activeBookingService = computed(() => {
+    const id = toInt(activeBookingItem.value?.id, 0);
+    if (id <= 0) return null;
+    return normalizedCatalog.value.find((item) => item.id === id) ?? activeBookingItem.value;
+});
+const activeBookingDurationMinutes = computed(() => Math.max(15, toInt(activeBookingService.value?.durationMinutes, 60)));
+
+const bookingSlotGroups = computed(() => {
+    const raw = Array.isArray(props.store_availability?.booking_slots) ? props.store_availability.booking_slots : [];
+    const durationMinutes = activeBookingDurationMinutes.value;
+
+    return raw
+        .map((day) => {
+            const close = String(day?.close ?? '').trim();
+            const open = String(day?.open ?? '').trim();
+            const closeMinutes = hourToMinutes(close);
+            const slots = Array.isArray(day?.slots)
+                ? day.slots
+                    .map((slot) => {
+                        const value = String(slot?.value ?? '').trim();
+                        if (!value) return null;
+
+                        const fallbackTime = value.includes('T') ? value.split('T')[1]?.slice(0, 5) : '';
+                        const label = String(slot?.label ?? '').trim() || fallbackTime;
+                        const startMinutes = hourToMinutes(label);
+
+                        if (closeMinutes >= 0 && startMinutes >= 0 && (startMinutes + durationMinutes) > closeMinutes) {
+                            return null;
+                        }
+
+                        return {
+                            value,
+                            label,
+                        };
+                    })
+                    .filter(Boolean)
+                : [];
+
+            if (!slots.length) return null;
+
+            const groupLabel = String(day?.label || '').trim()
+                || `${String(day?.day_label || '').trim()} ${String(day?.date || '').trim()}`.trim()
+                || 'Dia';
+
+            return {
+                label: groupLabel,
+                date: String(day?.date || '').trim(),
+                open,
+                close,
+                slots,
+            };
+        })
+        .filter(Boolean);
+});
+
+const bookingMonthFormatter = new Intl.DateTimeFormat('pt-BR', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+});
+const selectedBookingMonth = ref('');
+const selectedBookingDay = ref('');
+
+const bookingMonthOptions = computed(() => {
+    const map = new Map();
+
+    bookingSlotGroups.value.forEach((group) => {
+        const date = String(group?.date || '').trim();
+        if (!date || date.length < 7) return;
+        const monthKey = date.slice(0, 7);
+        if (map.has(monthKey)) return;
+
+        const parsedDate = new Date(`${monthKey}-01T00:00:00Z`);
+        const monthLabel = Number.isNaN(parsedDate.getTime())
+            ? monthKey
+            : bookingMonthFormatter.format(parsedDate);
+        const label = monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
+
+        map.set(monthKey, {
+            value: monthKey,
+            label,
+        });
+    });
+
+    return Array.from(map.values());
+});
+
+const bookingDayOptions = computed(() =>
+    bookingSlotGroups.value
+        .filter((group) => {
+            const date = String(group?.date || '').trim();
+            if (!date || date.length < 7) return false;
+            if (!selectedBookingMonth.value) return true;
+            return date.slice(0, 7) === selectedBookingMonth.value;
+        })
+        .map((group) => ({
+            value: String(group?.date || '').trim(),
+            label: `${group.label} (${group.open} - ${group.close})`,
+        }))
+        .filter((option) => option.value !== ''));
+
+const bookingHourOptions = computed(() => {
+    if (!selectedBookingDay.value) return [];
+
+    const selectedGroup = bookingSlotGroups.value
+        .find((group) => String(group?.date || '').trim() === selectedBookingDay.value);
+
+    if (!selectedGroup || !Array.isArray(selectedGroup.slots)) return [];
+
+    return selectedGroup.slots
+        .map((slot) => ({
+            value: String(slot?.value || '').trim(),
+            label: String(slot?.label || '').trim(),
+        }))
+        .filter((slot) => slot.value !== '');
+});
+
+const hasAvailableBookingSlots = computed(() => bookingHourOptions.value.length > 0);
+const isSelectedBookingSlotValid = computed(() =>
+    bookingHourOptions.value.some((slot) => slot.value === bookingForm.scheduled_for));
+
+watch(bookingMonthOptions, (months) => {
+    if (!months.length) {
+        selectedBookingMonth.value = '';
+        return;
+    }
+
+    if (!months.some((month) => month.value === selectedBookingMonth.value)) {
+        const now = new Date();
+        const monthNumber = String(now.getMonth() + 1).padStart(2, '0');
+        const currentMonthKey = `${now.getFullYear()}-${monthNumber}`;
+        const currentMonth = months.find((month) => month.value === currentMonthKey);
+        selectedBookingMonth.value = String((currentMonth ?? months[0]).value || '');
+    }
+}, { immediate: true });
+
+watch(bookingDayOptions, (days) => {
+    if (!days.length) {
+        selectedBookingDay.value = '';
+        return;
+    }
+
+    if (!days.some((day) => day.value === selectedBookingDay.value)) {
+        selectedBookingDay.value = String(days[0].value || '');
+    }
+}, { immediate: true });
+
+watch(bookingHourOptions, (hours) => {
+    if (!hours.length) {
+        bookingForm.scheduled_for = '';
+        return;
+    }
+
+    const selected = String(bookingForm.scheduled_for ?? '').trim();
+    if (!hours.some((hour) => hour.value === selected)) {
+        bookingForm.scheduled_for = String(hours[0].value || '');
+    }
+}, { immediate: true });
+
+watch(() => bookingForm.scheduled_for, (value) => {
+    if (String(value ?? '').trim() !== '') {
+        bookingForm.clearErrors('scheduled_for');
+    }
+});
 
 const submitQuickBooking = () => {
     uiMessage.value = '';
@@ -720,7 +1099,7 @@ const submitQuickBooking = () => {
         return;
     }
 
-    const target = cartEntries.value[0] ?? selectedItem.value;
+    const target = activeBookingService.value;
     if (!target) {
         uiMessage.value = 'Selecione um serviço antes de agendar.';
         return;
@@ -729,8 +1108,12 @@ const submitQuickBooking = () => {
     bookingForm.clearErrors();
     bookingForm.service_catalog_id = target.id;
 
-    if (!bookingForm.scheduled_for) {
-        bookingForm.scheduled_for = nextTwoHours();
+    if (!isSelectedBookingSlotValid.value) {
+        bookingForm.setError('scheduled_for', 'Selecione um horário disponível para o agendamento.');
+        uiMessage.value = hasAvailableBookingSlots.value
+            ? 'Escolha um dia e horário para confirmar o agendamento.'
+            : 'Não há horários disponíveis no momento.';
+        return;
     }
 
     bookingForm.post(serviceBookUrl.value, {
@@ -767,7 +1150,13 @@ const syncProfile = () => {
 
 watch(customer, () => syncProfile(), { immediate: true, deep: true });
 
-const submitProfile = () => {
+const shouldSubmitPasswordUpdate = () => {
+    return String(passwordForm.current_password || '').trim() !== ''
+        || String(passwordForm.password || '').trim() !== ''
+        || String(passwordForm.password_confirmation || '').trim() !== '';
+};
+
+const submitAccountChanges = () => {
     if (!isAuthenticated.value) {
         router.visit(loginUrl.value);
         return;
@@ -779,8 +1168,58 @@ const submitProfile = () => {
 
     profileForm.patch(accountUpdateUrl.value, {
         preserveScroll: true,
+        preserveState: true,
         onSuccess: () => {
-            uiMessage.value = 'Dados da conta atualizados.';
+            if (!shouldSubmitPasswordUpdate()) {
+                uiMessage.value = 'Dados da conta atualizados.';
+                return;
+            }
+
+            passwordForm.patch(accountPasswordUpdateUrl.value, {
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    passwordForm.reset();
+                    passwordForm.clearErrors();
+                    uiMessage.value = 'Dados e senha atualizados.';
+                },
+            });
+        },
+    });
+};
+
+const passwordForm = useForm({
+    current_password: '',
+    password: '',
+    password_confirmation: '',
+});
+
+const notifications = computed(() =>
+    Array.isArray(props.shop_account?.notifications) ? props.shop_account.notifications : []);
+const notificationsUnreadCount = computed(() =>
+    toInt(props.shop_account?.notifications_unread_count, notifications.value.filter((item) => !item?.is_read).length));
+
+const markNotificationsForm = useForm({
+    id: '',
+});
+
+const markNotificationsAsRead = (id = '') => {
+    if (!isAuthenticated.value) {
+        router.visit(loginUrl.value);
+        return;
+    }
+
+    markNotificationsForm.transform(() => ({
+        id: String(id || '').trim(),
+    })).post(accountNotificationsReadUrl.value, {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            if (String(id || '').trim() !== '') return;
+            showNotificationsPanel.value = false;
+        },
+        onFinish: () => {
+            markNotificationsForm.transform((data) => data);
         },
     });
 };
@@ -825,10 +1264,62 @@ const storeAvailability = computed(() => {
         open: Boolean(raw.is_open_now ?? true),
     };
 });
+const storeAvailabilityLabel = computed(() =>
+    String(storeAvailability.value.status || '').trim()
+    || (storeAvailability.value.open ? 'Loja aberta' : 'Loja fechada'));
+const storeAvailabilityChipClass = computed(() =>
+    storeAvailability.value.open
+        ? 'bg-emerald-100 text-emerald-700'
+        : 'bg-rose-100 text-rose-700');
 
 const openDetails = (item) => {
     if (!item) return;
+
     selectedId.value = item.id;
+    detailsImageIndex.value = 0;
+    detailsQuantity.value = 1;
+    detailsVariationId.value = item.variations?.[0]?.id ?? null;
+    isDetailsOpen.value = true;
+};
+
+const closeDetails = () => {
+    isDetailsOpen.value = false;
+};
+
+const changeDetailsImage = (nextIndex) => {
+    const images = selectedItemImages.value;
+    if (!images.length) {
+        detailsImageIndex.value = 0;
+        return;
+    }
+
+    const safeIndex = Math.max(0, Math.min(images.length - 1, toInt(nextIndex, 0)));
+    detailsImageIndex.value = safeIndex;
+};
+
+const submitDetailsPrimaryAction = () => {
+    if (!selectedItem.value) return;
+
+    if (isServicesMode.value) {
+        if (!isSelectedBookingSlotValid.value) {
+            bookingForm.setError('scheduled_for', 'Selecione um horário disponível.');
+            uiMessage.value = hasAvailableBookingSlots.value
+                ? 'Escolha um horário para continuar com o agendamento.'
+                : 'Não há horários disponíveis no momento.';
+            return;
+        }
+
+        addToCart(selectedItem.value, { quantity: 1 });
+        isCartOpen.value = true;
+        isDetailsOpen.value = false;
+        return;
+    }
+
+    addToCart(selectedItem.value, {
+        quantity: Math.max(1, toInt(detailsQuantity.value, 1)),
+        variationId: toInt(detailsVariationId.value, 0) || null,
+    });
+    isDetailsOpen.value = false;
 };
 
 const applyHeroCta = () => {
@@ -878,14 +1369,23 @@ onBeforeUnmount(() => {
         <div class="h-screen w-full relative flex overflow-hidden">
             <div class="w-full h-full flex">
                 <aside class="w-64 bg-white border-r border-gray-200 hidden md:flex flex-col h-full z-10">
-                    <div class="p-6 flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center">
-                            <img v-if="storeLogo" :src="storeLogo" :alt="storeName" class="w-full h-full object-cover">
-                            <span v-else class="text-xs font-bold text-gray-700">{{ storeInitials }}</span>
-                        </div>
-                        <div>
-                            <h3 class="font-bold text-sm">{{ isAuthenticated ? (customer?.name || storeName) : storeName }}</h3>
-                            <p class="text-xs text-gray-400">{{ storeAvailability.status || (storeAvailability.open ? 'Loja aberta' : 'Loja fechada') }}</p>
+                    <div class="p-4 border-b border-gray-100">
+                        <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
+                            <div class="flex items-center gap-3">
+                                <div
+                                    class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70"
+                                    :style="storeLogo ? null : { background: 'var(--idx-primary)' }"
+                                >
+                                    <img v-if="storeLogo" :src="storeLogo" :alt="storeName" class="h-full w-full rounded-lg object-cover">
+                                    <span v-else class="text-xs font-semibold text-white">{{ storeInitials }}</span>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="truncate text-xs font-semibold text-slate-900">{{ storeName }}</p>
+                                    <span class="mt-1 inline-flex w-fit items-center rounded-full px-2 py-0.5 text-[10px] font-semibold" :class="storeAvailabilityChipClass">
+                                        {{ storeAvailabilityLabel }}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -941,12 +1441,22 @@ onBeforeUnmount(() => {
                             <button v-if="activeTab !== 'home'" type="button" class="text-gray-400 md:hidden" @click="activeTab = 'home'">
                                 <ArrowLeft :size="18" />
                             </button>
-                            <div v-if="activeTab === 'home'" class="md:hidden flex items-center gap-2 min-w-0">
-                                <div class="w-8 h-8 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center shrink-0 border border-gray-200">
-                                    <img v-if="storeLogo" :src="storeLogo" :alt="storeName" class="w-full h-full object-cover">
-                                    <span v-else class="text-[10px] font-bold text-gray-700">{{ storeInitials }}</span>
+                            <div v-if="activeTab === 'home'" class="md:hidden min-w-0 flex-1">
+                                <div class="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-2">
+                                    <div
+                                        class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70"
+                                        :style="storeLogo ? null : { background: 'var(--idx-primary)' }"
+                                    >
+                                        <img v-if="storeLogo" :src="storeLogo" :alt="storeName" class="h-full w-full rounded-lg object-cover">
+                                        <span v-else class="text-[10px] font-semibold text-white">{{ storeInitials }}</span>
+                                    </div>
+                                    <div class="min-w-0 flex-1 leading-tight">
+                                        <p class="truncate text-xs font-semibold text-slate-900">{{ storeName }}</p>
+                                        <span class="mt-1 inline-flex w-fit items-center rounded-full px-2 py-0.5 text-[10px] font-semibold" :class="storeAvailabilityChipClass">
+                                            {{ storeAvailabilityLabel }}
+                                        </span>
+                                    </div>
                                 </div>
-                                <h2 class="text-sm font-bold truncate text-slate-900">{{ storeName }}</h2>
                             </div>
                             <h2 v-else class="text-lg font-bold md:hidden">{{ activeTab === 'favorites' ? 'Favoritos' : activeTab === 'orders' ? (isServicesMode ? 'Agendamentos' : 'Pedidos') : 'Conta' }}</h2>
                             <div class="hidden md:flex items-center bg-gray-100 rounded-full px-4 py-2 w-full">
@@ -955,8 +1465,19 @@ onBeforeUnmount(() => {
                             </div>
                         </div>
                         <div class="flex items-center gap-3">
-                            <button type="button" class="p-2 text-gray-500 hover:text-[var(--idx-primary)] transition-colors">
+                            <button
+                                type="button"
+                                class="relative p-2 text-gray-500 hover:text-[var(--idx-primary)] transition-colors"
+                                :disabled="markNotificationsForm.processing"
+                                @click="showNotificationsPanel = !showNotificationsPanel"
+                            >
                                 <Bell :size="19" />
+                                <span
+                                    v-if="notificationsUnreadCount > 0"
+                                    class="absolute -right-0.5 -top-0.5 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white"
+                                >
+                                    {{ notificationsUnreadCount > 9 ? '9+' : notificationsUnreadCount }}
+                                </span>
                             </button>
                             <button type="button" class="relative p-2 text-gray-600 hover:text-[var(--idx-primary)] transition-colors" @click="isCartOpen = true">
                                 <ShoppingCart :size="20" />
@@ -964,6 +1485,69 @@ onBeforeUnmount(() => {
                             </button>
                         </div>
                     </header>
+
+                    <div
+                        v-if="showNotificationsPanel"
+                        class="absolute inset-0 z-30"
+                        @click="showNotificationsPanel = false"
+                    ></div>
+
+                    <transition
+                        enter-active-class="transition duration-200 ease-out"
+                        enter-from-class="opacity-0 translate-y-1"
+                        enter-to-class="opacity-100 translate-y-0"
+                        leave-active-class="transition duration-150 ease-in"
+                        leave-from-class="opacity-100 translate-y-0"
+                        leave-to-class="opacity-0 translate-y-1"
+                    >
+                        <section
+                            v-if="showNotificationsPanel"
+                            class="absolute right-3 top-16 z-40 w-[min(22rem,calc(100%-1.5rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+                        >
+                            <header class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-slate-900">Notificações</h3>
+                                    <p class="text-xs text-slate-500">Status de pedidos e agendamentos</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                    :disabled="markNotificationsForm.processing || notificationsUnreadCount <= 0"
+                                    @click="markNotificationsAsRead()"
+                                >
+                                    Marcar todas
+                                </button>
+                            </header>
+                            <div class="max-h-80 overflow-y-auto p-3">
+                                <article
+                                    v-for="item in notifications"
+                                    :key="`notif-${item.id}`"
+                                    class="rounded-xl border border-slate-200 bg-slate-50/60 p-3"
+                                    :class="item.is_read ? '' : 'border-[var(--idx-primary-border)] bg-[var(--idx-primary-soft)]'"
+                                >
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-900">{{ item.title }}</p>
+                                            <p class="mt-1 text-xs text-slate-600">{{ item.message }}</p>
+                                            <p v-if="item.created_at_label" class="mt-1 text-[11px] text-slate-500">{{ item.created_at_label }}</p>
+                                        </div>
+                                        <button
+                                            v-if="!item.is_read"
+                                            type="button"
+                                            class="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                                            :disabled="markNotificationsForm.processing"
+                                            @click="markNotificationsAsRead(item.id)"
+                                        >
+                                            Lida
+                                        </button>
+                                    </div>
+                                </article>
+                                <p v-if="!notifications.length" class="rounded-xl border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-500">
+                                    Nenhuma notificação de status no momento.
+                                </p>
+                            </div>
+                        </section>
+                    </transition>
 
                     <div class="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-6">
                         <div v-if="flashStatus" class="mb-4 rounded-xl border border-green-200 bg-green-50 text-green-700 text-sm px-4 py-2.5">
@@ -975,8 +1559,40 @@ onBeforeUnmount(() => {
                         <div v-if="checkoutManual?.whatsapp_url" class="mb-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm px-4 py-2.5">
                             Pagamento manual disponível. <a :href="checkoutManual.whatsapp_url" target="_blank" class="font-semibold underline">Abrir WhatsApp</a>
                         </div>
-                        <div v-if="checkoutPayment?.is_pix && checkoutPayment?.qr_code" class="mb-4 rounded-xl border border-orange-200 bg-orange-50 text-orange-800 text-sm px-4 py-2.5">
-                            Pix gerado: <span class="font-semibold break-all">{{ checkoutPayment.qr_code }}</span>
+                        <div v-if="checkoutHasPixPayload" class="mb-4 rounded-xl border border-orange-200 bg-orange-50 text-orange-800 text-sm px-4 py-2.5">
+                            <p class="font-semibold">Pagamento Pix gerado.</p>
+                            <p v-if="checkoutEffectivePayment?.qr_code" class="mt-1 break-all">
+                                Código Pix: <span class="font-semibold">{{ checkoutEffectivePayment.qr_code }}</span>
+                            </p>
+                            <div v-if="checkoutPixQrImageSrc" class="mt-2 inline-flex rounded-lg border border-orange-200 bg-white p-2">
+                                <img :src="checkoutPixQrImageSrc" alt="QR Code Pix" class="h-36 w-36 rounded-md">
+                            </div>
+                            <p v-if="!checkoutHasVisiblePixData" class="mt-1">
+                                Estamos buscando o QR Code da cobrança. Atualize em alguns segundos.
+                            </p>
+                            <p v-if="checkoutEffectivePayment?.transaction_reference" class="mt-1 break-all">
+                                Referência: <span class="font-semibold">{{ checkoutEffectivePayment.transaction_reference }}</span>
+                            </p>
+                            <a
+                                v-if="checkoutEffectivePayment?.ticket_url"
+                                :href="checkoutEffectivePayment.ticket_url"
+                                target="_blank"
+                                rel="noopener"
+                                class="mt-2 inline-flex font-semibold underline"
+                            >
+                                Abrir cobrança Pix
+                            </a>
+                            <button
+                                type="button"
+                                class="mt-2 inline-flex rounded-lg border border-orange-200 bg-white px-3 py-1.5 font-semibold text-orange-800 hover:bg-orange-100 disabled:opacity-60"
+                                :disabled="checkoutPixRefreshLoading"
+                                @click="refreshCheckoutPixPayment()"
+                            >
+                                {{ checkoutPixRefreshLoading ? 'Atualizando...' : 'Atualizar cobrança' }}
+                            </button>
+                            <p v-if="checkoutPixRefreshError" class="mt-1 text-xs text-orange-700">
+                                {{ checkoutPixRefreshError }}
+                            </p>
                         </div>
                         <div v-if="bookingWhatsappUrl" class="mb-4 rounded-xl border border-green-200 bg-green-50 text-green-700 text-sm px-4 py-2.5">
                             Agendamento criado. <a :href="bookingWhatsappUrl" target="_blank" class="font-semibold underline">Abrir WhatsApp</a>
@@ -1001,7 +1617,7 @@ onBeforeUnmount(() => {
                                     <article
                                         v-for="banner in promotionalBanners"
                                         :key="`mobile-banner-${banner.id}`"
-                                        class="relative h-40 w-[280px] overflow-hidden rounded-2xl border border-white/20 shadow-sm"
+                                        class="relative h-40 w-[280px] overflow-hidden rounded-2xl border border-white/20"
                                     >
                                         <img :src="banner.image" :alt="banner.title" class="h-full w-full object-cover">
                                         <div class="absolute inset-0 bg-gradient-to-tr from-black/60 via-black/25 to-black/15 p-4 text-white">
@@ -1027,7 +1643,7 @@ onBeforeUnmount(() => {
                                 <article
                                     v-for="(banner, index) in desktopBanners"
                                     :key="`desktop-banner-${banner.id}`"
-                                    class="relative overflow-hidden rounded-2xl shadow-sm"
+                                    class="relative overflow-hidden rounded-2xl"
                                     :class="index === 0 ? 'col-span-2 h-48' : 'h-48'"
                                 >
                                     <img :src="banner.image" :alt="banner.title" class="h-full w-full object-cover">
@@ -1078,16 +1694,17 @@ onBeforeUnmount(() => {
                                 <div
                                     v-for="item in (activeTab === 'favorites' ? favoriteItems : featuredCatalog)"
                                     :key="`card-${item.id}`"
-                                    class="bg-white rounded-2xl overflow-hidden shadow-sm relative group"
+                                    class="bg-white rounded-2xl overflow-hidden shadow-sm relative group md:cursor-pointer"
+                                    @click="openDetails(item)"
                                 >
                                     <button
                                         type="button"
                                         class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold z-10"
-                                        @click="toggleFavorite(item)"
+                                        @click.stop="toggleFavorite(item)"
                                     >
                                         <Heart :size="12" :class="{ 'fill-white': isFavorite(item.id) }" />
                                     </button>
-                                    <img :src="item.image" :alt="item.title" class="w-full h-32 md:h-40 object-cover group-hover:scale-105 transition-transform duration-300" @click="openDetails(item)">
+                                    <img :src="item.image" :alt="item.title" class="w-full h-32 md:h-40 object-cover group-hover:scale-105 transition-transform duration-300">
                                     <div class="p-4">
                                         <h4 class="font-semibold text-sm md:text-base mb-1 truncate">{{ item.title }}</h4>
                                         <p class="text-xs text-gray-400 truncate">{{ item.subtitle }}</p>
@@ -1098,7 +1715,7 @@ onBeforeUnmount(() => {
                                         </div>
                                         <div class="flex justify-between items-center mt-2">
                                             <span class="text-gray-700 text-xs font-semibold">{{ formatMoney(item.price) }}</span>
-                                            <button class="text-white text-xs px-3 py-1 rounded-full font-medium" :style="{ backgroundColor: 'var(--idx-add-button)' }" @click="addToCart(item)">
+                                            <button class="text-white text-xs px-3 py-1 rounded-full font-medium" :style="{ backgroundColor: 'var(--idx-add-button)' }" @click.stop="addToCart(item)">
                                                 {{ isServicesMode ? 'Agendar' : 'Adicionar' }}
                                             </button>
                                         </div>
@@ -1112,9 +1729,10 @@ onBeforeUnmount(() => {
                                     <div
                                         v-for="item in favoriteItems.slice(0, 4)"
                                         :key="`fav-home-${item.id}`"
-                                        class="bg-white rounded-2xl overflow-hidden shadow-sm relative group"
+                                        class="bg-white rounded-2xl overflow-hidden shadow-sm relative group md:cursor-pointer"
+                                        @click="openDetails(item)"
                                     >
-                                        <img :src="item.image" :alt="item.title" class="w-full h-32 md:h-40 object-cover group-hover:scale-105 transition-transform duration-300" @click="openDetails(item)">
+                                        <img :src="item.image" :alt="item.title" class="w-full h-32 md:h-40 object-cover group-hover:scale-105 transition-transform duration-300">
                                         <div class="p-4">
                                             <h4 class="font-semibold text-sm md:text-base mb-1 truncate">{{ item.title }}</h4>
                                         </div>
@@ -1153,8 +1771,12 @@ onBeforeUnmount(() => {
                                 </div>
                             </div>
 
-                            <form v-else class="space-y-4" @submit.prevent="submitProfile">
+                            <div v-else class="space-y-4">
                                 <div class="bg-white rounded-2xl border border-gray-100 p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <label class="text-xs font-semibold uppercase text-gray-500 tracking-wide md:col-span-2">
+                                        E-mail
+                                        <input :value="customer?.email || ''" type="email" readonly class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                                    </label>
                                     <label class="text-xs font-semibold uppercase text-gray-500 tracking-wide">
                                         Telefone
                                         <input :value="profileForm.phone" type="text" maxlength="15" class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm" @input="profileForm.phone = formatPhoneBR($event.target.value)">
@@ -1185,9 +1807,11 @@ onBeforeUnmount(() => {
                                     </label>
                                     <label class="text-xs font-semibold uppercase text-gray-500 tracking-wide">
                                         UF
-                                        <select v-model="profileForm.state" class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm bg-white">
-                                            <option v-for="option in stateOptions" :key="option.value || 'empty'" :value="option.value">{{ option.label }}</option>
-                                        </select>
+                                        <UiSelect
+                                            v-model="profileForm.state"
+                                            :options="stateOptions"
+                                            button-class="mt-1"
+                                        />
                                     </label>
                                 </div>
 
@@ -1199,15 +1823,45 @@ onBeforeUnmount(() => {
                                 <InputError :message="profileForm.errors.city" />
                                 <InputError :message="profileForm.errors.state" />
 
-                                <div class="flex flex-wrap gap-2">
-                                    <button type="submit" class="px-4 py-2.5 rounded-xl bg-[var(--idx-primary)] text-white font-semibold text-sm" :disabled="profileForm.processing">
-                                        {{ profileForm.processing ? 'Salvando...' : 'Salvar dados' }}
-                                    </button>
-                                    <button type="button" class="px-4 py-2.5 rounded-xl border border-gray-200 font-semibold text-sm text-gray-600" @click="logout">
-                                        Sair da conta
-                                    </button>
+                            <div v-if="isAuthenticated" class="space-y-3">
+                                <div class="bg-white rounded-2xl border border-gray-100 p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <label class="text-xs font-semibold uppercase text-gray-500 tracking-wide">
+                                        Senha atual
+                                        <input v-model="passwordForm.current_password" type="password" autocomplete="current-password" class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm">
+                                    </label>
+                                    <label class="text-xs font-semibold uppercase text-gray-500 tracking-wide">
+                                        Nova senha
+                                        <input v-model="passwordForm.password" type="password" autocomplete="new-password" class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm">
+                                    </label>
+                                    <label class="text-xs font-semibold uppercase text-gray-500 tracking-wide">
+                                        Confirmar senha
+                                        <input v-model="passwordForm.password_confirmation" type="password" autocomplete="new-password" class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm">
+                                    </label>
                                 </div>
-                            </form>
+                                <InputError :message="passwordForm.errors.current_password" />
+                                <InputError :message="passwordForm.errors.password" />
+                                <InputError :message="passwordForm.errors.password_confirmation" />
+                            </div>
+
+                            <div v-if="isAuthenticated" class="flex flex-wrap justify-end gap-2">
+                                <button
+                                    type="button"
+                                    class="px-4 py-2.5 rounded-xl bg-[var(--idx-primary)] text-white font-semibold text-sm disabled:opacity-60"
+                                    :disabled="profileForm.processing || passwordForm.processing"
+                                    @click="submitAccountChanges"
+                                >
+                                    {{ profileForm.processing || passwordForm.processing ? 'Salvando...' : 'Salvar dados' }}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 font-semibold text-sm text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                                    :disabled="logoutForm.processing || profileForm.processing || passwordForm.processing"
+                                    @click="logout"
+                                >
+                                    Sair da conta
+                                </button>
+                            </div>
+                            </div>
                         </template>
                     </div>
                 </main>
@@ -1257,6 +1911,146 @@ onBeforeUnmount(() => {
                 </div>
             </transition>
 
+            <transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="opacity-0"
+                enter-to-class="opacity-100"
+                leave-active-class="transition duration-150 ease-in"
+                leave-from-class="opacity-100"
+                leave-to-class="opacity-0"
+            >
+                <div
+                    v-if="isDetailsOpen"
+                    class="absolute inset-0 z-[72] bg-slate-900/55"
+                    @click="closeDetails"
+                />
+            </transition>
+            <transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="opacity-0 translate-y-2 scale-[0.99]"
+                enter-to-class="opacity-100 translate-y-0 scale-100"
+                leave-active-class="transition duration-150 ease-in"
+                leave-from-class="opacity-100 translate-y-0 scale-100"
+                leave-to-class="opacity-0 translate-y-2 scale-[0.99]"
+            >
+                <section
+                    v-if="isDetailsOpen && selectedItem"
+                    class="absolute left-1/2 top-1/2 z-[73] w-[calc(100%-1.5rem)] max-w-3xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+                >
+                    <header class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                        <div class="min-w-0">
+                            <h3 class="truncate text-base font-semibold text-slate-900">{{ selectedItem.title }}</h3>
+                            <p class="truncate text-xs text-slate-500">{{ selectedItem.subtitle }}</p>
+                        </div>
+                        <button
+                            type="button"
+                            class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            @click="closeDetails"
+                        >
+                            Fechar
+                        </button>
+                    </header>
+
+                    <div class="grid max-h-[78vh] gap-4 overflow-y-auto p-4 md:grid-cols-[1.1fr_1fr]">
+                        <div class="space-y-2">
+                            <img
+                                :src="selectedItemImages[detailsImageIndex] || selectedItemImages[0]"
+                                :alt="selectedItem.title"
+                                class="h-56 w-full rounded-2xl border border-slate-200 object-cover md:h-72"
+                            >
+                            <div v-if="selectedItemImages.length > 1" class="grid grid-cols-4 gap-2">
+                                <button
+                                    v-for="(image, imageIndex) in selectedItemImages"
+                                    :key="`details-thumb-${imageIndex}`"
+                                    type="button"
+                                    class="overflow-hidden rounded-xl border"
+                                    :class="detailsImageIndex === imageIndex ? 'border-[var(--idx-primary)]' : 'border-slate-200'"
+                                    @click="changeDetailsImage(imageIndex)"
+                                >
+                                    <img :src="image" :alt="`${selectedItem.title} ${imageIndex + 1}`" class="h-14 w-full object-cover">
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="space-y-3">
+                            <p class="text-sm text-slate-600">{{ selectedItem.description }}</p>
+                            <p class="text-xl font-bold text-emerald-600">{{ formatMoney(detailsUnitPrice) }}</p>
+
+                            <div v-if="!isServicesMode && detailsVariationOptions.length" class="space-y-1">
+                                <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Variação</label>
+                                <UiSelect
+                                    v-model="detailsVariationId"
+                                    :options="detailsVariationOptions"
+                                    button-class="w-full"
+                                />
+                            </div>
+
+                            <div v-if="!isServicesMode" class="space-y-1">
+                                <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Quantidade</label>
+                                <div class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-2 py-1">
+                                    <button
+                                        type="button"
+                                        class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-700"
+                                        @click="detailsQuantity = Math.max(1, toInt(detailsQuantity, 1) - 1)"
+                                    >
+                                        <Minus :size="13" />
+                                    </button>
+                                    <span class="min-w-7 text-center text-sm font-semibold text-slate-800">{{ Math.max(1, toInt(detailsQuantity, 1)) }}</span>
+                                    <button
+                                        type="button"
+                                        class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-white"
+                                        @click="detailsQuantity = Math.max(1, toInt(detailsQuantity, 1) + 1)"
+                                    >
+                                        <Plus :size="13" />
+                                    </button>
+                                </div>
+                                <p class="text-xs text-slate-500">Subtotal: {{ formatMoney(detailsLineTotal) }}</p>
+                            </div>
+
+                            <div v-if="isServicesMode" class="space-y-2">
+                                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Mês
+                                    <UiSelect
+                                        v-model="selectedBookingMonth"
+                                        :options="bookingMonthOptions"
+                                        button-class="mt-1"
+                                        :disabled="bookingForm.processing || !bookingMonthOptions.length"
+                                    />
+                                </label>
+                                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Dia
+                                    <UiSelect
+                                        v-model="selectedBookingDay"
+                                        :options="bookingDayOptions"
+                                        button-class="mt-1"
+                                        :disabled="bookingForm.processing || !bookingDayOptions.length"
+                                    />
+                                </label>
+                                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Hora
+                                    <UiSelect
+                                        v-model="bookingForm.scheduled_for"
+                                        :options="bookingHourOptions"
+                                        button-class="mt-1"
+                                        :disabled="bookingForm.processing || !bookingHourOptions.length"
+                                    />
+                                </label>
+                                <InputError :message="bookingForm.errors.scheduled_for" />
+                            </div>
+
+                            <button
+                                type="button"
+                                class="mt-2 inline-flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-sm"
+                                :style="{ backgroundColor: 'var(--idx-cart-button)' }"
+                                @click="submitDetailsPrimaryAction"
+                            >
+                                {{ detailsPrimaryActionLabel }}
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </transition>
+
             <div v-if="isCartOpen" class="idx-cart-backdrop" @click="isCartOpen = false"></div>
 
             <div class="idx-cart-panel" :class="{ open: isCartOpen }">
@@ -1273,12 +2067,11 @@ onBeforeUnmount(() => {
                     </div>
 
                     <div v-if="selectedItem && selectedItem.variations?.length && !isServicesMode" class="mt-3 flex items-center gap-2">
-                        <select v-model="variationByProduct[selectedItem.id]" class="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm bg-white">
-                            <option :value="null">Preço base</option>
-                            <option v-for="variation in selectedItem.variations" :key="variation.id" :value="variation.id">
-                                {{ variation.name }} - {{ formatMoney(variation.price) }}
-                            </option>
-                        </select>
+                        <UiSelect
+                            v-model="variationByProduct[selectedItem.id]"
+                            :options="[{ value: null, label: 'Preço base' }, ...detailsVariationOptions]"
+                            button-class="w-full"
+                        />
                     </div>
                 </div>
 
@@ -1318,11 +2111,57 @@ onBeforeUnmount(() => {
                         <span class="font-medium text-gray-800">Total</span>
                         <span class="font-bold text-green-600">{{ formatMoney(total) }}</span>
                     </div>
+                    <div v-if="!isServicesMode" class="mb-4">
+                        <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            Forma de pagamento
+                            <UiSelect
+                                v-model="checkoutForm.payment_method_id"
+                                :options="paymentMethodSelectOptions"
+                                button-class="mt-1"
+                            />
+                        </label>
+                        <InputError :message="checkoutForm.errors.payment_method_id" />
+                    </div>
+                    <div v-if="isServicesMode" class="mb-4 space-y-2">
+                        <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            Mês
+                            <UiSelect
+                                v-model="selectedBookingMonth"
+                                :options="bookingMonthOptions"
+                                button-class="mt-1"
+                                :disabled="bookingForm.processing || !bookingMonthOptions.length"
+                            />
+                        </label>
+                        <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            Dia
+                            <UiSelect
+                                v-model="selectedBookingDay"
+                                :options="bookingDayOptions"
+                                button-class="mt-1"
+                                :disabled="bookingForm.processing || !bookingDayOptions.length"
+                            />
+                        </label>
+                        <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            Horário
+                            <UiSelect
+                                v-model="bookingForm.scheduled_for"
+                                :options="bookingHourOptions"
+                                button-class="mt-1"
+                                :disabled="bookingForm.processing || !bookingHourOptions.length"
+                            />
+                        </label>
+                        <p v-if="!hasAvailableBookingSlots" class="text-xs text-amber-700">
+                            Não há horários disponíveis para agendamento.
+                        </p>
+                        <InputError :message="bookingForm.errors.scheduled_for" />
+                    </div>
                     <button
                         type="button"
                         class="w-full transition-colors text-white font-medium py-4 rounded-full shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
                         :style="{ backgroundColor: 'var(--idx-cart-button)' }"
-                        :disabled="isServicesMode ? bookingForm.processing || !cartEntries.length : checkoutForm.processing || !cartEntries.length"
+                        :disabled="isServicesMode
+                            ? bookingForm.processing || !cartEntries.length || !isSelectedBookingSlotValid
+                            : checkoutForm.processing || !cartEntries.length"
                         @click="isServicesMode ? submitQuickBooking() : submitQuickCheckout()"
                     >
                         {{
@@ -1407,4 +2246,5 @@ onBeforeUnmount(() => {
     }
 }
 </style>
+
 

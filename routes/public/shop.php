@@ -70,6 +70,9 @@ Route::middleware(['shop.auth', 'shop.contractor', 'shop.verified'])->group(func
     Route::patch('/shop/{slug}/conta', [ShopAccountController::class, 'updateProfile'])
         ->name('shop.account.update');
 
+    Route::patch('/shop/{slug}/conta/senha', [ShopAccountController::class, 'updatePassword'])
+        ->name('shop.account.password.update');
+
     Route::post('/shop/{slug}/conta/notificacoes/ler', [ShopAccountController::class, 'markNotificationsAsRead'])
         ->name('shop.account.notifications.read');
 
