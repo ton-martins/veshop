@@ -39,8 +39,8 @@ const submit = () => {
         subtitle="Informe o e-mail da conta para receber o link de recuperação."
         :back-href="loginUrl"
         back-label="Voltar para login"
-        hero-title="Recuperação integrada ao app"
-        hero-description="A tela segue o mesmo padrão visual da loja para manter consistência em toda a jornada."
+        hero-title="Recuperação de senha"
+        hero-description="Acesse sua conta e recupere sua senha."
     >
         <div v-if="props.status" class="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
             {{ props.status }}
