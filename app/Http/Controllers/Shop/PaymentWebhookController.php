@@ -141,22 +141,32 @@ class PaymentWebhookController extends Controller
                 ];
             }
 
+            $sale = $lockedPayment->sale;
+            $timeoutCancelled = $sale ? $this->isTimedOutCancelledSale($sale) : false;
             $paymentStatus = $this->mapWebhookStatusToPaymentStatus($status);
-            $saleStatus = $this->mapWebhookStatusToSaleStatus($status, $lockedPayment->sale);
+            $saleStatus = $this->mapWebhookStatusToSaleStatus($status, $sale);
+            if ($timeoutCancelled) {
+                $paymentStatus = (string) $lockedPayment->status;
+                $saleStatus = (string) $sale?->status;
+            }
 
             $gatewayPayload = is_array($lockedPayment->gateway_payload) ? $lockedPayment->gateway_payload : [];
             $gatewayPayload['last_webhook'] = $payload;
             $gatewayPayload['last_webhook_received_at'] = now()->toIso8601String();
 
             $lockedPayment->fill([
-                'status' => $paymentStatus,
+                'status' => $paymentStatus !== '' ? $paymentStatus : (string) $lockedPayment->status,
                 'transaction_reference' => $reference !== '' ? $reference : $lockedPayment->transaction_reference,
                 'paid_at' => $paymentStatus === SalePayment::STATUS_PAID ? now() : $lockedPayment->paid_at,
                 'gateway_payload' => $gatewayPayload,
             ])->save();
 
-            $sale = $lockedPayment->sale;
-            if ($sale) {
+            if ($sale && ! $timeoutCancelled) {
+                $saleMetadata = is_array($sale->metadata) ? $sale->metadata : [];
+                if ($paymentStatus === SalePayment::STATUS_PAID) {
+                    $saleMetadata['stock_reservation_finalized_at'] = now()->toIso8601String();
+                }
+
                 $sale->fill([
                     'status' => $saleStatus,
                     'paid_amount' => $paymentStatus === SalePayment::STATUS_PAID
@@ -168,6 +178,7 @@ class PaymentWebhookController extends Controller
                     'cancelled_at' => in_array($saleStatus, [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED], true)
                         ? ($sale->cancelled_at ?? now())
                         : $sale->cancelled_at,
+                    'metadata' => $saleMetadata,
                 ])->save();
             }
 
@@ -186,8 +197,8 @@ class PaymentWebhookController extends Controller
                 'data' => [
                     'payment_id' => (int) $lockedPayment->id,
                     'sale_id' => (int) ($lockedPayment->sale_id ?? 0),
-                    'payment_status' => $paymentStatus,
-                    'sale_status' => $saleStatus,
+                    'payment_status' => $paymentStatus !== '' ? $paymentStatus : (string) $lockedPayment->status,
+                    'sale_status' => $saleStatus !== '' ? $saleStatus : (string) ($sale?->status ?? ''),
                 ],
             ];
         });
@@ -417,6 +428,21 @@ class PaymentWebhookController extends Controller
         return null;
     }
 
+    private function isTimedOutCancelledSale(?Sale $sale): bool
+    {
+        if (! $sale) {
+            return false;
+        }
+
+        if ((string) $sale->status !== Sale::STATUS_CANCELLED) {
+            return false;
+        }
+
+        $metadata = is_array($sale->metadata) ? $sale->metadata : [];
+
+        return (bool) ($metadata['stock_reservation_expired'] ?? false);
+    }
+
     private function mapWebhookStatusToPaymentStatus(string $status): string
     {
         return match (strtolower(trim($status))) {
@@ -433,8 +459,15 @@ class PaymentWebhookController extends Controller
     private function mapWebhookStatusToSaleStatus(string $status, ?Sale $sale): string
     {
         $currentStatus = (string) ($sale?->status ?? Sale::STATUS_PENDING_CONFIRMATION);
+        $normalized = strtolower(trim($status));
 
-        return match (strtolower(trim($status))) {
+        if (in_array($currentStatus, [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED], true)) {
+            if (! in_array($normalized, ['paid', 'succeeded', 'approved', 'completed', 'processed', 'accredited'], true)) {
+                return $currentStatus;
+            }
+        }
+
+        return match ($normalized) {
             'paid', 'succeeded', 'approved', 'completed', 'processed', 'accredited' => Sale::STATUS_PAID,
             'authorized', 'authorised', 'pending', 'waiting', 'action_required', 'waiting_transfer', 'in_process', 'processing' => Sale::STATUS_AWAITING_PAYMENT,
             'refunded', 'chargeback', 'charged_back' => Sale::STATUS_REFUNDED,

@@ -2,11 +2,13 @@
 
 namespace Tests\Feature\Admin;
 
+use App\Models\AddressState;
 use App\Models\Contractor;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -233,6 +235,147 @@ class StorefrontConfigTest extends TestCase
         $this->assertNotSame($firstPath, $secondPath);
         Storage::disk('public')->assertExists($secondPath);
         Storage::disk('public')->assertMissing($firstPath);
+    }
+
+    public function test_admin_location_cities_endpoint_syncs_cities_from_ibge_when_state_is_not_local(): void
+    {
+        $contractor = $this->createContractor('storefront-local-cities');
+        $user = $this->createAdminUser([$contractor]);
+
+        Http::fake([
+            'https://servicodados.ibge.gov.br/api/v1/localidades/estados/RS/municipios' => Http::response([
+                ['nome' => 'Porto Alegre', 'id' => '4314902'],
+                ['nome' => 'Caxias do Sul', 'id' => '4305108'],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->getJson(route('admin.storefront.location.cities', ['state' => 'RS']));
+
+        $response->assertOk()
+            ->assertJsonPath('cities.0', 'Caxias do Sul')
+            ->assertJsonPath('cities.1', 'Porto Alegre');
+
+        $this->assertDatabaseHas('address_states', [
+            'code' => 'RS',
+            'name' => 'Rio Grande do Sul',
+        ]);
+
+        $this->assertDatabaseHas('address_cities', [
+            'name' => 'Porto Alegre',
+            'normalized_name' => 'porto alegre',
+            'ibge_code' => '4314902',
+        ]);
+    }
+
+    public function test_admin_shipping_update_rejects_city_that_does_not_exist_for_selected_state(): void
+    {
+        $contractor = $this->createContractor('storefront-city-validation');
+        $user = $this->createAdminUser([$contractor]);
+
+        Http::fake([
+            'https://servicodados.ibge.gov.br/api/v1/localidades/estados/RS/municipios' => Http::response([
+                ['nome' => 'Porto Alegre', 'id' => '4314902'],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->from(route('admin.storefront.index'))
+            ->put(route('admin.storefront.update'), [
+                'section' => 'shipping',
+                'shipping_pickup_enabled' => true,
+                'shipping_delivery_enabled' => true,
+                'shipping_nationwide_enabled' => false,
+                'shipping_nationwide_fee' => 0,
+                'shipping_nationwide_free_over' => 0,
+                'shipping_statewide_enabled' => false,
+                'shipping_statewide_state' => '',
+                'shipping_statewide_fee' => 0,
+                'shipping_statewide_free_over' => 0,
+                'shipping_estimated_days' => 2,
+                'shipping_city_rates' => [
+                    [
+                        'state' => 'RS',
+                        'city' => 'Cidade Inexistente',
+                        'fee' => 12.5,
+                        'free_over' => 0,
+                        'estimated_days' => 2,
+                        'active' => true,
+                        'is_free' => false,
+                    ],
+                ],
+            ]);
+
+        $response->assertRedirect(route('admin.storefront.index'));
+        $response->assertSessionHasErrors(['shipping_city_rates.0.city']);
+    }
+
+    public function test_admin_shipping_update_normalizes_city_name_to_canonical_directory_value(): void
+    {
+        $contractor = $this->createContractor('storefront-city-canonical');
+        $user = $this->createAdminUser([$contractor]);
+
+        AddressState::query()->create([
+            'code' => 'RS',
+            'name' => 'Rio Grande do Sul',
+        ]);
+
+        Http::fake([
+            'https://servicodados.ibge.gov.br/api/v1/localidades/estados/RS/municipios' => Http::response([
+                ['nome' => 'Porto Alegre', 'id' => '4314902'],
+            ], 200),
+            '*' => Http::response([], 200),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withSession([
+                'current_contractor_id' => $contractor->id,
+                'two_factor_passed' => true,
+            ])
+            ->put(route('admin.storefront.update'), [
+                'section' => 'shipping',
+                'shipping_pickup_enabled' => true,
+                'shipping_delivery_enabled' => true,
+                'shipping_nationwide_enabled' => false,
+                'shipping_nationwide_fee' => 0,
+                'shipping_nationwide_free_over' => 0,
+                'shipping_statewide_enabled' => false,
+                'shipping_statewide_state' => '',
+                'shipping_statewide_fee' => 0,
+                'shipping_statewide_free_over' => 0,
+                'shipping_estimated_days' => 2,
+                'shipping_city_rates' => [
+                    [
+                        'state' => 'RS',
+                        'city' => 'porto alegre',
+                        'fee' => 9.9,
+                        'free_over' => 0,
+                        'estimated_days' => 2,
+                        'active' => true,
+                        'is_free' => false,
+                    ],
+                ],
+            ]);
+
+        $response->assertRedirect();
+
+        $contractor->refresh();
+        $cityRate = data_get($contractor->settings, 'shop_shipping.city_rates.0');
+
+        $this->assertSame('RS', (string) data_get($cityRate, 'state'));
+        $this->assertSame('Porto Alegre', (string) data_get($cityRate, 'city'));
+        $this->assertDatabaseHas('address_cities', [
+            'name' => 'Porto Alegre',
+            'normalized_name' => 'porto alegre',
+        ]);
     }
 
     /**

@@ -2,9 +2,11 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
+import TableViewToggle from '@/Components/App/TableViewToggle.vue';
+import { BRAZIL_STATES, normalizeStateCode } from '@/utils/br';
 import { Head, useForm } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { Clock3, Store, Truck } from 'lucide-vue-next';
+import { ChevronDown, Clock3, Plus, Search, Store, Truck } from 'lucide-vue-next';
 
 const props = defineProps({
     initialTab: { type: String, default: 'vitrine' },
@@ -16,6 +18,7 @@ const props = defineProps({
     services: { type: Array, default: () => [] },
     templates: { type: Array, default: () => [] },
     shop_url: { type: String, default: '' },
+    addressDirectory: { type: Object, default: () => ({ states: [], routes: {} }) },
 });
 
 const WEEK_DAYS = [
@@ -42,11 +45,37 @@ const normalizeHour = (value, fallback = '00:00') => {
     return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(safe) ? safe : fallback;
 };
 
+const normalizeCitySearchKey = (value) => String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const normalizeHexColor = (value, fallback = '#073341') => {
     const safe = String(value ?? '').trim();
     if (/^#[0-9a-fA-F]{3}$/.test(safe) || /^#[0-9a-fA-F]{6}$/.test(safe)) return safe.toUpperCase();
     if (/^[0-9a-fA-F]{3}$/.test(safe) || /^[0-9a-fA-F]{6}$/.test(safe)) return `#${safe.toUpperCase()}`;
     return fallback.toUpperCase();
+};
+
+const hexToRgb = (hex) => {
+    const safe = normalizeHexColor(hex, '#0F172A').replace('#', '');
+    const parsed = Number.parseInt(safe, 16);
+
+    return {
+        r: (parsed >> 16) & 255,
+        g: (parsed >> 8) & 255,
+        b: parsed & 255,
+    };
+};
+
+const withAlpha = (hex, alpha = 1) => {
+    const { r, g, b } = hexToRgb(hex);
+    const safeAlpha = Math.max(0, Math.min(1, Number(alpha)));
+
+    return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
 };
 
 const MAX_BANNERS = 6;
@@ -60,8 +89,28 @@ const createEmptyBanner = () => ({
     image_file: null,
     remove_image: false,
     cta_label: '',
+    use_original_image_colors: false,
     background_color: normalizeHexColor(props.contractor?.primary_color || '#073341'),
     preview_url: '',
+});
+
+const createEmptyShippingCityRate = () => ({
+    city: '',
+    city_search: '',
+    state: '',
+    fee: '',
+    free_over: '',
+    estimated_days: '',
+    is_free: false,
+    active: true,
+    is_editing: true,
+});
+
+const createEmptyShippingStateRate = (state = '') => ({
+    state: normalizeStateCode(state),
+    fee: '',
+    free_over: '',
+    active: false,
 });
 
 const normalizeBusinessHours = (value) => {
@@ -91,6 +140,12 @@ const tabs = computed(() => allTabs.filter((tab) => props.supportsShipping || ta
 const allowedTabs = computed(() => new Set(tabs.value.map((tab) => tab.key)));
 const resolveTabKey = (tab) => (allowedTabs.value.has(tab) ? tab : 'vitrine');
 const activeTab = ref(resolveTabKey(props.initialTab));
+const tabAccentColor = computed(() => normalizeHexColor(props.contractor?.primary_color || '#0F172A', '#0F172A'));
+const storefrontTabStyles = computed(() => ({
+    '--storefront-tab-active': tabAccentColor.value,
+    '--storefront-tab-active-soft': withAlpha(tabAccentColor.value, 0.12),
+    '--storefront-tab-active-border': withAlpha(tabAccentColor.value, 0.28),
+}));
 const vitrineMiniTabs = [
     { key: 'geral', label: 'Geral' },
     { key: 'banners', label: 'Banners' },
@@ -152,9 +207,12 @@ const storefrontForm = useForm({
 const shippingForm = useForm({
     shipping_pickup_enabled: true,
     shipping_delivery_enabled: true,
-    shipping_fixed_fee: 0,
-    shipping_free_over: '',
+    shipping_nationwide_enabled: false,
+    shipping_nationwide_fee: 0,
+    shipping_nationwide_free_over: '',
+    shipping_state_rates: BRAZIL_STATES.map((state) => createEmptyShippingStateRate(state.code)),
     shipping_estimated_days: 2,
+    shipping_city_rates: [createEmptyShippingCityRate()],
 });
 
 const hydrateStorefront = () => {
@@ -184,6 +242,7 @@ const hydrateStorefront = () => {
             image_file: null,
             remove_image: false,
             cta_label: String(banner?.cta_label ?? ''),
+            use_original_image_colors: Boolean(banner?.use_original_image_colors ?? false),
             background_color: normalizeHexColor(banner?.background_color ?? props.contractor?.primary_color ?? '#073341'),
             preview_url: String(banner?.image_url ?? ''),
         }))
@@ -213,9 +272,67 @@ const hydrateStorefront = () => {
 const hydrateShipping = () => {
     shippingForm.shipping_pickup_enabled = props.shopShipping?.pickup_enabled ?? true;
     shippingForm.shipping_delivery_enabled = props.shopShipping?.delivery_enabled ?? true;
-    shippingForm.shipping_fixed_fee = props.shopShipping?.fixed_fee ?? 0;
-    shippingForm.shipping_free_over = props.shopShipping?.free_over ?? '';
+    shippingForm.shipping_nationwide_enabled = props.shopShipping?.nationwide_enabled ?? false;
+    shippingForm.shipping_nationwide_fee = props.shopShipping?.nationwide_fee ?? 0;
+    shippingForm.shipping_nationwide_free_over = props.shopShipping?.nationwide_free_over ?? '';
     shippingForm.shipping_estimated_days = props.shopShipping?.estimated_days ?? 2;
+    const incomingStateRates = Array.isArray(props.shopShipping?.state_rates)
+        ? props.shopShipping.state_rates
+        : [];
+    const fallbackStatewideState = normalizeStateCode(props.shopShipping?.statewide_state ?? '');
+    const fallbackStatewideActive = Boolean(props.shopShipping?.statewide_enabled && fallbackStatewideState);
+    const fallbackStatewideFee = props.shopShipping?.statewide_fee ?? 0;
+    const fallbackStatewideFreeOver = props.shopShipping?.statewide_free_over ?? 0;
+
+    const stateRateMap = new Map(
+        incomingStateRates
+            .map((row) => ({
+                state: normalizeStateCode(row?.state ?? ''),
+                fee: row?.fee ?? '',
+                free_over: row?.free_over ?? '',
+                active: Boolean(row?.active ?? false),
+            }))
+            .filter((row) => row.state !== '')
+            .map((row) => [row.state, row]),
+    );
+
+    shippingForm.shipping_state_rates = BRAZIL_STATES.map((state) => {
+        const current = stateRateMap.get(state.code);
+        if (current) {
+            return {
+                state: state.code,
+                fee: current.fee,
+                free_over: current.free_over,
+                active: current.active,
+            };
+        }
+
+        if (fallbackStatewideActive && fallbackStatewideState === state.code) {
+            return {
+                state: state.code,
+                fee: fallbackStatewideFee,
+                free_over: fallbackStatewideFreeOver,
+                active: true,
+            };
+        }
+
+        return createEmptyShippingStateRate(state.code);
+    });
+
+    shippingForm.shipping_city_rates = Array.isArray(props.shopShipping?.city_rates) && props.shopShipping.city_rates.length
+        ? props.shopShipping.city_rates.map((row) => ({
+            city: String(row?.city ?? ''),
+            city_search: '',
+            state: String(row?.state ?? '').toUpperCase(),
+            fee: row?.fee ?? '',
+            free_over: row?.free_over ?? '',
+            estimated_days: row?.estimated_days ?? '',
+            is_free: row?.is_free !== undefined ? Boolean(row.is_free) : false,
+            active: row?.active !== undefined ? Boolean(row.active) : true,
+            is_editing: false,
+        }))
+        : [createEmptyShippingCityRate()];
+    syncShippingStateRates();
 };
 
 watch(() => props.storefront, hydrateStorefront, { deep: true, immediate: true });
@@ -226,6 +343,500 @@ watch(
         storefrontForm.slug = String(slug ?? '').trim();
     },
 );
+
+const normalizeStateOptionRows = (rows) => {
+    if (!Array.isArray(rows)) return [];
+
+    return rows
+        .map((row) => {
+            const value = normalizeStateCode(row?.value ?? row?.code ?? row?.sigla ?? '');
+            const label = String(row?.label ?? '').trim();
+            const stateName = String(row?.name ?? '').trim();
+            if (!value) return null;
+
+            return {
+                value,
+                label: label !== '' ? label : `${value} - ${stateName || value}`,
+            };
+        })
+        .filter(Boolean);
+};
+
+const locationRoutes = computed(() => ({
+    states: String(props.addressDirectory?.routes?.states ?? '').trim(),
+    cities: String(props.addressDirectory?.routes?.cities ?? '').trim(),
+}));
+
+const shippingStatesLoading = ref(false);
+const shippingStatesError = ref('');
+const shippingStateOptions = ref(
+    normalizeStateOptionRows(props.addressDirectory?.states).length
+        ? normalizeStateOptionRows(props.addressDirectory?.states)
+        : BRAZIL_STATES.map((state) => ({
+            value: state.code,
+            label: `${state.code} - ${state.name}`,
+        })),
+);
+watch(
+    () => props.addressDirectory?.states,
+    (rows) => {
+        const normalized = normalizeStateOptionRows(rows);
+        if (normalized.length > 0) {
+            shippingStateOptions.value = normalized;
+        }
+    },
+    { deep: true },
+);
+const shippingCitiesByState = ref({});
+const shippingCitiesLoadingByState = ref({});
+const shippingCitiesErrorByState = ref({});
+const shippingCitiesRequestByState = new Map();
+
+const shippingCityTableEnabled = computed(() => shippingForm.shipping_delivery_enabled);
+
+const activeShippingStateRatesCount = computed(() =>
+    (Array.isArray(shippingForm.shipping_state_rates) ? shippingForm.shipping_state_rates : [])
+        .filter((rate) => Boolean(rate?.active))
+        .length,
+);
+
+const shippingCoverageStatus = computed(() => {
+    if (!shippingForm.shipping_delivery_enabled && !shippingForm.shipping_pickup_enabled) {
+        return 'Sem retirada e sem entrega, a loja ficará sem checkout.';
+    }
+
+    if (!shippingForm.shipping_delivery_enabled) {
+        return 'Entrega desativada. Apenas retirada na loja estará disponível.';
+    }
+
+    if (shippingForm.shipping_nationwide_enabled) {
+        return 'Entrega habilitada para todo o Brasil.';
+    }
+
+    if (activeShippingStateRatesCount.value > 0) {
+        return `Entrega habilitada por estado (${activeShippingStateRatesCount.value} estado(s) ativo(s)).`;
+    }
+
+    return 'Configure a tabela por cidade para liberar entrega.';
+});
+
+const shippingStateFilters = ref({
+    search: '',
+    active: 'all',
+});
+
+const shippingStateFilterActiveOptions = [
+    { value: 'all', label: 'Todos os estados' },
+    { value: 'active', label: 'Ativos' },
+    { value: 'inactive', label: 'Inativos' },
+];
+
+const shippingStateRateEntries = computed(() => {
+    const rates = Array.isArray(shippingForm.shipping_state_rates) ? shippingForm.shipping_state_rates : [];
+    const byState = new Map(
+        rates
+            .map((rate, index) => [normalizeStateCode(rate?.state ?? ''), index])
+            .filter(([state]) => state !== ''),
+    );
+
+    return BRAZIL_STATES.map((state) => {
+        const index = byState.get(state.code);
+        return {
+            index: typeof index === 'number' ? index : -1,
+            label: `${state.code} - ${state.name}`,
+            stateName: state.name,
+            row: typeof index === 'number' ? rates[index] : createEmptyShippingStateRate(state.code),
+        };
+    });
+});
+
+const filteredShippingStateRateEntries = computed(() => {
+    const searchTerm = normalizeCitySearchKey(shippingStateFilters.value.search);
+    const activeFilter = String(shippingStateFilters.value.active ?? 'all').trim().toLowerCase();
+
+    return shippingStateRateEntries.value.filter((entry) => {
+        const stateCode = normalizeStateCode(entry.row?.state ?? '');
+        const stateLabel = String(entry.label ?? '').trim();
+        const searchable = normalizeCitySearchKey(`${stateCode} ${stateLabel}`);
+        const isActive = Boolean(entry.row?.active);
+
+        if (searchTerm !== '' && !searchable.includes(searchTerm)) return false;
+        if (activeFilter === 'active' && !isActive) return false;
+        if (activeFilter === 'inactive' && isActive) return false;
+        return true;
+    });
+});
+
+const clearShippingStateFilters = () => {
+    shippingStateFilters.value = {
+        search: '',
+        active: 'all',
+    };
+};
+
+const shippingStateStats = computed(() => ({
+    total: shippingStateRateEntries.value.length,
+    filtered: filteredShippingStateRateEntries.value.length,
+    activeCount: activeShippingStateRatesCount.value,
+}));
+
+const shippingCityFilters = ref({
+    search: '',
+    state: '',
+    active: 'all',
+    free: 'all',
+});
+
+const shippingCityFilterStateOptions = computed(() => ([
+    { value: '', label: 'Todas UFs' },
+    ...shippingStateOptions.value,
+]));
+
+const shippingCityFilterActiveOptions = [
+    { value: 'all', label: 'Todas (status)' },
+    { value: 'active', label: 'Ativas' },
+    { value: 'inactive', label: 'Inativas' },
+];
+
+const shippingCityFilterFreeOptions = [
+    { value: 'all', label: 'Todas (frete)' },
+    { value: 'free', label: 'Grátis' },
+    { value: 'paid', label: 'Com valor' },
+];
+
+const shippingCityRateEntries = computed(() =>
+    (Array.isArray(shippingForm.shipping_city_rates) ? shippingForm.shipping_city_rates : [])
+        .map((rate, index) => ({ index, rate })),
+);
+
+const filteredShippingCityRateEntries = computed(() => {
+    const searchTerm = normalizeCitySearchKey(shippingCityFilters.value.search);
+    const stateFilter = normalizeStateCode(shippingCityFilters.value.state);
+    const activeFilter = String(shippingCityFilters.value.active ?? 'all').trim().toLowerCase();
+    const freeFilter = String(shippingCityFilters.value.free ?? 'all').trim().toLowerCase();
+
+    return shippingCityRateEntries.value.filter((entry) => {
+        const rate = entry.rate ?? {};
+        const state = normalizeStateCode(rate.state ?? '');
+        const city = String(rate.city ?? rate.city_search ?? '').trim();
+        const citySearchKey = normalizeCitySearchKey(`${city} ${state}`);
+
+        if (stateFilter !== '' && state !== stateFilter) return false;
+        if (searchTerm !== '' && !citySearchKey.includes(searchTerm)) return false;
+        if (activeFilter === 'active' && !rate.active) return false;
+        if (activeFilter === 'inactive' && rate.active) return false;
+        if (freeFilter === 'free' && !rate.is_free) return false;
+        if (freeFilter === 'paid' && rate.is_free) return false;
+
+        return true;
+    });
+});
+
+const shippingCityStats = computed(() => {
+    const rows = shippingCityRateEntries.value;
+    const activeCount = rows.filter((entry) => entry.rate?.active).length;
+    const freeCount = rows.filter((entry) => entry.rate?.is_free).length;
+
+    return {
+        total: rows.length,
+        filtered: filteredShippingCityRateEntries.value.length,
+        activeCount,
+        freeCount,
+    };
+});
+
+const clearShippingCityFilters = () => {
+    shippingCityFilters.value = {
+        search: '',
+        state: '',
+        active: 'all',
+        free: 'all',
+    };
+};
+
+const citySearchOptionsForRate = (rate) => {
+    const state = normalizeStateCode(rate?.state ?? '');
+    if (!state) return [];
+
+    const allCities = Array.isArray(shippingCitiesByState.value?.[state])
+        ? shippingCitiesByState.value[state]
+        : [];
+
+    const query = normalizeCitySearchKey(rate?.city_search ?? '');
+    const filtered = query === ''
+        ? allCities
+        : allCities.filter((city) => normalizeCitySearchKey(city).includes(query));
+
+    const ranked = query === ''
+        ? filtered
+        : [...filtered].sort((a, b) => {
+            const aKey = normalizeCitySearchKey(a);
+            const bKey = normalizeCitySearchKey(b);
+
+            const aRank = aKey === query ? 0 : (aKey.startsWith(query) ? 1 : 2);
+            const bRank = bKey === query ? 0 : (bKey.startsWith(query) ? 1 : 2);
+            if (aRank !== bRank) return aRank - bRank;
+            return a.localeCompare(b, 'pt-BR');
+        });
+
+    const limited = query === '' ? ranked.slice(0, 120) : ranked.slice(0, 300);
+    const selectedCity = String(rate?.city ?? '').trim();
+
+    const withSelected = selectedCity !== '' && !limited.includes(selectedCity)
+        ? [selectedCity, ...limited]
+        : limited;
+
+    return withSelected.map((city) => ({ value: city, label: city }));
+};
+
+const isCityLoadingForRate = (rate) => {
+    const state = normalizeStateCode(rate?.state ?? '');
+    if (!state) return false;
+    return Boolean(shippingCitiesLoadingByState.value?.[state]);
+};
+
+const cityErrorForRate = (rate) => {
+    const state = normalizeStateCode(rate?.state ?? '');
+    if (!state) return '';
+    return String(shippingCitiesErrorByState.value?.[state] ?? '');
+};
+
+const openCityPickerIndex = ref(null);
+let closeCityPickerTimeout = null;
+
+const clearCloseCityPickerTimeout = () => {
+    if (closeCityPickerTimeout === null || typeof window === 'undefined') return;
+    window.clearTimeout(closeCityPickerTimeout);
+    closeCityPickerTimeout = null;
+};
+
+const scheduleCloseCityPicker = () => {
+    clearCloseCityPickerTimeout();
+    if (typeof window === 'undefined') {
+        openCityPickerIndex.value = null;
+        return;
+    }
+
+    closeCityPickerTimeout = window.setTimeout(() => {
+        openCityPickerIndex.value = null;
+        closeCityPickerTimeout = null;
+    }, 120);
+};
+
+const openCityPicker = async (index, rate) => {
+    clearCloseCityPickerTimeout();
+    const state = normalizeStateCode(rate?.state ?? '');
+    if (!state) return;
+
+    await loadCitiesByState(state);
+    openCityPickerIndex.value = index;
+};
+
+const toggleCityPicker = async (index, rate) => {
+    clearCloseCityPickerTimeout();
+    if (openCityPickerIndex.value === index) {
+        openCityPickerIndex.value = null;
+        return;
+    }
+
+    await openCityPicker(index, rate);
+};
+
+const selectCityFromPicker = (index, city) => {
+    onShippingCityRateSelectCity(index, city);
+    openCityPickerIndex.value = null;
+};
+
+const loadShippingStatesFromDirectory = async () => {
+    const statesUrl = locationRoutes.value.states;
+    if (statesUrl === '') {
+        return;
+    }
+
+    shippingStatesLoading.value = true;
+    shippingStatesError.value = '';
+
+    try {
+        const response = await fetch(statesUrl, {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+        if (!response.ok) throw new Error('states_fetch_failed');
+
+        const payload = await response.json();
+        const sourceRows = Array.isArray(payload?.states) ? payload.states : payload;
+        const options = normalizeStateOptionRows(sourceRows)
+            .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+
+        if (options.length > 0) {
+            shippingStateOptions.value = options;
+        } else {
+            shippingStatesError.value = 'Não foi possível carregar a lista de estados.';
+        }
+    } catch {
+        shippingStatesError.value = 'Não foi possível carregar a lista de estados.';
+    } finally {
+        shippingStatesLoading.value = false;
+    }
+};
+
+const loadCitiesByState = async (stateCode) => {
+    const state = normalizeStateCode(stateCode);
+    if (!state) return [];
+
+    const citiesUrl = locationRoutes.value.cities;
+    if (citiesUrl === '') {
+        shippingCitiesErrorByState.value = {
+            ...shippingCitiesErrorByState.value,
+            [state]: 'Não foi possível consultar cidades agora.',
+        };
+        return [];
+    }
+
+    const cached = shippingCitiesByState.value?.[state];
+    if (Array.isArray(cached) && cached.length > 0) {
+        return cached;
+    }
+
+    const inflight = shippingCitiesRequestByState.get(state);
+    if (inflight) {
+        return await inflight;
+    }
+
+    const requestPromise = (async () => {
+        shippingCitiesLoadingByState.value = {
+            ...shippingCitiesLoadingByState.value,
+            [state]: true,
+        };
+        shippingCitiesErrorByState.value = {
+            ...shippingCitiesErrorByState.value,
+            [state]: '',
+        };
+
+        try {
+            const response = await fetch(`${citiesUrl}?state=${encodeURIComponent(state)}`, {
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            if (!response.ok) throw new Error('cities_fetch_failed');
+
+            const payload = await response.json();
+            const sourceRows = Array.isArray(payload?.cities) ? payload.cities : payload;
+            const cities = Array.isArray(sourceRows)
+                ? Array.from(new Set(
+                    sourceRows
+                        .map((item) => String(item?.name ?? item ?? '').trim())
+                        .filter((city) => city !== ''),
+                )).sort((a, b) => a.localeCompare(b, 'pt-BR'))
+                : [];
+
+            shippingCitiesByState.value = {
+                ...shippingCitiesByState.value,
+                [state]: cities,
+            };
+
+            return cities;
+        } catch {
+            shippingCitiesErrorByState.value = {
+                ...shippingCitiesErrorByState.value,
+                [state]: 'Não foi possível consultar cidades para esta UF.',
+            };
+
+            return [];
+        } finally {
+            shippingCitiesLoadingByState.value = {
+                ...shippingCitiesLoadingByState.value,
+                [state]: false,
+            };
+            shippingCitiesRequestByState.delete(state);
+        }
+    })();
+
+    shippingCitiesRequestByState.set(state, requestPromise);
+    return await requestPromise;
+};
+
+const resolveCityFromQuery = (cities, queryRaw) => {
+    if (!Array.isArray(cities) || cities.length === 0) return null;
+
+    const query = normalizeCitySearchKey(queryRaw);
+    if (query === '') return null;
+
+    const exact = cities.find((city) => normalizeCitySearchKey(city) === query);
+    return exact ?? null;
+};
+
+const onShippingCityRateStateChange = async (index, value) => {
+    const nextState = normalizeStateCode(value);
+    const current = Array.isArray(shippingForm.shipping_city_rates)
+        ? shippingForm.shipping_city_rates[index]
+        : null;
+    if (!current) return;
+
+    current.state = nextState;
+    current.city = '';
+    current.city_search = '';
+    openCityPickerIndex.value = null;
+
+    if (nextState) {
+        await loadCitiesByState(nextState);
+    }
+};
+
+const onShippingCityRateSelectCity = (index, value) => {
+    const current = Array.isArray(shippingForm.shipping_city_rates)
+        ? shippingForm.shipping_city_rates[index]
+        : null;
+    if (!current) return;
+
+    current.city = String(value ?? '').trim();
+    current.city_search = current.city;
+};
+
+const onShippingCityRateSearchInput = async (index, value) => {
+    const current = Array.isArray(shippingForm.shipping_city_rates)
+        ? shippingForm.shipping_city_rates[index]
+        : null;
+    if (!current) return;
+
+    const queryRaw = String(value ?? '');
+    current.city_search = queryRaw;
+    openCityPickerIndex.value = index;
+
+    const state = normalizeStateCode(current.state ?? '');
+    if (!state) {
+        current.city = '';
+        return;
+    }
+
+    const cities = await loadCitiesByState(state);
+    if (!Array.isArray(cities) || cities.length === 0) {
+        current.city = '';
+        return;
+    }
+
+    const query = normalizeCitySearchKey(queryRaw);
+    if (query === '') {
+        current.city = '';
+        return;
+    }
+
+    const resolvedCity = resolveCityFromQuery(cities, queryRaw);
+    if (resolvedCity) {
+        current.city = resolvedCity;
+        return;
+    }
+
+    current.city = '';
+};
+
+if (props.supportsShipping) {
+    loadShippingStatesFromDirectory();
+}
 
 const WEEKDAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
 const DEFAULT_BUSINESS_OPEN = '08:00';
@@ -401,6 +1012,107 @@ const clearBannerImage = (index) => {
     storefrontForm.banners[index].remove_image = true;
 };
 
+const addShippingCityRate = () => {
+    shippingForm.shipping_city_rates = [
+        ...(Array.isArray(shippingForm.shipping_city_rates) ? shippingForm.shipping_city_rates : []),
+        createEmptyShippingCityRate(),
+    ];
+};
+
+const removeShippingCityRate = (index) => {
+    const next = Array.isArray(shippingForm.shipping_city_rates)
+        ? [...shippingForm.shipping_city_rates]
+        : [];
+    next.splice(index, 1);
+    shippingForm.shipping_city_rates = next.length ? next : [createEmptyShippingCityRate()];
+};
+
+const toggleShippingCityRateEdit = async (index) => {
+    const current = Array.isArray(shippingForm.shipping_city_rates)
+        ? shippingForm.shipping_city_rates[index]
+        : null;
+    if (!current) return;
+
+    const nextEditing = current.is_editing !== true;
+    current.is_editing = nextEditing;
+
+    if (!nextEditing) {
+        openCityPickerIndex.value = null;
+        return;
+    }
+
+    current.city_search = String(current.city ?? current.city_search ?? '').trim();
+    if (current.state) {
+        await loadCitiesByState(current.state);
+    }
+};
+
+function syncShippingStateRates() {
+    const currentRows = Array.isArray(shippingForm.shipping_state_rates)
+        ? shippingForm.shipping_state_rates
+        : [];
+    const rowByState = new Map(
+        currentRows
+            .map((row) => ({
+                state: normalizeStateCode(row?.state ?? ''),
+                fee: row?.fee ?? '',
+                free_over: row?.free_over ?? '',
+                active: Boolean(row?.active ?? false),
+            }))
+            .filter((row) => row.state !== '')
+            .map((row) => [row.state, row]),
+    );
+
+    shippingForm.shipping_state_rates = BRAZIL_STATES.map((state) => {
+        const current = rowByState.get(state.code);
+        if (current) {
+            return {
+                state: state.code,
+                fee: current.fee,
+                free_over: current.free_over,
+                active: current.active,
+            };
+        }
+
+        return createEmptyShippingStateRate(state.code);
+    });
+}
+
+watch(
+    () => shippingForm.shipping_state_rates,
+    (rows) => {
+        if (!Array.isArray(rows)) {
+            syncShippingStateRates();
+            return;
+        }
+
+        rows.forEach((row) => {
+            row.state = normalizeStateCode(row?.state ?? '');
+        });
+    },
+    { deep: true, immediate: true },
+);
+
+watch(
+    () => shippingForm.shipping_city_rates,
+    (rows) => {
+        if (!Array.isArray(rows)) return;
+
+        rows.forEach((row) => {
+            row.state = normalizeStateCode(row?.state ?? '');
+            row.is_editing = row?.is_editing === true;
+            if (!row.city_search && row.city) {
+                row.city_search = row.city;
+            }
+
+            if (row.state) {
+                loadCitiesByState(row.state);
+            }
+        });
+    },
+    { deep: true },
+);
+
 const addPromotionFromSelect = () => {
     const value = String(promotionSelectValue.value || '').trim();
     if (!value) return;
@@ -500,6 +1212,7 @@ const submitStorefront = () => {
                 remove_image: Boolean(banner?.remove_image),
                 image_url: String(banner?.image_url || '').trim(),
                 cta_label: String(banner?.cta_label || '').trim(),
+                use_original_image_colors: Boolean(banner?.use_original_image_colors),
                 background_color: normalizeHexColor(
                     banner?.background_color || props.contractor?.primary_color || '#073341'
                 ),
@@ -538,21 +1251,42 @@ const submitShipping = () => {
         ...data,
         _method: 'put',
         section: 'shipping',
+        shipping_nationwide_enabled: Boolean(data.shipping_nationwide_enabled),
+        shipping_state_rates: (Array.isArray(data.shipping_state_rates) ? data.shipping_state_rates : [])
+            .map((row) => ({
+                state: normalizeStateCode(row?.state ?? ''),
+                fee: row?.fee === '' || row?.fee === null ? null : Number(row.fee),
+                free_over: row?.free_over === '' || row?.free_over === null ? null : Number(row.free_over),
+                active: Boolean(row?.active),
+            }))
+            .filter((row) => row.state !== ''),
+        shipping_city_rates: (Array.isArray(data.shipping_city_rates) ? data.shipping_city_rates : [])
+            .map((row) => ({
+                city: String(row?.city ?? '').trim(),
+                state: normalizeStateCode(row?.state ?? ''),
+                fee: row?.fee === '' || row?.fee === null ? null : Number(row.fee),
+                free_over: row?.free_over === '' || row?.free_over === null ? null : Number(row.free_over),
+                estimated_days: row?.estimated_days === '' || row?.estimated_days === null ? null : Number(row.estimated_days),
+                is_free: Boolean(row?.is_free),
+                active: row?.active !== undefined ? Boolean(row.active) : true,
+            }))
+            .filter((row) => row.city !== '' && row.state !== ''),
     })).post(route('admin.storefront.update'), {
         preserveScroll: true,
     });
 };
 
 onBeforeUnmount(() => {
+    clearCloseCityPickerTimeout();
     storefrontForm.banners.forEach((banner) => revokePreview(banner?.preview_url));
 });
 </script>
 
 <template>
-    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Loja Virtual">
+    <AuthenticatedLayout area="admin" header-variant="compact" header-title="Loja Virtual" :show-table-view-toggle="false">
         <Head title="Loja Virtual" />
 
-        <section class="space-y-4">
+        <section class="space-y-4" :style="storefrontTabStyles">
             <section class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                     <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Loja pública</p>
@@ -779,18 +1513,28 @@ onBeforeUnmount(() => {
                                     >
                                 </div>
 
-                                <div class="mt-3 grid gap-2 md:grid-cols-[150px_minmax(260px,1fr)_auto]">
+                                <div class="mt-3 grid gap-2 md:grid-cols-[180px_minmax(260px,1fr)_auto]">
                                     <label class="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-600">
                                         <span class="font-semibold uppercase tracking-wide text-slate-500">Cor</span>
                                         <div class="mt-1 flex items-center gap-2">
-                                            <input v-model="banner.background_color" type="color" class="h-9 w-9 cursor-pointer rounded border border-slate-300 bg-white p-0.5">
+                                            <input
+                                                v-model="banner.background_color"
+                                                type="color"
+                                                class="h-9 w-9 cursor-pointer rounded border border-slate-300 bg-white p-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+                                                :disabled="banner.use_original_image_colors"
+                                            >
                                             <input
                                                 v-model="banner.background_color"
                                                 type="text"
-                                                class="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                                                class="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                                                 placeholder="#FF5C35"
+                                                :disabled="banner.use_original_image_colors"
                                             >
                                         </div>
+                                        <label class="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+                                            <input v-model="banner.use_original_image_colors" type="checkbox" class="rounded border-slate-300">
+                                            Usar apenas cores da imagem (sem sobretom)
+                                        </label>
                                     </label>
 
                                     <label class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-600 min-h-[108px]">
@@ -1015,21 +1759,382 @@ onBeforeUnmount(() => {
                     </button>
                 </div>
             </form>
-            <form v-else-if="activeTab === 'frete' && props.supportsShipping" class="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" @submit.prevent="submitShipping">
-                <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                    <span>Permitir retirada na loja</span>
-                    <input v-model="shippingForm.shipping_pickup_enabled" type="checkbox" class="rounded border-slate-300">
-                </label>
-                <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                    <span>Permitir entrega</span>
-                    <input v-model="shippingForm.shipping_delivery_enabled" type="checkbox" class="rounded border-slate-300">
-                </label>
+            <form v-else-if="activeTab === 'frete' && props.supportsShipping" class="space-y-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm" @submit.prevent="submitShipping">
+                <div class="grid gap-3 xl:grid-cols-[320px_minmax(0,1fr)]">
+                    <div class="space-y-2">
+                        <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                            <span>Retirar na loja</span>
+                            <input v-model="shippingForm.shipping_pickup_enabled" type="checkbox" class="rounded border-slate-300">
+                        </label>
+                        <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                            <span>Entrega</span>
+                            <input v-model="shippingForm.shipping_delivery_enabled" type="checkbox" class="rounded border-slate-300">
+                        </label>
+                    </div>
 
-                <div class="grid gap-3 md:grid-cols-3">
-                    <BrlMoneyInput v-model="shippingForm.shipping_fixed_fee" :allow-empty="false" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Taxa fixa (R$)" />
-                    <BrlMoneyInput v-model="shippingForm.shipping_free_over" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Frete grátis acima (R$)" />
-                    <input v-model="shippingForm.shipping_estimated_days" type="number" min="1" max="60" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Prazo (dias)">
+                    <section class="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Todo o Brasil</p>
+                                <p class="mt-0.5 text-[11px] text-slate-500">
+                                    Configure a taxa padrão para cobertura nacional.
+                                </p>
+                            </div>
+                            <input v-model="shippingForm.shipping_nationwide_enabled" type="checkbox" class="mt-0.5 rounded border-slate-300">
+                        </div>
+                        <div class="mt-2 grid gap-2 md:grid-cols-3">
+                            <label class="space-y-1">
+                                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Taxa de entrega</span>
+                                <BrlMoneyInput
+                                    v-model="shippingForm.shipping_nationwide_fee"
+                                    :allow-empty="false"
+                                    class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
+                                    placeholder="R$ 0,00"
+                                    :disabled="!shippingForm.shipping_nationwide_enabled"
+                                />
+                            </label>
+                            <label class="space-y-1">
+                                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Grátis acima de</span>
+                                <BrlMoneyInput
+                                    v-model="shippingForm.shipping_nationwide_free_over"
+                                    class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
+                                    placeholder="R$ 0,00"
+                                    :disabled="!shippingForm.shipping_nationwide_enabled"
+                                />
+                            </label>
+                            <label class="space-y-1">
+                                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Prazo padrão (dias)</span>
+                                <input
+                                    v-model="shippingForm.shipping_estimated_days"
+                                    type="number"
+                                    min="1"
+                                    max="60"
+                                    class="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
+                                    placeholder="Ex.: 2"
+                                >
+                            </label>
+                        </div>
+                    </section>
                 </div>
+
+                <p class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                    {{ shippingCoverageStatus }}
+                </p>
+
+                <p v-if="shippingStatesError" class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                    {{ shippingStatesError }}
+                </p>
+
+                <div v-if="shippingCityTableEnabled" class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tabelas de cobertura de entrega</p>
+                    <TableViewToggle />
+                </div>
+
+                <section v-if="shippingCityTableEnabled" class="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Todo o estado</p>
+                            <p class="mt-0.5 text-[11px] text-slate-500">
+                                Liste todas as UFs e ative somente as que terão entrega.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="mt-2 grid items-stretch gap-2 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+                        <div class="veshop-search-shell flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5">
+                            <Search class="veshop-search-icon h-4 w-4 text-slate-500" />
+                            <input
+                                v-model="shippingStateFilters.search"
+                                type="text"
+                                placeholder="Buscar estado..."
+                                class="veshop-search-input w-full bg-transparent text-xs text-slate-700 outline-none"
+                            >
+                        </div>
+                        <UiSelect
+                            v-model="shippingStateFilters.active"
+                            :options="shippingStateFilterActiveOptions"
+                            button-class="h-9 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                        />
+                        <button
+                            type="button"
+                            class="h-9 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                            @click="clearShippingStateFilters()"
+                        >
+                            Limpar filtros
+                        </button>
+                    </div>
+
+                    <div class="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] font-medium text-slate-500">
+                        <span>{{ shippingStateStats.filtered }} de {{ shippingStateStats.total }} estado(s)</span>
+                        <span>Ativos: {{ shippingStateStats.activeCount }}</span>
+                    </div>
+
+                    <div class="mt-2 rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-[860px] w-full divide-y divide-slate-200 text-sm">
+                                <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    <tr>
+                                        <th class="px-3 py-2">UF</th>
+                                        <th class="px-3 py-2">Estado</th>
+                                        <th class="px-3 py-2">Taxa</th>
+                                        <th class="px-3 py-2">Grátis acima</th>
+                                        <th class="px-3 py-2 text-center">Ativo</th>
+                                    </tr>
+                                </thead>
+                                <tbody v-if="filteredShippingStateRateEntries.length" class="divide-y divide-slate-100 bg-white">
+                                    <tr
+                                        v-for="entry in filteredShippingStateRateEntries"
+                                        :key="`state-rate-${entry.row.state || entry.label}`"
+                                        class="align-top"
+                                    >
+                                        <td class="px-3 py-2 font-semibold text-slate-700">
+                                            {{ entry.row.state }}
+                                        </td>
+                                        <td class="px-3 py-2 text-slate-600">
+                                            {{ entry.stateName }}
+                                        </td>
+                                        <td class="px-3 py-2">
+                                            <BrlMoneyInput
+                                                v-model="entry.row.fee"
+                                                class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
+                                                placeholder="Taxa (R$)"
+                                            />
+                                        </td>
+                                        <td class="px-3 py-2">
+                                            <BrlMoneyInput
+                                                v-model="entry.row.free_over"
+                                                class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
+                                                placeholder="Grátis acima"
+                                            />
+                                        </td>
+                                        <td class="px-3 py-2 text-center">
+                                            <input v-model="entry.row.active" type="checkbox" class="rounded border-slate-300">
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div v-if="!filteredShippingStateRateEntries.length" class="px-4 py-6 text-center text-xs text-slate-500">
+                            Nenhum estado encontrado para os filtros aplicados.
+                        </div>
+                    </div>
+                </section>
+
+                <section v-if="shippingCityTableEnabled" class="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tabela de frete por cidade</p>
+                            <p class="mt-0.5 text-[11px] text-slate-500">
+                                Mantenha a lista de cidades atendidas e filtre rapidamente.
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                            @click="addShippingCityRate()"
+                        >
+                            <Plus class="h-3.5 w-3.5" />
+                            Adicionar cidade
+                        </button>
+                    </div>
+
+                    <div class="mt-2 grid items-stretch gap-2 lg:grid-cols-[minmax(0,1fr)_160px_150px_150px_auto]">
+                        <div class="veshop-search-shell flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5">
+                            <Search class="veshop-search-icon h-4 w-4 text-slate-500" />
+                            <input
+                                v-model="shippingCityFilters.search"
+                                type="text"
+                                placeholder="Buscar cidade..."
+                                class="veshop-search-input w-full bg-transparent text-xs text-slate-700 outline-none"
+                            >
+                        </div>
+                        <UiSelect
+                            v-model="shippingCityFilters.state"
+                            :options="shippingCityFilterStateOptions"
+                            button-class="h-9 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                        />
+                        <UiSelect
+                            v-model="shippingCityFilters.active"
+                            :options="shippingCityFilterActiveOptions"
+                            button-class="h-9 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                        />
+                        <UiSelect
+                            v-model="shippingCityFilters.free"
+                            :options="shippingCityFilterFreeOptions"
+                            button-class="h-9 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                        />
+                        <button
+                            type="button"
+                            class="h-9 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                            @click="clearShippingCityFilters()"
+                        >
+                            Limpar filtros
+                        </button>
+                    </div>
+
+                    <div class="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] font-medium text-slate-500">
+                        <span>{{ shippingCityStats.filtered }} de {{ shippingCityStats.total }} cidade(s)</span>
+                        <span>Ativas: {{ shippingCityStats.activeCount }} • Grátis: {{ shippingCityStats.freeCount }}</span>
+                    </div>
+
+                    <div class="mt-2 rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-[1180px] w-full divide-y divide-slate-200 text-sm">
+                                <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    <tr>
+                                        <th class="px-3 py-2">UF</th>
+                                        <th class="px-3 py-2">Cidade</th>
+                                        <th class="px-3 py-2">Taxa</th>
+                                        <th class="px-3 py-2">Grátis acima</th>
+                                        <th class="px-3 py-2">Prazo</th>
+                                        <th class="px-3 py-2 text-center">Grátis</th>
+                                        <th class="px-3 py-2 text-center">Ativa</th>
+                                        <th class="px-3 py-2 text-right">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody v-if="filteredShippingCityRateEntries.length" class="divide-y divide-slate-100 bg-white">
+                                    <tr
+                                        v-for="entry in filteredShippingCityRateEntries"
+                                        :key="`city-rate-${entry.index}`"
+                                        class="align-top"
+                                    >
+                                        <td class="px-3 py-2">
+                                            <UiSelect
+                                                v-if="entry.rate.is_editing"
+                                                v-model="entry.rate.state"
+                                                :options="[{ value: '', label: shippingStatesLoading ? 'Carregando estados...' : 'Selecione a UF' }, ...shippingStateOptions]"
+                                                button-class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
+                                                :disabled="shippingStatesLoading"
+                                                @change="onShippingCityRateStateChange(entry.index, $event)"
+                                            />
+                                            <p v-else class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-semibold text-slate-700">
+                                                {{ entry.rate.state || '-' }}
+                                            </p>
+                                        </td>
+                                        <td class="px-3 py-2">
+                                            <div v-if="entry.rate.is_editing" class="space-y-1.5">
+                                                <div class="relative">
+                                                    <input
+                                                        v-model="entry.rate.city_search"
+                                                        type="text"
+                                                        class="w-full rounded-lg border border-slate-200 px-2.5 py-2 pr-9 text-xs"
+                                                        placeholder="Digite para buscar cidade"
+                                                        :disabled="!entry.rate.state"
+                                                        @focus="openCityPicker(entry.index, entry.rate)"
+                                                        @blur="scheduleCloseCityPicker()"
+                                                        @input="onShippingCityRateSearchInput(entry.index, $event?.target?.value)"
+                                                    >
+                                                    <button
+                                                        type="button"
+                                                        class="absolute inset-y-0 right-1 my-auto inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                                        :disabled="!entry.rate.state || isCityLoadingForRate(entry.rate)"
+                                                        @mousedown.prevent
+                                                        @click="toggleCityPicker(entry.index, entry.rate)"
+                                                    >
+                                                        <ChevronDown class="h-3.5 w-3.5" />
+                                                    </button>
+
+                                                    <div
+                                                        v-if="openCityPickerIndex === entry.index && entry.rate.state"
+                                                        class="absolute left-0 right-0 z-20 mt-1 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-[0_16px_30px_-20px_rgba(15,23,42,0.55)]"
+                                                        @mousedown.prevent
+                                                    >
+                                                        <p v-if="isCityLoadingForRate(entry.rate)" class="px-2.5 py-2 text-[11px] font-medium text-slate-500">
+                                                            Carregando cidades...
+                                                        </p>
+                                                        <template v-else>
+                                                            <button
+                                                                v-for="option in citySearchOptionsForRate(entry.rate)"
+                                                                :key="`city-option-${entry.index}-${option.value}`"
+                                                                type="button"
+                                                                class="flex w-full items-center justify-start rounded-lg px-2.5 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                                                @click="selectCityFromPicker(entry.index, option.value)"
+                                                            >
+                                                                {{ option.label }}
+                                                            </button>
+                                                            <p
+                                                                v-if="!citySearchOptionsForRate(entry.rate).length"
+                                                                class="px-2.5 py-2 text-[11px] font-medium text-slate-500"
+                                                            >
+                                                                Nenhuma cidade encontrada.
+                                                            </p>
+                                                        </template>
+                                                    </div>
+                                                </div>
+                                                <p v-if="cityErrorForRate(entry.rate)" class="text-[11px] font-semibold text-amber-700">
+                                                    {{ cityErrorForRate(entry.rate) }}
+                                                </p>
+                                            </div>
+                                            <p v-else class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-semibold text-slate-700">
+                                                {{ entry.rate.city || '-' }}
+                                            </p>
+                                        </td>
+                                        <td class="px-3 py-2">
+                                            <BrlMoneyInput
+                                                v-model="entry.rate.fee"
+                                                class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
+                                                placeholder="Taxa (R$)"
+                                                :disabled="entry.rate.is_free || !entry.rate.is_editing"
+                                            />
+                                        </td>
+                                        <td class="px-3 py-2">
+                                            <BrlMoneyInput
+                                                v-model="entry.rate.free_over"
+                                                class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
+                                                placeholder="Grátis acima"
+                                                :disabled="entry.rate.is_free || !entry.rate.is_editing"
+                                            />
+                                        </td>
+                                        <td class="px-3 py-2">
+                                            <input
+                                                v-model="entry.rate.estimated_days"
+                                                type="number"
+                                                min="1"
+                                                max="60"
+                                                class="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
+                                                placeholder="Dias"
+                                                :disabled="!entry.rate.is_editing"
+                                            >
+                                        </td>
+                                        <td class="px-3 py-2 text-center">
+                                            <input v-model="entry.rate.is_free" type="checkbox" class="rounded border-slate-300" :disabled="!entry.rate.is_editing">
+                                        </td>
+                                        <td class="px-3 py-2 text-center">
+                                            <input v-model="entry.rate.active" type="checkbox" class="rounded border-slate-300" :disabled="!entry.rate.is_editing">
+                                        </td>
+                                        <td class="px-3 py-2 text-right">
+                                            <button
+                                                type="button"
+                                                class="mr-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                                                @click="toggleShippingCityRateEdit(entry.index)"
+                                            >
+                                                {{ entry.rate.is_editing ? 'Concluir' : 'Editar' }}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-rose-700 hover:bg-rose-50"
+                                                @click="removeShippingCityRate(entry.index)"
+                                            >
+                                                Remover
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div v-if="!filteredShippingCityRateEntries.length" class="px-4 py-6 text-center text-xs text-slate-500">
+                            {{ shippingCityStats.total > 0 ? 'Nenhuma cidade encontrada para os filtros aplicados.' : 'Nenhuma cidade cadastrada. Clique em \"Adicionar cidade\".' }}
+                        </div>
+                    </div>
+                </section>
+
+                <p v-else-if="shippingForm.shipping_delivery_enabled" class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700">
+                    A tabela por cidade é opcional quando a entrega nacional ou estadual estiver ativa.
+                </p>
+
+                <p v-if="!shippingForm.shipping_pickup_enabled && !shippingForm.shipping_delivery_enabled" class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                    Atenção: sem retirada e sem entrega ativas, o checkout da loja ficará indisponível.
+                </p>
 
                 <div class="flex justify-end">
                     <button type="submit" class="rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white" :disabled="shippingForm.processing">
@@ -1089,8 +2194,8 @@ onBeforeUnmount(() => {
 }
 
 .storefront-tab.is-active {
-    border-color: #0f172a;
-    background: #0f172a;
+    border-color: var(--storefront-tab-active-border);
+    background: var(--storefront-tab-active);
     color: #ffffff;
 }
 

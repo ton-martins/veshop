@@ -49,7 +49,7 @@ const form = useForm({
 });
 
 const requiredStepOneFields = ['name', 'email', 'password', 'password_confirmation'];
-const requiredStepTwoFields = ['cep', 'street', 'neighborhood', 'city', 'state'];
+const requiredStepTwoFields = ['cep', 'street', 'number', 'neighborhood', 'city', 'state'];
 
 const stepLabel = computed(() => `Etapa ${wizardStep.value} de 2`);
 const isStepOne = computed(() => wizardStep.value === 1);
@@ -177,7 +177,7 @@ const submit = () => {
         subtitle="Fluxo em duas etapas para acelerar compras e pedidos."
         :back-href="shopUrl"
         back-label="Voltar para loja"
-        hero-title="Cadastro-se na loja"
+        hero-title="Cadastre-se na loja"
         hero-description="Aproveite as promoções e benefícios exclusivos."
     >
         <div class="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-3">

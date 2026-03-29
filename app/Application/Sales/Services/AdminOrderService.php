@@ -854,6 +854,11 @@ class AdminOrderService
                 ]);
             }
 
+            $metadata = is_array($lockedSale->metadata) ? $lockedSale->metadata : [];
+            $stockReduced = (bool) ($metadata['stock_reduced'] ?? false);
+            $stockRestored = (bool) ($metadata['stock_restored'] ?? false);
+
+            if (! $stockReduced || $stockRestored) {
             $productIds = $lockedSale->items
                 ->pluck('product_id')
                 ->map(static fn (mixed $value): int => (int) $value)
@@ -987,6 +992,8 @@ class AdminOrderService
                         'product_balance_after' => $productBalanceAfter,
                     ],
                 ]);
+            }
+
             }
 
             $hasPendingPayment = $lockedSale->payments

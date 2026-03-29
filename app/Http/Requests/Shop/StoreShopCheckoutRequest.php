@@ -73,6 +73,46 @@ class StoreShopCheckoutRequest extends FormRequest
         ];
     }
 
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'shipping_postal_code.required_if' => 'O campo :attribute é obrigatório para entrega.',
+            'shipping_street.required_if' => 'O campo :attribute é obrigatório para entrega.',
+            'shipping_number.required_if' => 'O campo :attribute é obrigatório para entrega.',
+            'shipping_district.required_if' => 'O campo :attribute é obrigatório para entrega.',
+            'shipping_city.required_if' => 'O campo :attribute é obrigatório para entrega.',
+            'shipping_state.required_if' => 'O campo :attribute é obrigatório para entrega.',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function attributes(): array
+    {
+        return [
+            'customer_name' => 'nome',
+            'customer_phone' => 'telefone',
+            'customer_email' => 'e-mail',
+            'payment_method_id' => 'forma de pagamento',
+            'delivery_mode' => 'modo de entrega',
+            'shipping_postal_code' => 'CEP',
+            'shipping_street' => 'logradouro',
+            'shipping_number' => 'número',
+            'shipping_complement' => 'complemento',
+            'shipping_district' => 'bairro',
+            'shipping_city' => 'cidade',
+            'shipping_state' => 'estado',
+            'items' => 'itens do pedido',
+            'items.*.product_id' => 'produto',
+            'items.*.variation_id' => 'variação',
+            'items.*.quantity' => 'quantidade',
+        ];
+    }
+
     private function normalizeNullableText(mixed $value): ?string
     {
         $safe = trim((string) ($value ?? ''));

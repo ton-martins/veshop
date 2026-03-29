@@ -5,6 +5,5 @@ php artisan cache:clear
 php artisan config:clear
 php artisan route:clear
 php artisan view:clear
-npm run dev
+npm run build
 php artisan serve
-

@@ -9,10 +9,13 @@ import QRCode from 'qrcode';
 import {
     ArrowLeft,
     Bell,
+    Check,
     ChevronRight,
+    Copy,
     Heart,
     Home,
     LayoutGrid,
+    Loader2,
     LogIn,
     LogOut,
     Minus,
@@ -51,6 +54,9 @@ const props = defineProps({
 
 const page = usePage();
 let cartToastTimeout = null;
+let cartAttentionTimeout = null;
+const itemActionFeedbackTimers = new Map();
+let alertToastTimeout = null;
 
 const toInt = (value, fallback = 0) => {
     const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -60,6 +66,18 @@ const toInt = (value, fallback = 0) => {
 const toMoney = (value, fallback = 0) => {
     const parsed = Number.parseFloat(String(value ?? ''));
     return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const normalizeCityKey = (value) => {
+    const base = String(value ?? '').trim().toLowerCase();
+    if (base === '') return '';
+
+    return base
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 };
 
 const normalizeHex = (value, fallback = '#FF5C35') => {
@@ -160,48 +178,192 @@ const checkoutPixAutoRefreshAttempts = ref(0);
 const checkoutPixAutoRefreshTimer = ref(null);
 const checkoutEffectivePayment = computed(() => checkoutLivePayment.value ?? checkoutPayment.value);
 const integratedPaymentCodes = ['pix', 'credit_card', 'debit_card', 'boleto'];
-const checkoutProviderCode = computed(() => String(checkoutEffectivePayment.value?.provider ?? '').trim().toLowerCase());
+const actionableSaleStatuses = ['new', 'pending_confirmation', 'confirmed', 'awaiting_payment'];
+const actionablePaymentStatuses = ['pending', 'authorized'];
+const orderPaymentAutoRefreshTimer = ref(null);
+const checkoutPixCodeCopied = ref(false);
+const orderPaymentOverrides = ref({});
+const orderPaymentRefreshLoadingById = ref({});
+const orderPaymentRefreshErrorById = ref({});
+const orderPaymentQrById = ref({});
+const orderPixCodeCopiedById = ref({});
+
+const parseDateTime = (value) => {
+    const raw = String(value ?? '').trim();
+    if (raw === '') return null;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const coalesceNonEmptyString = (...values) => {
+    for (const value of values) {
+        const safe = String(value ?? '').trim();
+        if (safe !== '') return safe;
+    }
+
+    return '';
+};
+
+const paymentMethodLabelFromCode = (code, fallback = 'pagamento') => {
+    const safeCode = String(code ?? '').trim().toLowerCase();
+    if (safeCode === 'credit_card') return 'cartão de crédito';
+    if (safeCode === 'debit_card') return 'cartão de débito';
+    if (safeCode === 'boleto') return 'boleto';
+    if (safeCode === 'pix') return 'Pix';
+    return fallback;
+};
+
+const hasVisibleQrData = (payment) => (
+    String(payment?.qr_code ?? '').trim() !== ''
+    || String(payment?.qr_code_base64 ?? '').trim() !== ''
+);
+
+const isPixPayload = (payment) => {
+    if (!payment || typeof payment !== 'object') return false;
+    if (payment?.is_pix) return true;
+    if (hasVisibleQrData(payment)) return true;
+
+    const providerCode = String(payment?.provider ?? '').trim().toLowerCase();
+    const methodCode = String(payment?.payment_method_code ?? payment?.method_code ?? '').trim().toLowerCase();
+    return providerCode === 'mercado_pago' && methodCode.includes('pix');
+};
+
+const isIntegratedPayload = (payment) => {
+    if (!payment || typeof payment !== 'object') return false;
+    if (payment?.is_integrated) return true;
+
+    const providerCode = String(payment?.provider ?? '').trim().toLowerCase();
+    if (providerCode !== 'mercado_pago') return false;
+    if (isPixPayload(payment)) return true;
+    if (String(payment?.checkout_url ?? '').trim() !== '') return true;
+
+    const transactionReference = String(payment?.transaction_reference ?? '').trim();
+    const methodCode = String(payment?.payment_method_code ?? payment?.method_code ?? '').trim().toLowerCase();
+    return transactionReference !== '' && integratedPaymentCodes.includes(methodCode);
+};
+
+const resolvePaymentExpirationDate = (payment) => (
+    parseDateTime(payment?.reservation_expires_at ?? payment?.expires_at)
+);
+
+const mergePaymentPayload = (previousPayment, nextPayment) => {
+    if (!nextPayment || typeof nextPayment !== 'object') {
+        return previousPayment && typeof previousPayment === 'object'
+            ? { ...previousPayment }
+            : null;
+    }
+
+    const previous = previousPayment && typeof previousPayment === 'object'
+        ? previousPayment
+        : {};
+    const merged = {
+        ...previous,
+        ...nextPayment,
+    };
+
+    merged.transaction_reference = coalesceNonEmptyString(
+        nextPayment?.transaction_reference,
+        previous?.transaction_reference,
+    );
+    merged.provider = coalesceNonEmptyString(
+        nextPayment?.provider,
+        previous?.provider,
+    );
+    merged.payment_method_code = coalesceNonEmptyString(
+        nextPayment?.payment_method_code,
+        previous?.payment_method_code,
+    );
+    merged.method_code = coalesceNonEmptyString(
+        nextPayment?.method_code,
+        previous?.method_code,
+        merged.payment_method_code,
+    );
+    merged.payment_method_name = coalesceNonEmptyString(
+        nextPayment?.payment_method_name,
+        previous?.payment_method_name,
+    );
+    merged.method_name = coalesceNonEmptyString(
+        nextPayment?.method_name,
+        previous?.method_name,
+        merged.payment_method_name,
+    );
+    merged.ticket_url = coalesceNonEmptyString(
+        nextPayment?.ticket_url,
+        previous?.ticket_url,
+    );
+    merged.checkout_url = coalesceNonEmptyString(
+        nextPayment?.checkout_url,
+        previous?.checkout_url,
+    );
+    merged.qr_code = coalesceNonEmptyString(
+        nextPayment?.qr_code,
+        previous?.qr_code,
+    );
+    merged.qr_code_base64 = coalesceNonEmptyString(
+        nextPayment?.qr_code_base64,
+        previous?.qr_code_base64,
+    );
+    merged.expires_at = coalesceNonEmptyString(
+        nextPayment?.expires_at,
+        previous?.expires_at,
+    );
+    merged.reservation_expires_at = coalesceNonEmptyString(
+        nextPayment?.reservation_expires_at,
+        previous?.reservation_expires_at,
+    );
+    merged.is_pix = nextPayment?.is_pix ?? previous?.is_pix ?? false;
+    merged.is_integrated = nextPayment?.is_integrated ?? previous?.is_integrated ?? false;
+
+    return merged;
+};
+
+const isActionableIntegratedPayment = (payment, saleStatusValue = '') => {
+    if (!payment || typeof payment !== 'object') return false;
+
+    const paymentStatus = String(payment?.status ?? payment?.payment_status ?? '').trim().toLowerCase();
+    if (!actionablePaymentStatuses.includes(paymentStatus)) return false;
+
+    const saleStatus = String(saleStatusValue ?? '').trim().toLowerCase();
+    if (saleStatus !== '' && !actionableSaleStatuses.includes(saleStatus)) return false;
+
+    const expiresAt = resolvePaymentExpirationDate(payment);
+    if (expiresAt && expiresAt.getTime() <= Date.now()) return false;
+
+    return true;
+};
+
+const resolveIntegratedActionUrlFromPayload = (payment) => {
+    const checkoutUrlRaw = String(payment?.checkout_url ?? '').trim();
+    if (checkoutUrlRaw !== '') return checkoutUrlRaw;
+    if (isPixPayload(payment)) return String(payment?.ticket_url ?? '').trim();
+    return '';
+};
+
+const normalizeQrImageBase64 = (value) => {
+    const safe = String(value ?? '').trim();
+    if (safe === '') return '';
+    return safe.startsWith('data:') ? safe : `data:image/png;base64,${safe}`;
+};
+
 const checkoutMethodCode = computed(() => String(checkoutEffectivePayment.value?.payment_method_code ?? '').trim().toLowerCase());
-const checkoutTransactionReference = computed(() => String(checkoutEffectivePayment.value?.transaction_reference ?? '').trim());
 const checkoutTicketUrl = computed(() => String(checkoutEffectivePayment.value?.ticket_url ?? '').trim());
-const checkoutHasCheckoutUrl = computed(() => String(checkoutEffectivePayment.value?.checkout_url ?? '').trim() !== '');
-const checkoutHasVisibleQrData = computed(() => (
-    String(checkoutEffectivePayment.value?.qr_code ?? '').trim() !== ''
-    || String(checkoutEffectivePayment.value?.qr_code_base64 ?? '').trim() !== ''
-));
-const checkoutHasPixPayload = computed(() => {
-    if (Boolean(checkoutEffectivePayment.value?.is_pix)) return true;
-    if (checkoutHasVisibleQrData.value) return true;
-    return checkoutProviderCode.value === 'mercado_pago' && checkoutMethodCode.value.includes('pix');
-});
-const checkoutIsIntegratedPayload = computed(() => {
-    if (Boolean(checkoutEffectivePayment.value?.is_integrated)) return true;
-    if (checkoutProviderCode.value !== 'mercado_pago') return false;
-    if (checkoutHasPixPayload.value) return true;
-    if (checkoutHasCheckoutUrl.value) return true;
-    return checkoutTransactionReference.value !== '' && integratedPaymentCodes.includes(checkoutMethodCode.value);
-});
-const checkoutIntegratedActionUrl = computed(() => {
-    const checkoutUrl = String(checkoutEffectivePayment.value?.checkout_url ?? '').trim();
-    if (checkoutUrl !== '') return checkoutUrl;
-    return checkoutHasPixPayload.value ? checkoutTicketUrl.value : '';
-});
+const checkoutHasVisibleQrData = computed(() => hasVisibleQrData(checkoutEffectivePayment.value));
+const checkoutHasPixPayload = computed(() => isPixPayload(checkoutEffectivePayment.value));
+const checkoutIsIntegratedPayload = computed(() => isIntegratedPayload(checkoutEffectivePayment.value));
+const checkoutIntegratedActionUrl = computed(() => resolveIntegratedActionUrlFromPayload(checkoutEffectivePayment.value));
 const checkoutIntegratedMethodLabel = computed(() => {
-    const raw = String(checkoutEffectivePayment.value?.payment_method_name ?? '').trim();
+    const raw = String(checkoutEffectivePayment.value?.payment_method_name ?? checkoutEffectivePayment.value?.method_name ?? '').trim();
     if (raw !== '') return raw;
-    if (checkoutMethodCode.value === 'credit_card') return 'cartão de crédito';
-    if (checkoutMethodCode.value === 'debit_card') return 'cartão de débito';
-    if (checkoutMethodCode.value === 'boleto') return 'boleto';
-    if (checkoutMethodCode.value === 'pix') return 'Pix';
-    return 'pagamento';
+    return paymentMethodLabelFromCode(checkoutMethodCode.value);
 });
 const checkoutPaymentStatusUrl = computed(() => {
     const saleId = toInt(checkoutEffectivePayment.value?.sale_id, 0);
     return saleId > 0 ? `/shop/${storeSlug.value}/checkout/pagamento/${saleId}` : null;
 });
-const checkoutHasVisiblePixData = computed(() => {
-    return checkoutHasVisibleQrData.value || checkoutTicketUrl.value !== '';
-});
+const checkoutHasVisiblePixData = computed(() => (
+    checkoutHasVisibleQrData.value || checkoutTicketUrl.value !== ''
+));
+const checkoutPixCode = computed(() => String(checkoutEffectivePayment.value?.qr_code ?? '').trim());
 const checkoutPixQrImageSrc = ref('');
 const refreshCheckoutPixPayment = async () => {
     const url = String(checkoutPaymentStatusUrl.value ?? '').trim();
@@ -229,7 +391,7 @@ const refreshCheckoutPixPayment = async () => {
         const payment = data?.payment;
 
         if (payment && typeof payment === 'object') {
-            checkoutLivePayment.value = payment;
+            checkoutLivePayment.value = mergePaymentPayload(checkoutLivePayment.value, payment);
         }
     } catch {
         checkoutPixRefreshError.value = 'Não foi possível atualizar o status do pagamento agora.';
@@ -276,7 +438,7 @@ const scheduleCheckoutPixAutoRefresh = () => {
 const resolveCheckoutPixQrImage = async () => {
     const base64 = String(checkoutEffectivePayment.value?.qr_code_base64 ?? '').trim();
     if (base64 !== '') {
-        checkoutPixQrImageSrc.value = base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`;
+        checkoutPixQrImageSrc.value = normalizeQrImageBase64(base64);
         return;
     }
 
@@ -300,9 +462,54 @@ const resolveCheckoutPixQrImage = async () => {
     }
 };
 
+const copyTextToClipboard = async (value) => {
+    const text = String(value ?? '').trim();
+    if (text === '') return false;
+
+    if (navigator?.clipboard?.writeText) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {
+            // fallback below
+        }
+    }
+
+    try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', 'readonly');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+const copyCheckoutPixCode = async () => {
+    const copied = await copyTextToClipboard(checkoutPixCode.value);
+    if (!copied) return;
+
+    checkoutPixCodeCopied.value = true;
+    setTimeout(() => {
+        checkoutPixCodeCopied.value = false;
+    }, 1800);
+};
+
 watch(checkoutPayment, () => {
-    checkoutLivePayment.value = checkoutPayment.value ? { ...checkoutPayment.value } : null;
+    const flashPayment = checkoutPayment.value && typeof checkoutPayment.value === 'object'
+        ? checkoutPayment.value
+        : null;
+    checkoutLivePayment.value = flashPayment
+        ? mergePaymentPayload(checkoutLivePayment.value, flashPayment)
+        : null;
     checkoutPixRefreshError.value = '';
+    checkoutPixCodeCopied.value = false;
     checkoutPixAutoRefreshAttempts.value = 0;
     stopCheckoutPixAutoRefresh();
     void ensureCheckoutPixPayload();
@@ -321,6 +528,27 @@ watch(checkoutLivePayment, () => {
 
 onBeforeUnmount(() => {
     stopCheckoutPixAutoRefresh();
+    if (orderPaymentAutoRefreshTimer.value) {
+        clearInterval(orderPaymentAutoRefreshTimer.value);
+        orderPaymentAutoRefreshTimer.value = null;
+    }
+    if (cartToastTimeout) {
+        clearTimeout(cartToastTimeout);
+        cartToastTimeout = null;
+    }
+    if (cartAttentionTimeout) {
+        clearTimeout(cartAttentionTimeout);
+        cartAttentionTimeout = null;
+    }
+    if (alertToastTimeout) {
+        clearTimeout(alertToastTimeout);
+        alertToastTimeout = null;
+    }
+    itemActionFeedbackTimers.forEach((timers) => {
+        if (!Array.isArray(timers)) return;
+        timers.forEach((timer) => clearTimeout(timer));
+    });
+    itemActionFeedbackTimers.clear();
 });
 
 const fallbackImage = computed(() => (
@@ -438,13 +666,42 @@ const activeCategory = ref('all');
 const isCartOpen = ref(false);
 const selectedId = ref(null);
 const variationByProduct = ref({});
-const uiMessage = ref('');
 const cartToast = ref({ visible: false, title: '', description: '' });
+const cartAttention = ref(false);
+const actionLoadingByItem = ref({});
+const actionSuccessByItem = ref({});
 const isDetailsOpen = ref(false);
 const detailsImageIndex = ref(0);
 const detailsVariationId = ref(null);
 const detailsQuantity = ref(1);
 const showNotificationsPanel = ref(false);
+const alertToast = ref({ visible: false, message: '', tone: 'info' });
+
+const showAlertToast = (message, tone = 'info', duration = 3200) => {
+    const safeMessage = String(message ?? '').trim();
+    if (safeMessage === '') return;
+
+    alertToast.value = {
+        visible: true,
+        message: safeMessage,
+        tone: ['success', 'warning', 'error', 'info'].includes(tone) ? tone : 'info',
+    };
+
+    if (alertToastTimeout) {
+        clearTimeout(alertToastTimeout);
+    }
+
+    alertToastTimeout = setTimeout(() => {
+        alertToast.value.visible = false;
+        alertToastTimeout = null;
+    }, Math.max(1400, toInt(duration, 3200)));
+};
+
+watch(flashStatus, (message) => {
+    const safeMessage = String(message ?? '').trim();
+    if (safeMessage === '') return;
+    showAlertToast(safeMessage, 'success');
+}, { immediate: true });
 
 watch(normalizedCatalog, (items) => {
     if (!items.length) {
@@ -507,6 +764,7 @@ const configuredBanners = computed(() => {
             image: String(banner?.image_url || '').trim() || fallbackImage.value,
             ctaLabel: String(banner?.cta_label || '').trim() || 'Ver mais',
             backgroundColor: normalizeHex(String(banner?.background_color || ''), storeAccent.value),
+            useOriginalImageColors: Boolean(banner?.use_original_image_colors ?? false),
         }))
         .slice(0, 6);
 });
@@ -532,6 +790,7 @@ const fallbackBanners = computed(() => featuredCatalog.value.slice(0, 6).map((it
     image: item.image,
     ctaLabel: isServicesMode.value ? 'Agendar' : 'Comprar',
     backgroundColor: storeAccent.value,
+    useOriginalImageColors: false,
 })));
 
 const promotionalBanners = computed(() => {
@@ -685,6 +944,72 @@ const resolveVariationPrice = (item, variationId) => {
     return variation ? toMoney(variation.price, toMoney(item?.price, 0)) : toMoney(item?.price, 0);
 };
 
+const isItemActionLoading = (itemId) => Boolean(actionLoadingByItem.value[toInt(itemId, 0)]);
+const isItemActionSuccess = (itemId) => Boolean(actionSuccessByItem.value[toInt(itemId, 0)]);
+
+const triggerCartAttention = () => {
+    cartAttention.value = true;
+    if (cartAttentionTimeout) {
+        clearTimeout(cartAttentionTimeout);
+    }
+
+    cartAttentionTimeout = setTimeout(() => {
+        cartAttention.value = false;
+        cartAttentionTimeout = null;
+    }, 950);
+};
+
+const triggerAddToCartFeedback = (itemId) => {
+    const id = toInt(itemId, 0);
+    if (id <= 0) return;
+
+    const currentTimers = itemActionFeedbackTimers.get(id);
+    if (Array.isArray(currentTimers)) {
+        currentTimers.forEach((timer) => clearTimeout(timer));
+    }
+
+    actionLoadingByItem.value = {
+        ...actionLoadingByItem.value,
+        [id]: true,
+    };
+    actionSuccessByItem.value = {
+        ...actionSuccessByItem.value,
+        [id]: false,
+    };
+
+    const loadingTimer = setTimeout(() => {
+        actionLoadingByItem.value = {
+            ...actionLoadingByItem.value,
+            [id]: false,
+        };
+        actionSuccessByItem.value = {
+            ...actionSuccessByItem.value,
+            [id]: true,
+        };
+    }, 320);
+
+    const successTimer = setTimeout(() => {
+        actionSuccessByItem.value = {
+            ...actionSuccessByItem.value,
+            [id]: false,
+        };
+    }, 1900);
+
+    itemActionFeedbackTimers.set(id, [loadingTimer, successTimer]);
+};
+
+const resolveItemMaxStock = (item, variationId = null) => {
+    if (!item || isServicesMode.value) return 1;
+
+    const safeVariationId = toInt(variationId, 0);
+    if (safeVariationId > 0 && Array.isArray(item.variations) && item.variations.length) {
+        const selectedVariation = item.variations.find((variation) => toInt(variation?.id, 0) === safeVariationId);
+        return Math.max(0, toInt(selectedVariation?.stock, 0));
+    }
+
+    return Math.max(0, toInt(item.stock, 0));
+};
+
 const addToCart = (item, options = 1) => {
     if (!item) return;
 
@@ -699,6 +1024,8 @@ const addToCart = (item, options = 1) => {
         : null;
 
     if (isServicesMode.value) {
+        triggerAddToCartFeedback(id);
+        triggerCartAttention();
         cart.value = {
             [id]: {
                 quantity: 1,
@@ -720,14 +1047,30 @@ const addToCart = (item, options = 1) => {
 
     const variationId = variationByProduct.value[id] ? toInt(variationByProduct.value[id], 0) : null;
     const current = cart.value[id] ?? { quantity: 0, variation_id: null };
+    const selectedVariationId = explicitVariationId && explicitVariationId > 0
+        ? explicitVariationId
+        : (variationId && variationId > 0 ? variationId : current.variation_id);
+    const maxStock = resolveItemMaxStock(item, selectedVariationId);
+    if (maxStock <= 0) {
+        showAlertToast('Produto sem estoque disponível no momento.', 'warning');
+        return;
+    }
+
+    const nextQuantity = Math.max(1, toInt(current.quantity, 0) + quantity);
+    const safeQuantity = Math.min(maxStock, nextQuantity);
+    if (safeQuantity <= toInt(current.quantity, 0)) {
+        showAlertToast('Quantidade máxima disponível no estoque atingida.', 'warning');
+        return;
+    }
+
+    triggerAddToCartFeedback(id);
+    triggerCartAttention();
 
     cart.value = {
         ...cart.value,
         [id]: {
-            quantity: Math.max(1, toInt(current.quantity, 0) + quantity),
-            variation_id: explicitVariationId && explicitVariationId > 0
-                ? explicitVariationId
-                : (variationId && variationId > 0 ? variationId : current.variation_id),
+            quantity: safeQuantity,
+            variation_id: selectedVariationId && selectedVariationId > 0 ? selectedVariationId : null,
         },
     };
 
@@ -746,11 +1089,22 @@ const increase = (id) => {
     if (isServicesMode.value) return;
     if (!cart.value[id]) return;
 
+    const item = normalizedCatalog.value.find((entry) => entry.id === id);
+    if (!item) return;
+
+    const selectedVariationId = toInt(cart.value[id]?.variation_id, 0);
+    const maxStock = resolveItemMaxStock(item, selectedVariationId);
+    const currentQty = Math.max(1, toInt(cart.value[id].quantity, 1));
+    if (maxStock <= currentQty) {
+        showAlertToast('Quantidade máxima disponível no estoque atingida.', 'warning');
+        return;
+    }
+
     cart.value = {
         ...cart.value,
         [id]: {
             ...cart.value[id],
-            quantity: toInt(cart.value[id].quantity, 0) + 1,
+            quantity: currentQty + 1,
         },
     };
 };
@@ -785,8 +1139,13 @@ const cartEntries = computed(() => Object.entries(cart.value)
         const item = normalizedCatalog.value.find((entry) => entry.id === id);
         if (!item) return null;
 
-        const quantityValue = isServicesMode.value ? 1 : Math.max(1, toInt(row?.quantity, 1));
         const variationId = row?.variation_id ? toInt(row.variation_id, 0) : null;
+        const maxStock = resolveItemMaxStock(item, variationId);
+        if (!isServicesMode.value && maxStock <= 0) return null;
+
+        const quantityValue = isServicesMode.value
+            ? 1
+            : Math.max(1, Math.min(toInt(row?.quantity, 1), maxStock));
         const unitPrice = resolveVariationPrice(item, variationId);
 
         return {
@@ -822,7 +1181,7 @@ const paymentMethodSelectOptions = computed(() =>
         const feeText = method.feePercent > 0 || method.feeFixed > 0
             ? ` (+ ${method.feePercent.toFixed(2)}% / ${formatMoney(method.feeFixed)})`
             : '';
-        const modeText = method.checkoutMode === 'integrated' ? ' • gateway' : ' • manual';
+        const modeText = method.checkoutMode === 'integrated' ? ' - gateway' : ' - manual';
 
         return {
             value: method.id,
@@ -836,18 +1195,177 @@ const selectedPaymentMethod = computed(() => {
     return paymentMethods.value.find((method) => method.id === selectedId) ?? null;
 });
 
-const shippingConfig = computed(() => ({
-    deliveryEnabled: Boolean(props.shipping_config?.delivery_enabled ?? true),
-    pickupEnabled: Boolean(props.shipping_config?.pickup_enabled ?? true),
-    fixedFee: Math.max(0, toMoney(props.shipping_config?.fixed_fee, 0)),
-    freeOver: Math.max(0, toMoney(props.shipping_config?.free_over, 0)),
-}));
+const shippingConfig = computed(() => {
+    const stateRatesFromConfig = Array.isArray(props.shipping_config?.state_rates)
+        ? props.shipping_config.state_rates
+            .filter((row) => row && (row.active ?? false))
+            .map((row) => ({
+                state: normalizeStateCode(String(row.state ?? '')),
+                fee: Math.max(0, toMoney(row.fee, 0)),
+                freeOver: Math.max(0, toMoney(row.free_over, 0)),
+                active: Boolean(row?.active ?? false),
+            }))
+            .filter((row) => row.state !== '')
+        : [];
+
+    if (!stateRatesFromConfig.length && Boolean(props.shipping_config?.statewide_enabled ?? false)) {
+        const legacyState = normalizeStateCode(String(props.shipping_config?.statewide_state ?? ''));
+        if (legacyState !== '') {
+            stateRatesFromConfig.push({
+                state: legacyState,
+                fee: Math.max(0, toMoney(props.shipping_config?.statewide_fee, 0)),
+                freeOver: Math.max(0, toMoney(props.shipping_config?.statewide_free_over, 0)),
+                active: true,
+            });
+        }
+    }
+
+    return {
+        deliveryEnabled: Boolean(props.shipping_config?.delivery_enabled ?? true),
+        pickupEnabled: Boolean(props.shipping_config?.pickup_enabled ?? true),
+        deliveryCoverageEnabled: Boolean(props.shipping_config?.delivery_coverage_enabled ?? false),
+        nationwideEnabled: Boolean(props.shipping_config?.nationwide_enabled ?? false),
+        nationwideFee: Math.max(0, toMoney(props.shipping_config?.nationwide_fee, 0)),
+        nationwideFreeOver: Math.max(0, toMoney(props.shipping_config?.nationwide_free_over, 0)),
+        estimatedDays: Math.max(1, toInt(props.shipping_config?.estimated_days, 2)),
+        stateRates: stateRatesFromConfig,
+        cityRates: Array.isArray(props.shipping_config?.city_rates)
+            ? props.shipping_config.city_rates
+                .filter((row) => row && (row.active ?? true))
+                .map((row) => ({
+                    city: String(row.city ?? '').trim(),
+                    cityKey: normalizeCityKey(row.city_key ?? row.city ?? ''),
+                    state: normalizeStateCode(String(row.state ?? '')),
+                    fee: Math.max(0, toMoney(row.fee, 0)),
+                    freeOver: Math.max(0, toMoney(row.free_over, 0)),
+                    isFree: Boolean(row?.is_free ?? false),
+                    estimatedDays: Math.max(1, toInt(row.estimated_days, 2)),
+                }))
+                .filter((row) => row.cityKey !== '')
+            : [],
+    };
+});
+
+const checkoutShippingCityKey = computed(() => normalizeCityKey(checkoutForm.shipping_city));
+const checkoutShippingStateCode = computed(() => normalizeStateCode(checkoutForm.shipping_state));
+const selectedShippingCityRate = computed(() => {
+    const cityRates = shippingConfig.value.cityRates;
+    if (!cityRates.length) return null;
+
+    const cityKey = checkoutShippingCityKey.value;
+    if (cityKey === '') return null;
+    const state = checkoutShippingStateCode.value;
+
+    return cityRates.find((row) => row.cityKey === cityKey && row.state !== '' && row.state === state) ?? null;
+});
+
+const selectedShippingStateRate = computed(() => {
+    const state = checkoutShippingStateCode.value;
+    if (state === '') return null;
+
+    return shippingConfig.value.stateRates.find((row) => row.state === state && row.active) ?? null;
+});
+
+const deliveryRule = computed(() => {
+    if (!shippingConfig.value.deliveryEnabled) return null;
+
+    if (shippingConfig.value.nationwideEnabled) {
+        return {
+            fee: shippingConfig.value.nationwideFee,
+            freeOver: shippingConfig.value.nationwideFreeOver,
+            alwaysFree: shippingConfig.value.nationwideFreeOver <= 0,
+            estimatedDays: shippingConfig.value.estimatedDays,
+            coverageLabel: 'nacional',
+        };
+    }
+
+    if (shippingConfig.value.stateRates.length > 0) {
+        if (!selectedShippingStateRate.value) {
+            return null;
+        }
+
+        return {
+            fee: selectedShippingStateRate.value.fee,
+            freeOver: selectedShippingStateRate.value.freeOver,
+            alwaysFree: selectedShippingStateRate.value.freeOver <= 0,
+            estimatedDays: shippingConfig.value.estimatedDays,
+            coverageLabel: 'estado',
+        };
+    }
+
+    if (!shippingConfig.value.cityRates.length) {
+        return null;
+    }
+
+    if (!selectedShippingCityRate.value) {
+        return null;
+    }
+
+    return {
+        fee: selectedShippingCityRate.value.fee,
+        freeOver: selectedShippingCityRate.value.freeOver,
+        alwaysFree: Boolean(selectedShippingCityRate.value.isFree),
+        estimatedDays: selectedShippingCityRate.value.estimatedDays,
+        coverageLabel: 'cidade',
+    };
+});
+
+const deliveryOptionBlockedByCity = computed(() =>
+    shippingConfig.value.deliveryEnabled
+    && !deliveryRule.value
+    && (
+        shippingConfig.value.nationwideEnabled
+        || shippingConfig.value.stateRates.length > 0
+        || shippingConfig.value.cityRates.length > 0
+    ));
+
+const isDeliveryOptionAvailable = computed(() => {
+    if (!shippingConfig.value.deliveryEnabled) return false;
+    return Boolean(deliveryRule.value);
+});
+
+const deliveryModeOptions = computed(() => {
+    const options = [];
+    if (shippingConfig.value.pickupEnabled) {
+        options.push({ value: 'pickup', label: 'Retirar na loja' });
+    }
+    if (isDeliveryOptionAvailable.value) {
+        options.push({ value: 'delivery', label: 'Entrega' });
+    }
+    return options;
+});
+
+const hasCheckoutDeliveryMode = computed(() => deliveryModeOptions.value.length > 0);
+const isDeliveryModeSelected = computed(() => String(checkoutForm.delivery_mode ?? '').trim() === 'delivery');
+const isCheckoutDeliveryModeValid = computed(() =>
+    deliveryModeOptions.value.some((option) => option.value === checkoutForm.delivery_mode));
+
+const deliveryBlockedMessage = computed(() => {
+    if (!deliveryOptionBlockedByCity.value) return '';
+    if (shippingConfig.value.stateRates.length > 0) {
+        const activeStates = shippingConfig.value.stateRates.map((row) => row.state);
+        const statesPreview = activeStates.length > 6
+            ? `${activeStates.slice(0, 6).join(', ')} e mais ${activeStates.length - 6} UF(s)`
+            : activeStates.join(', ');
+        return `Entrega disponível apenas para: ${statesPreview}.`;
+    }
+    if (shippingConfig.value.pickupEnabled) {
+        return 'Entrega indisponível para sua cidade. Selecione retirada na loja.';
+    }
+    return 'Entrega indisponível para sua cidade e a loja não possui retirada ativa.';
+});
 
 const deliveryFee = computed(() => {
     if (isServicesMode.value) return 0;
-    if (!shippingConfig.value.deliveryEnabled) return 0;
-    if (shippingConfig.value.freeOver > 0 && subtotal.value >= shippingConfig.value.freeOver) return 0;
-    return shippingConfig.value.fixedFee;
+    if (!isDeliveryModeSelected.value) return 0;
+    if (!isDeliveryOptionAvailable.value) return 0;
+
+    const fee = Math.max(0, toMoney(deliveryRule.value?.fee, 0));
+    const freeOver = Math.max(0, toMoney(deliveryRule.value?.freeOver, 0));
+    const alwaysFree = Boolean(deliveryRule.value?.alwaysFree);
+    if (alwaysFree) return 0;
+    if (freeOver > 0 && subtotal.value >= freeOver) return 0;
+    return fee;
 });
 
 const paymentFee = computed(() => {
@@ -857,6 +1375,14 @@ const paymentFee = computed(() => {
 });
 
 const total = computed(() => Number((subtotal.value + deliveryFee.value + paymentFee.value).toFixed(2)));
+const checkoutSubmitDisabled = computed(() => {
+    if (checkoutForm.processing || !cartEntries.value.length) return true;
+    if (!hasCheckoutDeliveryMode.value) return true;
+    if (!isCheckoutDeliveryModeValid.value) return true;
+    if (isDeliveryModeSelected.value && !isDeliveryOptionAvailable.value) return true;
+    if (isDeliveryModeSelected.value && !isAddressComplete.value) return true;
+    return false;
+});
 
 const checkoutForm = useForm({
     customer_name: '',
@@ -891,6 +1417,17 @@ const syncCheckoutData = () => {
 
 watch(customer, () => syncCheckoutData(), { immediate: true, deep: true });
 
+watch(deliveryModeOptions, (options) => {
+    if (!Array.isArray(options) || options.length === 0) {
+        checkoutForm.delivery_mode = '';
+        return;
+    }
+
+    if (!options.some((option) => option.value === checkoutForm.delivery_mode)) {
+        checkoutForm.delivery_mode = String(options[0].value || '');
+    }
+}, { immediate: true });
+
 watch(paymentMethods, (methods) => {
     const selectedId = toInt(checkoutForm.payment_method_id, 0);
     if (selectedId > 0 && methods.some((method) => method.id === selectedId)) {
@@ -906,8 +1443,13 @@ watch(() => checkoutForm.payment_method_id, (value) => {
     }
 });
 
+watch(() => checkoutForm.delivery_mode, (value) => {
+    if (String(value ?? '').trim() !== '') {
+        checkoutForm.clearErrors('delivery_mode');
+    }
+});
+
 const submitQuickCheckout = () => {
-    uiMessage.value = '';
 
     if (!isAuthenticated.value) {
         router.visit(loginUrl.value);
@@ -919,21 +1461,39 @@ const submitQuickCheckout = () => {
         return;
     }
 
-    if (!isAddressComplete.value) {
-        uiMessage.value = 'Complete seu endereço na aba Conta para finalizar o pedido.';
+    if (!cartEntries.value.length) {
+        showAlertToast('Adicione itens no carrinho.', 'warning');
+        return;
+    }
+
+    if (!hasCheckoutDeliveryMode.value) {
+        checkoutForm.setError('delivery_mode', 'A loja está sem checkout disponível no momento.');
+        showAlertToast('A loja está sem checkout disponível no momento.', 'warning');
+        return;
+    }
+
+    if (!isCheckoutDeliveryModeValid.value) {
+        checkoutForm.setError('delivery_mode', 'Selecione como deseja receber o pedido.');
+        showAlertToast('Selecione retirada na loja ou entrega para continuar.', 'warning');
+        return;
+    }
+
+    if (isDeliveryModeSelected.value && !isDeliveryOptionAvailable.value) {
+        checkoutForm.setError('delivery_mode', deliveryBlockedMessage.value || 'Entrega indisponível para sua cidade.');
+        showAlertToast(deliveryBlockedMessage.value || 'Entrega indisponível para sua cidade.', 'warning');
+        return;
+    }
+
+    if (isDeliveryModeSelected.value && !isAddressComplete.value) {
+        showAlertToast('Complete seu endereço na aba Conta para finalizar o pedido.', 'warning');
         activeTab.value = 'account';
         isCartOpen.value = false;
         return;
     }
 
-    if (!cartEntries.value.length) {
-        uiMessage.value = 'Adicione itens no carrinho.';
-        return;
-    }
-
     if (!selectedPaymentMethod.value) {
         checkoutForm.setError('payment_method_id', 'Selecione uma forma de pagamento para finalizar o pedido.');
-        uiMessage.value = 'Escolha uma forma de pagamento para continuar.';
+        showAlertToast('Escolha uma forma de pagamento para continuar.', 'warning');
         return;
     }
 
@@ -941,7 +1501,6 @@ const submitQuickCheckout = () => {
     checkoutForm.customer_phone = formatPhoneBR(checkoutForm.customer_phone);
     checkoutForm.shipping_postal_code = formatCepBR(checkoutForm.shipping_postal_code);
     checkoutForm.shipping_state = normalizeStateCode(checkoutForm.shipping_state);
-    checkoutForm.delivery_mode = shippingConfig.value.deliveryEnabled ? 'delivery' : 'pickup';
     checkoutForm.idempotency_key = `idx6-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     checkoutForm.items = cartEntries.value.map((entry) => ({
         product_id: entry.id,
@@ -953,23 +1512,23 @@ const submitQuickCheckout = () => {
         preserveScroll: true,
         onSuccess: () => {
             clearCart();
-            isCartOpen.value = false;
             activeTab.value = 'orders';
+            isCartOpen.value = true;
         },
         onError: (errors) => {
             const orderError = String(errors?.order || checkoutForm.errors?.order || '').trim();
             const paymentError = String(errors?.payment_method_id || checkoutForm.errors?.payment_method_id || '').trim();
             if (orderError !== '') {
-                uiMessage.value = orderError;
+                showAlertToast(orderError, 'error');
             } else if (paymentError !== '') {
-                uiMessage.value = paymentError;
+                showAlertToast(paymentError, 'error');
             } else {
                 const firstBackendError = Object.values(errors ?? {})
                     .flatMap((value) => (Array.isArray(value) ? value : [value]))
                     .map((value) => String(value ?? '').trim())
                     .find((value) => value !== '');
 
-                uiMessage.value = firstBackendError || 'Não foi possível finalizar o pedido. Revise os dados e tente novamente.';
+                showAlertToast(firstBackendError || 'Não foi possível finalizar o pedido. Revise os dados e tente novamente.', 'error');
             }
             isCartOpen.value = true;
         },
@@ -1155,8 +1714,6 @@ watch(() => bookingForm.scheduled_for, (value) => {
 });
 
 const submitQuickBooking = () => {
-    uiMessage.value = '';
-
     if (!isAuthenticated.value) {
         router.visit(loginUrl.value);
         return;
@@ -1169,7 +1726,7 @@ const submitQuickBooking = () => {
 
     const target = activeBookingService.value;
     if (!target) {
-        uiMessage.value = 'Selecione um serviço antes de agendar.';
+        showAlertToast('Selecione um serviço antes de agendar.', 'warning');
         return;
     }
 
@@ -1178,9 +1735,9 @@ const submitQuickBooking = () => {
 
     if (!isSelectedBookingSlotValid.value) {
         bookingForm.setError('scheduled_for', 'Selecione um horário disponível para o agendamento.');
-        uiMessage.value = hasAvailableBookingSlots.value
+        showAlertToast(hasAvailableBookingSlots.value
             ? 'Escolha um dia e horário para confirmar o agendamento.'
-            : 'Não há horários disponíveis no momento.';
+            : 'Não há horários disponíveis no momento.', 'warning');
         return;
     }
 
@@ -1239,7 +1796,7 @@ const submitAccountChanges = () => {
         preserveState: true,
         onSuccess: () => {
             if (!shouldSubmitPasswordUpdate()) {
-                uiMessage.value = 'Dados da conta atualizados.';
+                showAlertToast('Dados da conta atualizados.', 'success');
                 return;
             }
 
@@ -1249,7 +1806,7 @@ const submitAccountChanges = () => {
                 onSuccess: () => {
                     passwordForm.reset();
                     passwordForm.clearErrors();
-                    uiMessage.value = 'Dados e senha atualizados.';
+                    showAlertToast('Dados e senha atualizados.', 'success');
                 },
             });
         },
@@ -1303,21 +1860,199 @@ const orders = computed(() => {
             id: toInt(booking?.id, 0),
             code: String(booking?.code || ''),
             status: String(booking?.status?.label || 'Agendado'),
+            status_value: String(booking?.status?.value || '').trim().toLowerCase(),
             date: String(booking?.scheduled_label || ''),
             total: toMoney(booking?.final_amount || booking?.estimated_amount, 0),
             details: String(booking?.service_name || 'Serviço'),
+            payment: null,
+            payment_method_label: '',
+            payment_is_pix: false,
+            payment_is_integrated: false,
+            payment_action_url: '',
+            payment_pix_code: '',
         }));
     }
 
-    return (Array.isArray(props.shop_account?.orders) ? props.shop_account.orders : []).map((order) => ({
-        id: toInt(order?.id, 0),
-        code: String(order?.code || ''),
-        status: String(order?.status?.label || 'Pedido'),
-        date: String(order?.created_at || ''),
-        total: toMoney(order?.total_amount, 0),
-        details: String(order?.payment_label || 'Pagamento'),
-    }));
+    return (Array.isArray(props.shop_account?.orders) ? props.shop_account.orders : []).map((order) => {
+        const id = toInt(order?.id, 0);
+        const overridePayment = orderPaymentOverrides.value[id];
+        const payment = (overridePayment && typeof overridePayment === 'object')
+            ? overridePayment
+            : ((order?.payment && typeof order.payment === 'object') ? order.payment : null);
+        const paymentMethodCode = String(payment?.method_code ?? payment?.payment_method_code ?? '').trim().toLowerCase();
+        const paymentMethodName = String(payment?.method_name ?? payment?.payment_method_name ?? '').trim();
+        const saleStatusValue = String(order?.status?.value || '').trim().toLowerCase();
+        const paymentIsActionable = isActionableIntegratedPayment(payment, saleStatusValue);
+        const paymentIsPix = paymentIsActionable && isPixPayload(payment);
+
+        return {
+            id,
+            code: String(order?.code || ''),
+            status: String(order?.status?.label || 'Pedido'),
+            status_value: saleStatusValue,
+            date: String(order?.created_at || ''),
+            total: toMoney(order?.total_amount, 0),
+            details: String(order?.payment_label || 'Pagamento'),
+            payment,
+            payment_method_label: paymentMethodName || paymentMethodLabelFromCode(paymentMethodCode, 'Pagamento'),
+            payment_is_pix: paymentIsPix,
+            payment_is_integrated: !paymentIsPix && paymentIsActionable && isIntegratedPayload(payment),
+            payment_action_url: resolveIntegratedActionUrlFromPayload(payment),
+            payment_pix_code: String(payment?.qr_code ?? '').trim(),
+        };
+    });
 });
+
+const resolvePaymentQrImageSrc = async (payment) => {
+    const base64 = String(payment?.qr_code_base64 ?? '').trim();
+    if (base64 !== '') {
+        return normalizeQrImageBase64(base64);
+    }
+
+    const qrCode = String(payment?.qr_code ?? '').trim();
+    if (qrCode === '') {
+        return '';
+    }
+
+    try {
+        return await QRCode.toDataURL(qrCode, {
+            width: 240,
+            margin: 1,
+            color: {
+                dark: '#0f172a',
+                light: '#ffffff',
+            },
+        });
+    } catch {
+        return '';
+    }
+};
+
+const copyOrderPixCode = async (orderId, pixCode) => {
+    const id = toInt(orderId, 0);
+    if (id <= 0) return;
+
+    const copied = await copyTextToClipboard(pixCode);
+    if (!copied) return;
+
+    orderPixCodeCopiedById.value = {
+        ...orderPixCodeCopiedById.value,
+        [id]: true,
+    };
+    setTimeout(() => {
+        orderPixCodeCopiedById.value = {
+            ...orderPixCodeCopiedById.value,
+            [id]: false,
+        };
+    }, 1800);
+};
+
+const refreshOrderPayment = async (orderId) => {
+    const id = toInt(orderId, 0);
+    if (id <= 0) return;
+    if (orderPaymentRefreshLoadingById.value[id]) return;
+
+    orderPaymentRefreshLoadingById.value = {
+        ...orderPaymentRefreshLoadingById.value,
+        [id]: true,
+    };
+    orderPaymentRefreshErrorById.value = {
+        ...orderPaymentRefreshErrorById.value,
+        [id]: '',
+    };
+
+    try {
+        const response = await fetch(`/shop/${storeSlug.value}/checkout/pagamento/${id}`, {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('not_found');
+        }
+
+        const data = await response.json();
+        const payment = data?.payment;
+        if (payment && typeof payment === 'object') {
+            const currentPayment = orderPaymentOverrides.value[id] && typeof orderPaymentOverrides.value[id] === 'object'
+                ? orderPaymentOverrides.value[id]
+                : null;
+            const mergedPayment = mergePaymentPayload(currentPayment, payment);
+            orderPaymentOverrides.value = {
+                ...orderPaymentOverrides.value,
+                [id]: mergedPayment,
+            };
+            const qrImage = await resolvePaymentQrImageSrc(mergedPayment);
+            orderPaymentQrById.value = {
+                ...orderPaymentQrById.value,
+                [id]: qrImage,
+            };
+        }
+    } catch {
+        orderPaymentRefreshErrorById.value = {
+            ...orderPaymentRefreshErrorById.value,
+            [id]: 'Não foi possível atualizar a cobrança agora.',
+        };
+    } finally {
+        orderPaymentRefreshLoadingById.value = {
+            ...orderPaymentRefreshLoadingById.value,
+            [id]: false,
+        };
+    }
+};
+
+const syncOrderPaymentAutoRefresh = () => {
+    if (orderPaymentAutoRefreshTimer.value) {
+        clearInterval(orderPaymentAutoRefreshTimer.value);
+        orderPaymentAutoRefreshTimer.value = null;
+    }
+
+    const targetOrderIds = orders.value
+        .filter((order) => order?.payment_is_pix || order?.payment_is_integrated)
+        .map((order) => toInt(order?.id, 0))
+        .filter((id) => id > 0);
+
+    if (!targetOrderIds.length) {
+        return;
+    }
+
+    orderPaymentAutoRefreshTimer.value = setInterval(() => {
+        targetOrderIds.forEach((id) => {
+            void refreshOrderPayment(id);
+        });
+    }, 15000);
+};
+
+watch(orders, async (list) => {
+    const nextQr = { ...orderPaymentQrById.value };
+    const validIds = new Set();
+
+    for (const order of list) {
+        const id = toInt(order?.id, 0);
+        if (id <= 0) continue;
+        validIds.add(id);
+
+        if (!order.payment_is_pix) {
+            delete nextQr[id];
+            continue;
+        }
+
+        nextQr[id] = await resolvePaymentQrImageSrc(order.payment);
+    }
+
+    Object.keys(nextQr).forEach((rawId) => {
+        const id = toInt(rawId, 0);
+        if (!validIds.has(id)) {
+            delete nextQr[id];
+        }
+    });
+
+    orderPaymentQrById.value = nextQr;
+    syncOrderPaymentAutoRefresh();
+}, { immediate: true, deep: true });
 
 const stateOptions = computed(() => ([
     { value: '', label: 'Selecione a UF' },
@@ -1371,9 +2106,9 @@ const submitDetailsPrimaryAction = () => {
     if (isServicesMode.value) {
         if (!isSelectedBookingSlotValid.value) {
             bookingForm.setError('scheduled_for', 'Selecione um horário disponível.');
-            uiMessage.value = hasAvailableBookingSlots.value
+            showAlertToast(hasAvailableBookingSlots.value
                 ? 'Escolha um horário para continuar com o agendamento.'
-                : 'Não há horários disponíveis no momento.';
+                : 'Não há horários disponíveis no momento.', 'warning');
             return;
         }
 
@@ -1429,6 +2164,14 @@ onBeforeUnmount(() => {
         clearTimeout(cartToastTimeout);
         cartToastTimeout = null;
     }
+    if (cartAttentionTimeout) {
+        clearTimeout(cartAttentionTimeout);
+        cartAttentionTimeout = null;
+    }
+    if (alertToastTimeout) {
+        clearTimeout(alertToastTimeout);
+        alertToastTimeout = null;
+    }
 });
 
 </script>
@@ -1438,10 +2181,10 @@ onBeforeUnmount(() => {
             <div class="w-full h-full flex">
                 <aside class="w-64 bg-white border-r border-gray-200 hidden md:flex flex-col h-full z-10">
                     <div class="p-4 border-b border-gray-100">
-                        <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
+                        <div class="rounded-xl px-3 py-2">
                             <div class="flex items-center gap-3">
                                 <div
-                                    class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70"
+                                    class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg"
                                     :style="storeLogo ? null : { background: 'var(--idx-primary)' }"
                                 >
                                     <img v-if="storeLogo" :src="storeLogo" :alt="storeName" class="h-full w-full rounded-lg object-cover">
@@ -1510,9 +2253,9 @@ onBeforeUnmount(() => {
                                 <ArrowLeft :size="18" />
                             </button>
                             <div v-if="activeTab === 'home'" class="md:hidden min-w-0 flex-1">
-                                <div class="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-2">
+                                <div class="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2">
                                     <div
-                                        class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg ring-1 ring-emerald-200/70"
+                                        class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg"
                                         :style="storeLogo ? null : { background: 'var(--idx-primary)' }"
                                     >
                                         <img v-if="storeLogo" :src="storeLogo" :alt="storeName" class="h-full w-full rounded-lg object-cover">
@@ -1547,9 +2290,20 @@ onBeforeUnmount(() => {
                                     {{ notificationsUnreadCount > 9 ? '9+' : notificationsUnreadCount }}
                                 </span>
                             </button>
-                            <button type="button" class="relative p-2 text-gray-600 hover:text-[var(--idx-primary)] transition-colors" @click="isCartOpen = true">
+                            <button
+                                type="button"
+                                class="relative rounded-full p-2 text-gray-600 transition-all duration-200 hover:text-[var(--idx-primary)]"
+                                :class="cartAttention ? 'scale-110 bg-emerald-50 text-emerald-700 shadow-sm ring-2 ring-emerald-200' : ''"
+                                @click="isCartOpen = true"
+                            >
                                 <ShoppingCart :size="20" />
                                 <span class="absolute top-0 right-0 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">{{ cartCount }}</span>
+                                <span
+                                    v-if="cartAttention"
+                                    class="pointer-events-none absolute -right-2 -top-2 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm"
+                                >
+                                    +1
+                                </span>
                             </button>
                         </div>
                     </header>
@@ -1618,76 +2372,8 @@ onBeforeUnmount(() => {
                     </transition>
 
                     <div class="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-6">
-                        <div v-if="flashStatus" class="mb-4 rounded-xl border border-green-200 bg-green-50 text-green-700 text-sm px-4 py-2.5">
-                            {{ flashStatus }}
-                        </div>
-                        <div v-if="uiMessage" class="mb-4 rounded-xl border border-sky-200 bg-sky-50 text-sky-700 text-sm px-4 py-2.5">
-                            {{ uiMessage }}
-                        </div>
                         <div v-if="checkoutManual?.whatsapp_url" class="mb-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm px-4 py-2.5">
                             Pagamento manual disponível. <a :href="checkoutManual.whatsapp_url" target="_blank" class="font-semibold underline">Abrir WhatsApp</a>
-                        </div>
-                        <div v-if="checkoutHasPixPayload" class="mb-4 rounded-xl border border-orange-200 bg-orange-50 text-orange-800 text-sm px-4 py-2.5">
-                            <p class="font-semibold">Pagamento Pix gerado.</p>
-                            <p v-if="checkoutEffectivePayment?.qr_code" class="mt-1 break-all">
-                                Código Pix: <span class="font-semibold">{{ checkoutEffectivePayment.qr_code }}</span>
-                            </p>
-                            <div v-if="checkoutPixQrImageSrc" class="mt-2 inline-flex rounded-lg border border-orange-200 bg-white p-2">
-                                <img :src="checkoutPixQrImageSrc" alt="QR Code Pix" class="h-36 w-36 rounded-md">
-                            </div>
-                            <p v-if="!checkoutHasVisiblePixData" class="mt-1">
-                                Estamos buscando o QR Code da cobrança. Atualize em alguns segundos.
-                            </p>
-                            <p v-if="checkoutEffectivePayment?.transaction_reference" class="mt-1 break-all">
-                                Referência: <span class="font-semibold">{{ checkoutEffectivePayment.transaction_reference }}</span>
-                            </p>
-                            <a
-                                v-if="checkoutIntegratedActionUrl"
-                                :href="checkoutIntegratedActionUrl"
-                                target="_blank"
-                                rel="noopener"
-                                class="mt-2 inline-flex font-semibold underline"
-                            >
-                                Abrir cobrança Pix
-                            </a>
-                            <button
-                                type="button"
-                                class="mt-2 inline-flex rounded-lg border border-orange-200 bg-white px-3 py-1.5 font-semibold text-orange-800 hover:bg-orange-100 disabled:opacity-60"
-                                :disabled="checkoutPixRefreshLoading"
-                                @click="refreshCheckoutPixPayment()"
-                            >
-                                {{ checkoutPixRefreshLoading ? 'Atualizando...' : 'Atualizar cobrança' }}
-                            </button>
-                            <p v-if="checkoutPixRefreshError" class="mt-1 text-xs text-orange-700">
-                                {{ checkoutPixRefreshError }}
-                            </p>
-                        </div>
-                        <div v-else-if="checkoutIsIntegratedPayload" class="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-sm px-4 py-2.5">
-                            <p class="font-semibold">Pagamento {{ checkoutIntegratedMethodLabel }} pronto para finalizar.</p>
-                            <p class="mt-1">Finalize no ambiente seguro do Mercado Pago.</p>
-                            <p v-if="checkoutEffectivePayment?.transaction_reference" class="mt-1 break-all">
-                                Referência: <span class="font-semibold">{{ checkoutEffectivePayment.transaction_reference }}</span>
-                            </p>
-                            <a
-                                v-if="checkoutIntegratedActionUrl"
-                                :href="checkoutIntegratedActionUrl"
-                                target="_blank"
-                                rel="noopener"
-                                class="mt-2 inline-flex font-semibold underline"
-                            >
-                                Finalizar pagamento
-                            </a>
-                            <button
-                                type="button"
-                                class="mt-2 inline-flex rounded-lg border border-indigo-200 bg-white px-3 py-1.5 font-semibold text-indigo-800 hover:bg-indigo-100 disabled:opacity-60"
-                                :disabled="checkoutPixRefreshLoading"
-                                @click="refreshCheckoutPixPayment()"
-                            >
-                                {{ checkoutPixRefreshLoading ? 'Atualizando...' : 'Atualizar status' }}
-                            </button>
-                            <p v-if="checkoutPixRefreshError" class="mt-1 text-xs text-indigo-700">
-                                {{ checkoutPixRefreshError }}
-                            </p>
                         </div>
                         <div v-if="bookingWhatsappUrl" class="mb-4 rounded-xl border border-green-200 bg-green-50 text-green-700 text-sm px-4 py-2.5">
                             Agendamento criado. <a :href="bookingWhatsappUrl" target="_blank" class="font-semibold underline">Abrir WhatsApp</a>
@@ -1715,8 +2401,16 @@ onBeforeUnmount(() => {
                                         class="relative h-40 w-[280px] overflow-hidden rounded-2xl border border-white/20"
                                     >
                                         <img :src="banner.image" :alt="banner.title" class="h-full w-full object-cover">
-                                        <div class="absolute inset-0 bg-gradient-to-tr from-black/60 via-black/25 to-black/15 p-4 text-white">
-                                            <span v-if="banner.badge" class="inline-flex rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                                        <div
+                                            class="absolute inset-0 p-4 text-white"
+                                            :class="banner.useOriginalImageColors ? 'flex flex-col justify-end' : 'bg-gradient-to-tr from-black/60 via-black/25 to-black/15'"
+                                            :style="banner.useOriginalImageColors ? { textShadow: '0 1px 3px rgba(0, 0, 0, 0.65)' } : null"
+                                        >
+                                            <span
+                                                v-if="banner.badge"
+                                                class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                                                :class="banner.useOriginalImageColors ? 'bg-slate-900/55' : 'bg-white/20'"
+                                            >
                                                 {{ banner.badge }}
                                             </span>
                                             <h3 class="mt-2 text-base font-extrabold leading-tight">{{ banner.title }}</h3>
@@ -1724,7 +2418,8 @@ onBeforeUnmount(() => {
                                             <button
                                                 v-if="banner.ctaLabel"
                                                 type="button"
-                                                class="mt-3 inline-flex rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold text-white"
+                                                class="mt-3 inline-flex rounded-full px-3 py-1 text-[11px] font-semibold"
+                                                :class="banner.useOriginalImageColors ? 'bg-slate-900/55 text-white' : 'bg-white/20 text-white'"
                                                 @click="applyHeroCta"
                                             >
                                                 {{ banner.ctaLabel || 'Ver mais' }}
@@ -1742,14 +2437,20 @@ onBeforeUnmount(() => {
                                     :class="index === 0 ? 'col-span-2 h-48' : 'h-48'"
                                 >
                                     <img :src="banner.image" :alt="banner.title" class="h-full w-full object-cover">
-                                    <div class="absolute inset-0 p-5 text-white" :style="{ background: `linear-gradient(130deg, ${withAlpha(banner.backgroundColor, 0.84)} 0%, rgba(15, 23, 42, 0.58) 65%)` }">
+                                    <div
+                                        class="absolute inset-0 p-5 text-white"
+                                        :style="banner.useOriginalImageColors
+                                            ? { textShadow: '0 1px 3px rgba(0, 0, 0, 0.65)' }
+                                            : { background: `linear-gradient(130deg, ${withAlpha(banner.backgroundColor, 0.84)} 0%, rgba(15, 23, 42, 0.58) 65%)` }"
+                                    >
                                         <p class="text-xs uppercase tracking-[0.16em]">{{ storeName }}</p>
                                         <h3 class="mt-2 text-2xl font-black leading-tight">{{ banner.title }}</h3>
                                         <p v-if="banner.subtitle" class="mt-1 max-w-md text-sm text-white/90">{{ banner.subtitle }}</p>
                                         <button
                                             v-if="banner.ctaLabel"
                                             type="button"
-                                            class="mt-4 inline-flex rounded-full bg-white/20 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur"
+                                            class="mt-4 inline-flex rounded-full px-3 py-1.5 text-xs font-semibold backdrop-blur"
+                                            :class="banner.useOriginalImageColors ? 'bg-slate-900/55 text-white' : 'bg-white/20 text-white'"
                                             @click="applyHeroCta"
                                         >
                                             {{ banner.ctaLabel || 'Ver mais' }}
@@ -1789,7 +2490,11 @@ onBeforeUnmount(() => {
                                 <div
                                     v-for="item in (activeTab === 'favorites' ? favoriteItems : featuredCatalog)"
                                     :key="`card-${item.id}`"
-                                    class="bg-white rounded-2xl overflow-hidden shadow-sm relative group md:cursor-pointer"
+                                    class="bg-white rounded-2xl overflow-hidden shadow-sm relative group transition-all duration-200 md:cursor-pointer md:hover:-translate-y-0.5 md:hover:shadow-md md:hover:ring-1 md:hover:ring-slate-200"
+                                    :class="[
+                                        isItemActionLoading(item.id) ? 'ring-2 ring-[var(--idx-primary)] shadow-xl md:-translate-y-1' : '',
+                                        isItemActionSuccess(item.id) ? 'ring-2 ring-emerald-300 shadow-lg' : '',
+                                    ]"
                                     @click="openDetails(item)"
                                 >
                                     <button
@@ -1799,6 +2504,22 @@ onBeforeUnmount(() => {
                                     >
                                         <Heart :size="12" :class="{ 'fill-white': isFavorite(item.id) }" />
                                     </button>
+                                    <div
+                                        v-if="isItemActionLoading(item.id) || isItemActionSuccess(item.id)"
+                                        class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-slate-900/25 backdrop-blur-[1px]"
+                                    >
+                                        <div class="inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm">
+                                            <Loader2 v-if="isItemActionLoading(item.id)" :size="13" class="animate-spin text-[var(--idx-primary)]" />
+                                            <Check v-else :size="13" class="text-emerald-600" />
+                                            <span>
+                                                {{
+                                                    isItemActionLoading(item.id)
+                                                        ? (isServicesMode ? 'Carregando agendamento...' : 'Adicionando ao carrinho...')
+                                                        : (isServicesMode ? 'Serviço carregado' : 'Produto carregado')
+                                                }}
+                                            </span>
+                                        </div>
+                                    </div>
                                     <img :src="item.image" :alt="item.title" class="w-full h-32 md:h-40 object-cover group-hover:scale-105 transition-transform duration-300">
                                     <div class="p-4">
                                         <h4 class="font-semibold text-sm md:text-base mb-1 truncate">{{ item.title }}</h4>
@@ -1810,8 +2531,25 @@ onBeforeUnmount(() => {
                                         </div>
                                         <div class="flex justify-between items-center mt-2">
                                             <span class="text-gray-700 text-xs font-semibold">{{ formatMoney(item.price) }}</span>
-                                            <button class="text-white text-xs px-3 py-1 rounded-full font-medium" :style="{ backgroundColor: 'var(--idx-add-button)' }" @click.stop="addToCart(item)">
-                                                {{ isServicesMode ? 'Agendar' : 'Adicionar' }}
+                                            <button
+                                                class="inline-flex items-center gap-1 text-white text-xs px-3 py-1 rounded-full font-medium disabled:opacity-70"
+                                                :style="{ backgroundColor: 'var(--idx-add-button)' }"
+                                                :disabled="isItemActionLoading(item.id)"
+                                                @click.stop="addToCart(item)"
+                                            >
+                                                <Loader2 v-if="isItemActionLoading(item.id)" :size="12" class="animate-spin" />
+                                                <Check v-else-if="isItemActionSuccess(item.id)" :size="12" />
+                                                <span>
+                                                    {{
+                                                        isItemActionLoading(item.id)
+                                                            ? (isServicesMode ? 'Carregando...' : 'Adicionando...')
+                                                            : (
+                                                        isItemActionSuccess(item.id)
+                                                            ? 'Adicionado'
+                                                            : (isServicesMode ? 'Agendar' : 'Adicionar')
+                                                            )
+                                                    }}
+                                                </span>
                                             </button>
                                         </div>
                                     </div>
@@ -1824,7 +2562,7 @@ onBeforeUnmount(() => {
                                     <div
                                         v-for="item in favoriteItems.slice(0, 4)"
                                         :key="`fav-home-${item.id}`"
-                                        class="bg-white rounded-2xl overflow-hidden shadow-sm relative group md:cursor-pointer"
+                                        class="bg-white rounded-2xl overflow-hidden shadow-sm relative group transition-all duration-200 md:cursor-pointer md:hover:-translate-y-0.5 md:hover:shadow-md"
                                         @click="openDetails(item)"
                                     >
                                         <img :src="item.image" :alt="item.title" class="w-full h-32 md:h-40 object-cover group-hover:scale-105 transition-transform duration-300">
@@ -1848,6 +2586,80 @@ onBeforeUnmount(() => {
                                     <div class="mt-2 flex items-center justify-between text-sm">
                                         <span class="text-gray-500">{{ order.details }}</span>
                                         <strong class="text-gray-800">{{ formatMoney(order.total) }}</strong>
+                                    </div>
+
+                                    <div v-if="!isServicesMode && order.payment_is_pix" class="mt-3 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2.5 text-orange-900">
+                                        <p class="text-sm font-semibold">Cobrança Pix</p>
+                                        <p v-if="order.payment_pix_code" class="mt-1 break-all text-xs">
+                                            Código Pix: <span class="font-semibold">{{ order.payment_pix_code }}</span>
+                                        </p>
+                                        <div v-if="orderPaymentQrById[order.id]" class="mt-2 inline-flex rounded-lg border border-orange-200 bg-white p-2">
+                                            <img :src="orderPaymentQrById[order.id]" alt="QR Code Pix" class="h-28 w-28 rounded-md">
+                                        </div>
+                                        <p v-if="order.payment?.transaction_reference" class="mt-1 text-xs">
+                                            Referência: <span class="font-semibold">{{ order.payment.transaction_reference }}</span>
+                                        </p>
+                                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center gap-1 rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-100 disabled:opacity-60"
+                                                :disabled="!order.payment_pix_code"
+                                                @click="copyOrderPixCode(order.id, order.payment_pix_code)"
+                                            >
+                                                <Copy :size="12" />
+                                                {{ orderPixCodeCopiedById[order.id] ? 'Código copiado' : 'Copiar código Pix' }}
+                                            </button>
+                                            <a
+                                                v-if="order.payment_action_url"
+                                                :href="order.payment_action_url"
+                                                target="_blank"
+                                                rel="noopener"
+                                                class="inline-flex items-center rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-100"
+                                            >
+                                                Abrir cobrança Pix
+                                            </a>
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-100 disabled:opacity-60"
+                                                :disabled="orderPaymentRefreshLoadingById[order.id]"
+                                                @click="refreshOrderPayment(order.id)"
+                                            >
+                                                {{ orderPaymentRefreshLoadingById[order.id] ? 'Atualizando...' : 'Atualizar cobrança Pix' }}
+                                            </button>
+                                        </div>
+                                        <p v-if="orderPaymentRefreshErrorById[order.id]" class="mt-1 text-xs text-orange-700">
+                                            {{ orderPaymentRefreshErrorById[order.id] }}
+                                        </p>
+                                    </div>
+
+                                    <div v-else-if="!isServicesMode && order.payment_is_integrated" class="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-indigo-900">
+                                        <p class="text-sm font-semibold">Pagamento {{ order.payment_method_label }} pendente</p>
+                                        <p class="mt-1 text-xs">Finalize no ambiente seguro do Mercado Pago.</p>
+                                        <p v-if="order.payment?.transaction_reference" class="mt-1 text-xs break-all">
+                                            Referência: <span class="font-semibold">{{ order.payment.transaction_reference }}</span>
+                                        </p>
+                                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                                            <a
+                                                v-if="order.payment_action_url"
+                                                :href="order.payment_action_url"
+                                                target="_blank"
+                                                rel="noopener"
+                                                class="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
+                                            >
+                                                Finalizar pagamento
+                                            </a>
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 disabled:opacity-60"
+                                                :disabled="orderPaymentRefreshLoadingById[order.id]"
+                                                @click="refreshOrderPayment(order.id)"
+                                            >
+                                                {{ orderPaymentRefreshLoadingById[order.id] ? 'Atualizando...' : 'Atualizar status' }}
+                                            </button>
+                                        </div>
+                                        <p v-if="orderPaymentRefreshErrorById[order.id]" class="mt-1 text-xs text-indigo-700">
+                                            {{ orderPaymentRefreshErrorById[order.id] }}
+                                        </p>
                                     </div>
                                 </article>
                             </div>
@@ -1982,9 +2794,19 @@ onBeforeUnmount(() => {
                         <UserRound :size="16" class="mb-1" />
                         <span class="text-[10px] font-medium">Conta</span>
                     </button>
-                    <button class="flex flex-col items-center p-2 text-gray-400" @click="isCartOpen = true">
+                    <button
+                        class="relative flex flex-col items-center p-2 text-gray-400 transition-all duration-200"
+                        :class="cartAttention ? 'scale-110 text-emerald-700' : ''"
+                        @click="isCartOpen = true"
+                    >
                         <ShoppingCart :size="16" class="mb-1" />
                         <span class="text-[10px] font-medium">Carrinho</span>
+                        <span
+                            v-if="cartAttention"
+                            class="pointer-events-none absolute -right-1 top-0 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm"
+                        >
+                            +1
+                        </span>
                     </button>
                 </nav>
             </div>
@@ -1999,10 +2821,31 @@ onBeforeUnmount(() => {
             >
                 <div
                     v-if="cartToast.visible"
-                    class="pointer-events-none absolute left-1/2 top-4 z-[70] w-[92%] max-w-sm -translate-x-1/2 rounded-2xl border border-emerald-200 bg-white/95 px-4 py-3 shadow-xl backdrop-blur"
+                    class="pointer-events-none absolute bottom-20 left-1/2 z-[70] w-[92%] max-w-sm -translate-x-1/2 rounded-2xl border border-emerald-200 bg-white/95 px-4 py-3 shadow-xl backdrop-blur md:bottom-6"
                 >
                     <p class="text-sm font-semibold text-emerald-700">{{ cartToast.title }}</p>
                     <p class="mt-0.5 text-xs text-slate-600">{{ cartToast.description }}</p>
+                </div>
+            </transition>
+            <transition
+                enter-active-class="transition duration-250 ease-out"
+                enter-from-class="translate-y-2 opacity-0"
+                enter-to-class="translate-y-0 opacity-100"
+                leave-active-class="transition duration-180 ease-in"
+                leave-from-class="translate-y-0 opacity-100"
+                leave-to-class="translate-y-2 opacity-0"
+            >
+                <div
+                    v-if="alertToast.visible"
+                    class="pointer-events-none absolute bottom-36 left-1/2 z-[71] w-[94%] max-w-md -translate-x-1/2 rounded-2xl border px-4 py-3 shadow-xl backdrop-blur md:bottom-20"
+                    :class="{
+                        'border-slate-200 bg-white/95 text-slate-800': alertToast.tone === 'info',
+                        'border-emerald-200 bg-emerald-50/95 text-emerald-800': alertToast.tone === 'success',
+                        'border-amber-200 bg-amber-50/95 text-amber-900': alertToast.tone === 'warning',
+                        'border-rose-200 bg-rose-50/95 text-rose-800': alertToast.tone === 'error',
+                    }"
+                >
+                    <p class="text-sm font-semibold">{{ alertToast.message }}</p>
                 </div>
             </transition>
 
@@ -2208,6 +3051,24 @@ onBeforeUnmount(() => {
                     </div>
                     <div v-if="!isServicesMode" class="mb-4">
                         <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            Como deseja receber
+                            <UiSelect
+                                v-model="checkoutForm.delivery_mode"
+                                :options="deliveryModeOptions"
+                                button-class="mt-1"
+                                :disabled="!hasCheckoutDeliveryMode"
+                            />
+                        </label>
+                        <p v-if="!hasCheckoutDeliveryMode" class="mt-1 text-xs text-rose-700">
+                            A loja está sem checkout disponível no momento.
+                        </p>
+                        <p v-else-if="deliveryBlockedMessage" class="mt-1 text-xs text-amber-700">
+                            {{ deliveryBlockedMessage }}
+                        </p>
+                        <InputError :message="checkoutForm.errors.delivery_mode" />
+                    </div>
+                    <div v-if="!isServicesMode" class="mb-4">
+                        <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500">
                             Forma de pagamento
                             <UiSelect
                                 v-model="checkoutForm.payment_method_id"
@@ -2216,6 +3077,81 @@ onBeforeUnmount(() => {
                             />
                         </label>
                         <InputError :message="checkoutForm.errors.payment_method_id" />
+                    </div>
+                    <div v-if="!isServicesMode && checkoutHasPixPayload" class="mb-4 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2.5 text-orange-900">
+                        <p class="text-sm font-semibold">Pagamento Pix gerado</p>
+                        <p v-if="checkoutPixCode" class="mt-1 break-all text-xs">
+                            Código Pix: <span class="font-semibold">{{ checkoutPixCode }}</span>
+                        </p>
+                        <div v-if="checkoutPixQrImageSrc" class="mt-2 inline-flex rounded-lg border border-orange-200 bg-white p-2">
+                            <img :src="checkoutPixQrImageSrc" alt="QR Code Pix" class="h-28 w-28 rounded-md">
+                        </div>
+                        <p v-if="!checkoutHasVisiblePixData" class="mt-1 text-xs">
+                            Estamos buscando o QR Code da cobrança. Atualize em alguns segundos.
+                        </p>
+                        <p v-if="checkoutEffectivePayment?.transaction_reference" class="mt-1 break-all text-xs">
+                            Referência: <span class="font-semibold">{{ checkoutEffectivePayment.transaction_reference }}</span>
+                        </p>
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-1 rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-100 disabled:opacity-60"
+                                :disabled="!checkoutPixCode"
+                                @click="copyCheckoutPixCode()"
+                            >
+                                <Copy :size="12" />
+                                {{ checkoutPixCodeCopied ? 'Código copiado' : 'Copiar código Pix' }}
+                            </button>
+                            <a
+                                v-if="checkoutIntegratedActionUrl"
+                                :href="checkoutIntegratedActionUrl"
+                                target="_blank"
+                                rel="noopener"
+                                class="inline-flex items-center rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-100"
+                            >
+                                Abrir cobrança Pix
+                            </a>
+                            <button
+                                type="button"
+                                class="inline-flex items-center rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-100 disabled:opacity-60"
+                                :disabled="checkoutPixRefreshLoading"
+                                @click="refreshCheckoutPixPayment()"
+                            >
+                                {{ checkoutPixRefreshLoading ? 'Atualizando...' : 'Atualizar cobrança Pix' }}
+                            </button>
+                        </div>
+                        <p v-if="checkoutPixRefreshError" class="mt-1 text-xs text-orange-700">
+                            {{ checkoutPixRefreshError }}
+                        </p>
+                    </div>
+                    <div v-else-if="!isServicesMode && checkoutIsIntegratedPayload" class="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-indigo-900">
+                        <p class="text-sm font-semibold">Pagamento {{ checkoutIntegratedMethodLabel }} pendente</p>
+                        <p class="mt-1 text-xs">Finalize no ambiente seguro do Mercado Pago.</p>
+                        <p v-if="checkoutEffectivePayment?.transaction_reference" class="mt-1 break-all text-xs">
+                            Referência: <span class="font-semibold">{{ checkoutEffectivePayment.transaction_reference }}</span>
+                        </p>
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                            <a
+                                v-if="checkoutIntegratedActionUrl"
+                                :href="checkoutIntegratedActionUrl"
+                                target="_blank"
+                                rel="noopener"
+                                class="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
+                            >
+                                Finalizar pagamento
+                            </a>
+                            <button
+                                type="button"
+                                class="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 disabled:opacity-60"
+                                :disabled="checkoutPixRefreshLoading"
+                                @click="refreshCheckoutPixPayment()"
+                            >
+                                {{ checkoutPixRefreshLoading ? 'Atualizando...' : 'Atualizar status' }}
+                            </button>
+                        </div>
+                        <p v-if="checkoutPixRefreshError" class="mt-1 text-xs text-indigo-700">
+                            {{ checkoutPixRefreshError }}
+                        </p>
                     </div>
                     <div v-if="isServicesMode" class="mb-4 space-y-2">
                         <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -2256,7 +3192,7 @@ onBeforeUnmount(() => {
                         :style="{ backgroundColor: 'var(--idx-cart-button)' }"
                         :disabled="isServicesMode
                             ? bookingForm.processing || !cartEntries.length || !isSelectedBookingSlotValid
-                            : checkoutForm.processing || !cartEntries.length"
+                            : checkoutSubmitDisabled"
                         @click="isServicesMode ? submitQuickBooking() : submitQuickCheckout()"
                     >
                         {{
@@ -2341,3 +3277,4 @@ onBeforeUnmount(() => {
     }
 }
 </style>
+

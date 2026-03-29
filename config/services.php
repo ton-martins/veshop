@@ -45,4 +45,9 @@ return [
         'timeout' => (int) env('MERCADOPAGO_TIMEOUT', 15),
     ],
 
+    'ibge' => [
+        'base_url' => env('IBGE_BASE_URL', 'https://servicodados.ibge.gov.br'),
+        'timeout' => (int) env('IBGE_TIMEOUT', 10),
+    ],
+
 ];

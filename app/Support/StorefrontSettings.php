@@ -140,7 +140,7 @@ class StorefrontSettings
 
     /**
      * @param  array<int, mixed>|mixed  $raw
-     * @return array<int, array<string, string>>
+     * @return array<int, array<string, mixed>>
      */
     public static function normalizeBanners(mixed $raw, string $fallbackColor = '#073341'): array
     {
@@ -168,6 +168,7 @@ class StorefrontSettings
                 (string) ($item['background_color'] ?? ''),
                 $fallbackColor
             );
+            $useOriginalImageColors = (bool) ($item['use_original_image_colors'] ?? false);
 
             if ($title === '' && $subtitle === '' && $badge === '' && $imageUrl === '' && $ctaLabel === '' && $imagePath === '') {
                 continue;
@@ -181,6 +182,7 @@ class StorefrontSettings
                 'image_path' => $imagePath,
                 'cta_label' => $ctaLabel,
                 'background_color' => $backgroundColor,
+                'use_original_image_colors' => $useOriginalImageColors,
             ];
 
             if (count($items) >= 6) {

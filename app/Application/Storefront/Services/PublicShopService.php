@@ -6,6 +6,7 @@ use App\Http\Requests\Shop\StoreShopCheckoutRequest;
 use App\Models\Category;
 use App\Models\Client;
 use App\Models\Contractor;
+use App\Models\InventoryMovement;
 use App\Models\PaymentGateway;
 use App\Models\PaymentMethod;
 use App\Models\Product;
@@ -25,6 +26,7 @@ use App\Services\Payments\Exceptions\PaymentProviderException;
 use App\Services\Payments\PaymentProviderManager;
 use App\Support\PaymentFeeSnapshot;
 use App\Support\StorefrontSettings;
+use App\Support\BrazilData;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -45,9 +47,12 @@ use Inertia\Response;
 
 class PublicShopService
 {
+    private const CHECKOUT_RESERVATION_TIMEOUT_MINUTES = 5;
+
     public function show(string $slug): Response
     {
         $contractor = $this->resolveActiveContractorBySlug($slug);
+        $this->expireCheckoutReservations($contractor);
         $settings = is_array($contractor->settings) ? $contractor->settings : [];
         $storefront = StorefrontSettings::normalize($contractor, $settings['shop_storefront'] ?? []);
 
@@ -320,6 +325,7 @@ class PublicShopService
     public function checkout(StoreShopCheckoutRequest $request, string $slug): RedirectResponse
     {
         $contractor = $this->resolveActiveContractorBySlug($slug);
+        $this->expireCheckoutReservations($contractor);
         $storeAvailability = $this->resolveStoreAvailabilityPayload($contractor);
         $data = $request->validated();
         $shopCustomer = $this->resolveCurrentShopCustomerForContractor($contractor);
@@ -343,7 +349,10 @@ class PublicShopService
             ]);
         }
 
-        if (! $shopCustomer->hasRequiredAddressForCheckout()) {
+        $requiresDeliveryAddress = ($contractor->niche() === Contractor::NICHE_COMMERCIAL)
+            && (string) ($data['delivery_mode'] ?? Sale::SHIPPING_MODE_PICKUP) === Sale::SHIPPING_MODE_DELIVERY;
+
+        if ($requiresDeliveryAddress && ! $shopCustomer->hasRequiredAddressForCheckout()) {
             throw ValidationException::withMessages([
                 'order' => 'Complete seu endereço (CEP, logradouro, bairro, cidade e UF) em Minha conta para finalizar o pedido.',
             ]);
@@ -544,6 +553,7 @@ class PublicShopService
                     $subtotal += $lineTotal;
 
                     $preparedLines[] = [
+                        'line_key' => $this->resolveSaleLineKey($safeProductId, $safeVariationId),
                         'product' => $product,
                         'variation' => $variation,
                         'description' => $description,
@@ -554,6 +564,7 @@ class PublicShopService
                     ];
                 }
 
+                $reservationExpiresAt = now()->addMinutes(self::CHECKOUT_RESERVATION_TIMEOUT_MINUTES);
                 $shippingQuote = $this->resolveShippingQuote($contractor, $data, $subtotal);
                 $shippingAmount = (float) $shippingQuote['amount'];
                 $baseAmount = round($subtotal + $shippingAmount, 2);
@@ -599,7 +610,7 @@ class PublicShopService
                     'code' => $this->generateCatalogOrderCode($contractor),
                     'checkout_idempotency_key' => $idempotencyKey,
                     'source' => Sale::SOURCE_CATALOG,
-                    'status' => Sale::STATUS_PENDING_CONFIRMATION,
+                    'status' => $usesIntegratedGateway ? Sale::STATUS_AWAITING_PAYMENT : Sale::STATUS_PENDING_CONFIRMATION,
                     'subtotal_amount' => $subtotal,
                     'discount_amount' => 0,
                     'surcharge_amount' => $surchargeAmount,
@@ -621,6 +632,12 @@ class PublicShopService
                         'shipping_mode' => $shippingQuote['mode'],
                         'shipping_label' => $shippingQuote['label'],
                         'shipping_amount' => $shippingAmount,
+                        'stock_reduced' => true,
+                        'stock_reduced_at' => now()->toIso8601String(),
+                        'stock_restored' => false,
+                        'stock_reservation' => true,
+                        'stock_reservation_expires_at' => $reservationExpiresAt->toIso8601String(),
+                        'stock_reservation_timeout_minutes' => self::CHECKOUT_RESERVATION_TIMEOUT_MINUTES,
                         'payment_method_snapshot' => $paymentFeeSnapshot,
                         'charges' => [
                             'subtotal_amount' => round($subtotal, 2),
@@ -635,13 +652,14 @@ class PublicShopService
                     ],
                 ]);
 
+                $saleItemsByLineKey = [];
                 foreach ($preparedLines as $line) {
                     /** @var Product $product */
                     $product = $line['product'];
                     /** @var ProductVariation|null $variation */
                     $variation = $line['variation'];
 
-                    SaleItem::query()->create([
+                    $saleItem = SaleItem::query()->create([
                         'contractor_id' => $contractor->id,
                         'sale_id' => $sale->id,
                         'product_id' => $product->id,
@@ -661,7 +679,12 @@ class PublicShopService
                             'variation_attributes' => is_array($variation->attributes) ? $variation->attributes : [],
                         ] : null,
                     ]);
+
+                    $lineKey = (string) ($line['line_key'] ?? $this->resolveSaleLineKey((int) $product->id, $variation?->id ? (int) $variation->id : null));
+                    $saleItemsByLineKey[$lineKey] = $saleItem;
                 }
+
+                $this->reserveCheckoutStock($contractor, $sale, $preparedLines, $saleItemsByLineKey);
 
                 if ($paymentMethod) {
                     $salePayment = SalePayment::query()->create([
@@ -734,6 +757,7 @@ class PublicShopService
     public function checkoutPaymentStatus(Request $request, string $slug, int $sale): JsonResponse
     {
         $contractor = $this->resolveActiveContractorBySlug($slug);
+        $this->expireCheckoutReservations($contractor, $sale);
         $shopCustomer = $this->resolveCurrentShopCustomerForContractor($contractor);
 
         if (! $shopCustomer) {
@@ -1182,16 +1206,150 @@ class PublicShopService
 
         $pickupEnabled = (bool) ($shipping['pickup_enabled'] ?? true);
         $deliveryEnabled = (bool) ($shipping['delivery_enabled'] ?? true);
-        $fixedFee = max(0, round((float) ($shipping['fixed_fee'] ?? 0), 2));
-        $freeOver = max(0, round((float) ($shipping['free_over'] ?? 0), 2));
         $estimateDays = (int) ($shipping['estimated_days'] ?? 2);
+        if ($estimateDays < 1) {
+            $estimateDays = 2;
+        }
+
+        $nationwideEnabled = (bool) ($shipping['nationwide_enabled'] ?? false);
+        $nationwideFee = max(0, round((float) ($shipping['nationwide_fee'] ?? ($shipping['fixed_fee'] ?? 0)), 2));
+        $nationwideFreeOver = max(0, round((float) ($shipping['nationwide_free_over'] ?? ($shipping['free_over'] ?? 0)), 2));
+
+        $stateRates = is_array($shipping['state_rates'] ?? null) ? $shipping['state_rates'] : [];
+        $normalizedStateRatesByState = collect($stateRates)
+            ->filter(static fn (mixed $row): bool => is_array($row))
+            ->map(static function (array $row): ?array {
+                $state = strtoupper(trim((string) ($row['state'] ?? '')));
+                if (! in_array($state, BrazilData::STATE_CODES, true)) {
+                    return null;
+                }
+
+                return [
+                    'state' => $state,
+                    'fee' => isset($row['fee']) && $row['fee'] !== ''
+                        ? max(0, round((float) $row['fee'], 2))
+                        : 0.0,
+                    'free_over' => isset($row['free_over']) && $row['free_over'] !== ''
+                        ? max(0, round((float) $row['free_over'], 2))
+                        : 0.0,
+                    'active' => (bool) ($row['active'] ?? false),
+                ];
+            })
+            ->filter()
+            ->keyBy(static fn (array $row): string => $row['state']);
+
+        $normalizedStateRates = collect(BrazilData::STATE_CODES)
+            ->map(static function (string $stateCode) use ($normalizedStateRatesByState): array {
+                /** @var array{state:string,fee:float,free_over:float,active:bool}|null $row */
+                $row = $normalizedStateRatesByState->get($stateCode);
+
+                return [
+                    'state' => $stateCode,
+                    'fee' => max(0, round((float) ($row['fee'] ?? 0), 2)),
+                    'free_over' => max(0, round((float) ($row['free_over'] ?? 0), 2)),
+                    'active' => (bool) ($row['active'] ?? false),
+                ];
+            })
+            ->values()
+            ->all();
+
+        if (! collect($normalizedStateRates)->contains(static fn (array $row): bool => (bool) ($row['active'] ?? false))) {
+            $legacyStatewideEnabled = (bool) ($shipping['statewide_enabled'] ?? false);
+            $legacyStatewideState = strtoupper(trim((string) ($shipping['statewide_state'] ?? '')));
+            $legacyStatewideFee = max(0, round((float) ($shipping['statewide_fee'] ?? 0), 2));
+            $legacyStatewideFreeOver = max(0, round((float) ($shipping['statewide_free_over'] ?? 0), 2));
+
+            if ($legacyStatewideEnabled && in_array($legacyStatewideState, BrazilData::STATE_CODES, true)) {
+                $normalizedStateRates = array_map(
+                    static function (array $row) use ($legacyStatewideState, $legacyStatewideFee, $legacyStatewideFreeOver): array {
+                        if (($row['state'] ?? '') !== $legacyStatewideState) {
+                            return $row;
+                        }
+
+                        $row['active'] = true;
+                        $row['fee'] = $legacyStatewideFee;
+                        $row['free_over'] = $legacyStatewideFreeOver;
+
+                        return $row;
+                    },
+                    $normalizedStateRates
+                );
+            }
+        }
+
+        $primaryActiveStateRate = collect($normalizedStateRates)
+            ->first(static fn (array $row): bool => (bool) ($row['active'] ?? false));
+        $statewideEnabled = is_array($primaryActiveStateRate);
+        $statewideState = $statewideEnabled
+            ? strtoupper(trim((string) ($primaryActiveStateRate['state'] ?? '')))
+            : '';
+        $statewideFee = $statewideEnabled
+            ? max(0, round((float) ($primaryActiveStateRate['fee'] ?? 0), 2))
+            : 0.0;
+        $statewideFreeOver = $statewideEnabled
+            ? max(0, round((float) ($primaryActiveStateRate['free_over'] ?? 0), 2))
+            : 0.0;
+
+        $cityRates = is_array($shipping['city_rates'] ?? null) ? $shipping['city_rates'] : [];
+
+        $normalizedCityRates = collect($cityRates)
+            ->filter(static fn (mixed $row): bool => is_array($row))
+            ->map(function (array $row) use ($estimateDays): ?array {
+                $city = trim((string) ($row['city'] ?? ''));
+                if ($city === '') {
+                    return null;
+                }
+
+                $state = strtoupper(trim((string) ($row['state'] ?? '')));
+                if (preg_match('/^[A-Z]{2}$/', $state) !== 1) {
+                    return null;
+                }
+
+                $isFree = (bool) ($row['is_free'] ?? false);
+                $fee = isset($row['fee']) && $row['fee'] !== ''
+                    ? max(0, round((float) $row['fee'], 2))
+                    : 0.0;
+                $cityFreeOver = isset($row['free_over']) && $row['free_over'] !== ''
+                    ? max(0, round((float) $row['free_over'], 2))
+                    : 0.0;
+                $cityEstimateDays = isset($row['estimated_days']) && (int) $row['estimated_days'] > 0
+                    ? (int) $row['estimated_days']
+                    : $estimateDays;
+                $isActive = ! array_key_exists('active', $row) || (bool) $row['active'];
+
+                return [
+                    'city' => $city,
+                    'city_key' => $this->normalizeShippingCityKey($city),
+                    'state' => $state,
+                    'fee' => $isFree ? 0.0 : $fee,
+                    'free_over' => $isFree ? 0.0 : $cityFreeOver,
+                    'estimated_days' => $cityEstimateDays > 0 ? $cityEstimateDays : null,
+                    'active' => $isActive,
+                    'is_free' => $isFree,
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        $hasDeliveryCoverage = $nationwideEnabled
+            || collect($normalizedStateRates)->contains(static fn (array $row): bool => (bool) ($row['active'] ?? false))
+            || collect($normalizedCityRates)->contains(static fn (array $row): bool => (bool) ($row['active'] ?? true));
 
         return [
             'pickup_enabled' => $pickupEnabled,
             'delivery_enabled' => $deliveryEnabled,
-            'fixed_fee' => $fixedFee,
-            'free_over' => $freeOver,
+            'delivery_coverage_enabled' => $hasDeliveryCoverage,
+            'nationwide_enabled' => $nationwideEnabled,
+            'nationwide_fee' => $nationwideFee,
+            'nationwide_free_over' => $nationwideFreeOver,
+            'state_rates' => $normalizedStateRates,
+            'statewide_enabled' => $statewideEnabled,
+            'statewide_state' => $statewideState,
+            'statewide_fee' => $statewideFee,
+            'statewide_free_over' => $statewideFreeOver,
             'estimated_days' => $estimateDays > 0 ? $estimateDays : null,
+            'city_rates' => $normalizedCityRates,
         ];
     }
 
@@ -1268,10 +1426,25 @@ class PublicShopService
                 : 'Loja fechada no momento.';
         }
 
+        $shippingConfig = $this->resolveShippingConfigPayload($contractor);
+        $hasCheckoutModeAvailable = $contractor->niche() !== Contractor::NICHE_COMMERCIAL
+            || (bool) ($shippingConfig['pickup_enabled'] ?? false)
+            || (
+                (bool) ($shippingConfig['delivery_enabled'] ?? false)
+                && (bool) ($shippingConfig['delivery_coverage_enabled'] ?? false)
+            );
+
+        $canCheckout = $storeOnline && $isOpenNow && $hasCheckoutModeAvailable;
+
+        if ($storeOnline && $isOpenNow && ! $hasCheckoutModeAvailable) {
+            $statusLabel = 'Checkout indisponível';
+            $message = 'A loja está sem checkout disponível no momento.';
+        }
+
         return [
             'store_online' => $storeOnline,
             'is_open_now' => $isOpenNow,
-            'can_checkout' => $storeOnline && $isOpenNow,
+            'can_checkout' => $canCheckout,
             'can_book' => $storeOnline,
             'message' => $message,
             'status_label' => $statusLabel,
@@ -1538,19 +1711,40 @@ class PublicShopService
     {
         $config = $this->resolveShippingConfigPayload($contractor);
         $mode = (string) ($data['delivery_mode'] ?? Sale::SHIPPING_MODE_PICKUP);
+        $deliveryEnabled = (bool) ($config['delivery_enabled'] ?? false);
+        $pickupEnabled = (bool) ($config['pickup_enabled'] ?? false);
+
+        if (! $deliveryEnabled && ! $pickupEnabled) {
+            throw ValidationException::withMessages([
+                'delivery_mode' => 'A loja está sem checkout disponível no momento.',
+            ]);
+        }
 
         if ($mode === Sale::SHIPPING_MODE_DELIVERY) {
-            if (! (bool) ($config['delivery_enabled'] ?? true)) {
+            if (! $deliveryEnabled) {
                 throw ValidationException::withMessages([
                     'delivery_mode' => 'Entrega indisponível para esta loja no momento.',
                 ]);
             }
 
-            $fixedFee = (float) ($config['fixed_fee'] ?? 0);
-            $freeOver = (float) ($config['free_over'] ?? 0);
+            $shippingCity = trim((string) ($data['shipping_city'] ?? ''));
+            $shippingState = strtoupper(trim((string) ($data['shipping_state'] ?? '')));
+            $deliveryRule = $this->resolveDeliveryRule($config, $shippingCity, $shippingState);
+            if (! is_array($deliveryRule)) {
+                throw ValidationException::withMessages([
+                    'delivery_mode' => 'Entrega indisponível para a cidade informada.',
+                ]);
+            }
 
-            $amount = $fixedFee;
-            if ($freeOver > 0 && $subtotal >= $freeOver) {
+            $fixedFee = max(0, round((float) ($deliveryRule['fee'] ?? 0), 2));
+            $freeOver = max(0, round((float) ($deliveryRule['free_over'] ?? 0), 2));
+            $estimateDays = isset($deliveryRule['estimated_days'])
+                ? (int) ($deliveryRule['estimated_days'] ?? 0)
+                : (int) ($config['estimated_days'] ?? 0);
+            $alwaysFree = (bool) ($deliveryRule['always_free'] ?? false);
+
+            $amount = $alwaysFree ? 0.0 : $fixedFee;
+            if (! $alwaysFree && $freeOver > 0 && $subtotal >= $freeOver) {
                 $amount = 0;
             }
 
@@ -1558,7 +1752,7 @@ class PublicShopService
                 'mode' => Sale::SHIPPING_MODE_DELIVERY,
                 'label' => 'Entrega',
                 'amount' => round(max(0, $amount), 2),
-                'estimate_days' => isset($config['estimated_days']) ? (int) $config['estimated_days'] : null,
+                'estimate_days' => $estimateDays > 0 ? $estimateDays : null,
                 'address' => [
                     'postal_code' => trim((string) ($data['shipping_postal_code'] ?? '')),
                     'street' => trim((string) ($data['shipping_street'] ?? '')),
@@ -1571,7 +1765,7 @@ class PublicShopService
             ];
         }
 
-        if (! (bool) ($config['pickup_enabled'] ?? true)) {
+        if (! $pickupEnabled) {
             throw ValidationException::withMessages([
                 'delivery_mode' => 'Retirada indisponível para esta loja no momento.',
             ]);
@@ -1584,6 +1778,102 @@ class PublicShopService
             'estimate_days' => null,
             'address' => null,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array{fee: float, free_over: float, estimated_days: int|null, always_free: bool}|null
+     */
+    private function resolveDeliveryRule(array $config, string $city, string $state): ?array
+    {
+        $estimatedDays = isset($config['estimated_days']) ? (int) $config['estimated_days'] : null;
+        $stateKey = strtoupper(trim($state));
+
+        if ((bool) ($config['nationwide_enabled'] ?? false)) {
+            $freeOver = max(0, round((float) ($config['nationwide_free_over'] ?? 0), 2));
+            $fee = max(0, round((float) ($config['nationwide_fee'] ?? 0), 2));
+
+            return [
+                'fee' => $fee,
+                'free_over' => $freeOver,
+                'estimated_days' => $estimatedDays,
+                'always_free' => $freeOver <= 0,
+            ];
+        }
+
+        $activeStateRates = collect($config['state_rates'] ?? [])
+            ->filter(static fn (mixed $row): bool => is_array($row) && (bool) ($row['active'] ?? false));
+
+        if ($activeStateRates->isNotEmpty()) {
+            if ($stateKey === '') {
+                return null;
+            }
+
+            $matchedStateRate = $activeStateRates
+                ->first(static fn (array $row): bool => strtoupper(trim((string) ($row['state'] ?? ''))) === $stateKey);
+
+            if (! is_array($matchedStateRate)) {
+                return null;
+            }
+
+            $freeOver = max(0, round((float) ($matchedStateRate['free_over'] ?? 0), 2));
+            $fee = max(0, round((float) ($matchedStateRate['fee'] ?? 0), 2));
+
+            return [
+                'fee' => $fee,
+                'free_over' => $freeOver,
+                'estimated_days' => $estimatedDays,
+                'always_free' => $freeOver <= 0,
+            ];
+        }
+
+        $cityKey = $this->normalizeShippingCityKey($city);
+        if ($cityKey === '') {
+            return null;
+        }
+
+        $cityRates = collect($config['city_rates'] ?? [])
+            ->filter(static fn (mixed $row): bool => is_array($row) && (bool) ($row['active'] ?? true));
+
+        if ($cityRates->isEmpty()) {
+            return null;
+        }
+
+        $exact = $cityRates->first(static function (array $row) use ($cityKey, $stateKey): bool {
+            $rowCity = trim((string) ($row['city_key'] ?? ''));
+            $rowState = strtoupper(trim((string) ($row['state'] ?? '')));
+            return $rowCity === $cityKey && $rowState !== '' && $rowState === $stateKey;
+        });
+        if (! is_array($exact)) {
+            return null;
+        }
+
+        $isFree = (bool) ($exact['is_free'] ?? false);
+        $freeOver = $isFree
+            ? 0.0
+            : max(0, round((float) ($exact['free_over'] ?? 0), 2));
+        $fee = $isFree
+            ? 0.0
+            : max(0, round((float) ($exact['fee'] ?? 0), 2));
+        $cityEstimatedDays = isset($exact['estimated_days']) && (int) $exact['estimated_days'] > 0
+            ? (int) $exact['estimated_days']
+            : $estimatedDays;
+
+        return [
+            'fee' => $fee,
+            'free_over' => $freeOver,
+            'estimated_days' => $cityEstimatedDays,
+            'always_free' => $isFree,
+        ];
+    }
+
+    private function normalizeShippingCityKey(string $city): string
+    {
+        $normalized = Str::ascii(mb_strtolower(trim($city)));
+        $normalized = preg_replace('/[^a-z0-9\s-]+/', ' ', $normalized) ?? '';
+        $normalized = preg_replace('/\s+/', ' ', $normalized) ?? '';
+
+        return trim($normalized);
     }
 
     /**
@@ -2008,6 +2298,12 @@ class PublicShopService
         if (! is_array($saleIntent)) {
             $saleIntent = [];
         }
+        $reservationExpiresAt = $this->resolveReservationExpiresAtIso8601($sale);
+        $reservationExpired = (bool) ($saleMetadata['stock_reservation_expired'] ?? false);
+        $reservationTimeoutMinutes = max(
+            1,
+            (int) ($saleMetadata['stock_reservation_timeout_minutes'] ?? self::CHECKOUT_RESERVATION_TIMEOUT_MINUTES)
+        );
 
         $transactionReference = trim((string) ($salePayment->transaction_reference
             ?? ($paymentIntent['transaction_reference'] ?? ($saleIntent['transaction_reference'] ?? ''))));
@@ -2041,6 +2337,9 @@ class PublicShopService
             'qr_code' => $qrCode,
             'qr_code_base64' => $qrCodeBase64,
             'expires_at' => $expiresAt,
+            'reservation_expires_at' => $reservationExpiresAt,
+            'reservation_expired' => $reservationExpired,
+            'reservation_timeout_minutes' => $reservationTimeoutMinutes,
         ];
 
         $payload['is_pix'] = $this->isPixPaymentPayload([
@@ -2063,6 +2362,381 @@ class PublicShopService
         ]);
 
         return $payload;
+    }
+
+    private function resolveSaleLineKey(int $productId, ?int $variationId = null): string
+    {
+        $safeProductId = max(0, $productId);
+        $safeVariationId = $variationId !== null && $variationId > 0 ? $variationId : 0;
+
+        return "{$safeProductId}|{$safeVariationId}";
+    }
+
+    private function resolveCheckoutReservationExpiresAt(Sale $sale): Carbon
+    {
+        $metadata = is_array($sale->metadata) ? $sale->metadata : [];
+        $expiresAt = $this->parseDateTimeValue($metadata['stock_reservation_expires_at'] ?? null);
+
+        return $expiresAt ?? now()->addMinutes(self::CHECKOUT_RESERVATION_TIMEOUT_MINUTES);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $preparedLines
+     * @param  array<string, SaleItem>  $saleItemsByLineKey
+     */
+    private function reserveCheckoutStock(
+        Contractor $contractor,
+        Sale $sale,
+        array $preparedLines,
+        array $saleItemsByLineKey
+    ): void {
+        $lineCollection = collect($preparedLines);
+        $productIds = $lineCollection
+            ->map(static fn (array $line): int => (int) (($line['product'] instanceof Product) ? $line['product']->id : 0))
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+        $variationIds = $lineCollection
+            ->map(static fn (array $line): int => (int) (($line['variation'] instanceof ProductVariation) ? $line['variation']->id : 0))
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+
+        $products = Product::query()
+            ->where('contractor_id', $contractor->id)
+            ->whereIn('id', $productIds->all())
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+
+        if ($products->count() !== $productIds->count()) {
+            throw ValidationException::withMessages([
+                'items' => 'Nao foi possivel reservar o estoque para este pedido.',
+            ]);
+        }
+
+        $variationsById = collect();
+        if ($variationIds->isNotEmpty()) {
+            $variationsById = ProductVariation::query()
+                ->where('contractor_id', $contractor->id)
+                ->whereIn('id', $variationIds->all())
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+        }
+
+        foreach ($preparedLines as $line) {
+            /** @var Product $lineProduct */
+            $lineProduct = $line['product'];
+            /** @var ProductVariation|null $lineVariation */
+            $lineVariation = $line['variation'] instanceof ProductVariation ? $line['variation'] : null;
+            $quantity = max(1, (int) ($line['quantity'] ?? 1));
+            $lineKey = (string) ($line['line_key'] ?? $this->resolveSaleLineKey((int) $lineProduct->id, $lineVariation?->id ? (int) $lineVariation->id : null));
+            $saleItemId = isset($saleItemsByLineKey[$lineKey]) ? (int) $saleItemsByLineKey[$lineKey]->id : null;
+
+            /** @var Product|null $product */
+            $product = $products->get((int) $lineProduct->id);
+            if (! $product) {
+                throw ValidationException::withMessages([
+                    'items' => 'Nao foi possivel reservar o estoque do produto selecionado.',
+                ]);
+            }
+
+            if ((int) $product->stock_quantity < $quantity) {
+                throw ValidationException::withMessages([
+                    'items' => "Estoque insuficiente para o produto {$product->name}.",
+                ]);
+            }
+
+            $movementBalanceBefore = (int) $product->stock_quantity;
+            $movementBalanceAfter = max(0, $movementBalanceBefore - $quantity);
+            $movementUnitCost = (float) $product->cost_price;
+
+            $variation = null;
+            if ($lineVariation) {
+                /** @var ProductVariation|null $variation */
+                $variation = $variationsById->get((int) $lineVariation->id);
+                if (! $variation || (int) $variation->product_id !== (int) $product->id) {
+                    throw ValidationException::withMessages([
+                        'items' => "Variacao invalida para o produto {$product->name}.",
+                    ]);
+                }
+
+                if ((int) $variation->stock_quantity < $quantity) {
+                    throw ValidationException::withMessages([
+                        'items' => "Estoque insuficiente para a variacao {$variation->name}.",
+                    ]);
+                }
+
+                $variationBalanceBefore = (int) $variation->stock_quantity;
+                $variationBalanceAfter = max(0, $variationBalanceBefore - $quantity);
+                $variation->stock_quantity = $variationBalanceAfter;
+                $variation->save();
+
+                $movementBalanceBefore = $variationBalanceBefore;
+                $movementBalanceAfter = $variationBalanceAfter;
+                $movementUnitCost = (float) ($variation->cost_price ?? $product->cost_price);
+            }
+
+            $productBalanceBefore = (int) $product->stock_quantity;
+            $productBalanceAfter = max(0, $productBalanceBefore - $quantity);
+            $product->stock_quantity = $productBalanceAfter;
+            $product->save();
+
+            InventoryMovement::query()->create([
+                'contractor_id' => $contractor->id,
+                'product_id' => $product->id,
+                'product_variation_id' => $variation?->id,
+                'sale_item_id' => $saleItemId,
+                'user_id' => null,
+                'type' => InventoryMovement::TYPE_OUT,
+                'quantity' => $quantity,
+                'balance_before' => $movementBalanceBefore,
+                'balance_after' => $movementBalanceAfter,
+                'unit_cost' => $movementUnitCost,
+                'reason' => $variation
+                    ? "Reserva automatica do pedido {$sale->code} - variacao {$variation->name}"
+                    : "Reserva automatica do pedido {$sale->code}",
+                'reference_type' => Sale::class,
+                'reference_id' => $sale->id,
+                'occurred_at' => now(),
+                'metadata' => [
+                    'product_balance_before' => $productBalanceBefore,
+                    'product_balance_after' => $productBalanceAfter,
+                    'movement_context' => 'checkout_reservation',
+                ],
+            ]);
+        }
+    }
+
+    private function expireCheckoutReservations(Contractor $contractor, ?int $saleId = null): void
+    {
+        $candidateIds = Sale::query()
+            ->where('contractor_id', $contractor->id)
+            ->whereIn('source', [Sale::SOURCE_CATALOG, Sale::SOURCE_ORDER])
+            ->whereIn('status', [
+                Sale::STATUS_NEW,
+                Sale::STATUS_PENDING_CONFIRMATION,
+                Sale::STATUS_CONFIRMED,
+                Sale::STATUS_AWAITING_PAYMENT,
+                Sale::STATUS_CANCELLED,
+                Sale::STATUS_REJECTED,
+            ])
+            ->when($saleId !== null && $saleId > 0, static fn ($query) => $query->where('id', $saleId))
+            ->orderBy('id')
+            ->limit($saleId !== null && $saleId > 0 ? 1 : 120)
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->values();
+
+        foreach ($candidateIds as $candidateId) {
+            $expiredSaleId = null;
+
+            DB::transaction(function () use ($contractor, $candidateId, &$expiredSaleId): void {
+                $sale = Sale::query()
+                    ->where('contractor_id', $contractor->id)
+                    ->where('id', $candidateId)
+                    ->whereIn('source', [Sale::SOURCE_CATALOG, Sale::SOURCE_ORDER])
+                    ->with([
+                        'items:id,sale_id,product_id,product_variation_id,quantity',
+                        'payments:id,sale_id,status',
+                    ])
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $sale) {
+                    return;
+                }
+
+                $metadata = is_array($sale->metadata) ? $sale->metadata : [];
+                $stockReduced = (bool) ($metadata['stock_reduced'] ?? false);
+                $stockRestored = (bool) ($metadata['stock_restored'] ?? false);
+                if (! $stockReduced || $stockRestored) {
+                    return;
+                }
+
+                $expiresAt = $this->parseDateTimeValue($metadata['stock_reservation_expires_at'] ?? null);
+                if (! $expiresAt || $expiresAt->isFuture()) {
+                    return;
+                }
+
+                if (in_array((string) $sale->status, [Sale::STATUS_PAID, Sale::STATUS_COMPLETED, Sale::STATUS_REFUNDED], true)) {
+                    return;
+                }
+
+                $hasPaidPayment = $sale->payments->contains(static fn (SalePayment $payment): bool => $payment->status === SalePayment::STATUS_PAID);
+                if ($hasPaidPayment) {
+                    return;
+                }
+
+                $this->restoreCheckoutReservationStock($contractor, $sale);
+
+                foreach ($sale->payments as $payment) {
+                    if (! in_array((string) $payment->status, [SalePayment::STATUS_PENDING, SalePayment::STATUS_AUTHORIZED], true)) {
+                        continue;
+                    }
+
+                    $payment->status = SalePayment::STATUS_CANCELLED;
+                    $payment->save();
+                }
+
+                $metadata['stock_restored'] = true;
+                $metadata['stock_restored_at'] = now()->toIso8601String();
+                $metadata['stock_reservation_expired'] = true;
+                $metadata['stock_reservation_expired_at'] = now()->toIso8601String();
+                $metadata['stock_reservation_expired_reason'] = 'payment_timeout';
+
+                $sale->fill([
+                    'status' => Sale::STATUS_CANCELLED,
+                    'cancelled_at' => $sale->cancelled_at ?? now(),
+                    'metadata' => $metadata,
+                ])->save();
+
+                $expiredSaleId = (int) $sale->id;
+            });
+
+            if ($expiredSaleId) {
+                $expiredSale = Sale::query()->find($expiredSaleId);
+                if ($expiredSale) {
+                    app(OrderNotificationService::class)->notifyOrderStatusChanged($expiredSale);
+                }
+            }
+        }
+    }
+
+    private function restoreCheckoutReservationStock(Contractor $contractor, Sale $sale): void
+    {
+        if (! $sale->relationLoaded('items')) {
+            $sale->load('items:id,sale_id,product_id,product_variation_id,quantity');
+        }
+
+        $productIds = $sale->items
+            ->pluck('product_id')
+            ->map(static fn (mixed $value): int => (int) $value)
+            ->filter(static fn (int $value): bool => $value > 0)
+            ->unique()
+            ->values();
+        $variationIds = $sale->items
+            ->pluck('product_variation_id')
+            ->map(static fn (mixed $value): int => (int) $value)
+            ->filter(static fn (int $value): bool => $value > 0)
+            ->unique()
+            ->values();
+
+        $products = Product::query()
+            ->where('contractor_id', $contractor->id)
+            ->whereIn('id', $productIds->all())
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+
+        $variationsById = collect();
+        if ($variationIds->isNotEmpty()) {
+            $variationsById = ProductVariation::withTrashed()
+                ->where('contractor_id', $contractor->id)
+                ->whereIn('id', $variationIds->all())
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+        }
+
+        foreach ($sale->items as $item) {
+            /** @var Product|null $product */
+            $product = $products->get((int) $item->product_id);
+            if (! $product) {
+                continue;
+            }
+
+            $variationId = $item->product_variation_id ? (int) $item->product_variation_id : null;
+            /** @var ProductVariation|null $variation */
+            $variation = $variationId !== null
+                ? $variationsById->get($variationId)
+                : null;
+
+            $quantity = max(1, (int) $item->quantity);
+            $movementBalanceBefore = (int) $product->stock_quantity;
+            $movementBalanceAfter = $movementBalanceBefore + $quantity;
+            $movementUnitCost = (float) $product->cost_price;
+
+            if ($variation) {
+                $variationBalanceBefore = (int) $variation->stock_quantity;
+                $variationBalanceAfter = $variationBalanceBefore + $quantity;
+                $variation->stock_quantity = $variationBalanceAfter;
+                $variation->save();
+
+                $movementBalanceBefore = $variationBalanceBefore;
+                $movementBalanceAfter = $variationBalanceAfter;
+                $movementUnitCost = (float) ($variation->cost_price ?? $product->cost_price);
+            }
+
+            $productBalanceBefore = (int) $product->stock_quantity;
+            $productBalanceAfter = $productBalanceBefore + $quantity;
+            $product->stock_quantity = $productBalanceAfter;
+            $product->save();
+
+            InventoryMovement::query()->create([
+                'contractor_id' => $contractor->id,
+                'product_id' => $product->id,
+                'product_variation_id' => $variation?->id,
+                'sale_item_id' => (int) $item->id,
+                'user_id' => null,
+                'type' => InventoryMovement::TYPE_RETURN,
+                'quantity' => $quantity,
+                'balance_before' => $movementBalanceBefore,
+                'balance_after' => $movementBalanceAfter,
+                'unit_cost' => $movementUnitCost,
+                'reason' => $variation
+                    ? "Expiracao automatica do pedido {$sale->code} - variacao {$variation->name}"
+                    : "Expiracao automatica do pedido {$sale->code}",
+                'reference_type' => Sale::class,
+                'reference_id' => $sale->id,
+                'occurred_at' => now(),
+                'metadata' => [
+                    'product_balance_before' => $productBalanceBefore,
+                    'product_balance_after' => $productBalanceAfter,
+                    'movement_context' => 'checkout_timeout',
+                ],
+            ]);
+        }
+    }
+
+    private function parseDateTimeValue(mixed $value): ?Carbon
+    {
+        if ($value instanceof Carbon) {
+            return $value->copy();
+        }
+
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($raw);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function resolveReservationExpiresAtIso8601(Sale $sale): ?string
+    {
+        $metadata = is_array($sale->metadata) ? $sale->metadata : [];
+        $expiresAt = $this->parseDateTimeValue($metadata['stock_reservation_expires_at'] ?? null);
+
+        return $expiresAt?->toIso8601String();
+    }
+
+    private function firstNonEmptyString(mixed ...$values): string
+    {
+        foreach ($values as $value) {
+            $safe = trim((string) $value);
+            if ($safe !== '') {
+                return $safe;
+            }
+        }
+
+        return '';
     }
 
     private function resolveCurrentShopCustomerForContractor(Contractor $contractor): ?ShopCustomer
@@ -2230,7 +2904,7 @@ class PublicShopService
                     'item_category_id' => $itemCategoryId,
                     'store_name' => trim((string) ($contractor->brand_name ?: $contractor->name)),
                     'description' => 'Pedido '.$sale->code,
-                    'expires_at' => now()->addMinutes(30),
+                    'expires_at' => $this->resolveCheckoutReservationExpiresAt($sale),
                     'max_installments' => (bool) $paymentMethod->allows_installments
                         ? max(1, (int) ($paymentMethod->max_installments ?? 1))
                         : 1,
@@ -2396,41 +3070,108 @@ class PublicShopService
      */
     private function applyCheckoutPaymentIntentResult(Sale $sale, SalePayment $salePayment, array $intent): void
     {
-        $paymentStatus = $this->mapProviderStatusToSalePaymentStatus((string) ($intent['status'] ?? ''));
-        $gatewayPayload = is_array($salePayment->gateway_payload) ? $salePayment->gateway_payload : [];
-        $gatewayPayload['payment_intent'] = $intent;
+        $existingGatewayPayload = is_array($salePayment->gateway_payload) ? $salePayment->gateway_payload : [];
+        $existingPaymentIntent = data_get($existingGatewayPayload, 'payment_intent');
+        if (! is_array($existingPaymentIntent)) {
+            $existingPaymentIntent = [];
+        }
+
+        $saleMetadata = is_array($sale->metadata) ? $sale->metadata : [];
+        $existingSaleIntent = data_get($saleMetadata, 'payment_intent');
+        if (! is_array($existingSaleIntent)) {
+            $existingSaleIntent = [];
+        }
+
+        $transactionReference = $this->firstNonEmptyString(
+            $intent['transaction_reference'] ?? null,
+            $salePayment->transaction_reference,
+            $existingPaymentIntent['transaction_reference'] ?? null,
+            $existingSaleIntent['transaction_reference'] ?? null
+        );
+        $intentStatus = $this->firstNonEmptyString(
+            $intent['status'] ?? null,
+            $existingPaymentIntent['status'] ?? null,
+            $existingSaleIntent['status'] ?? null
+        );
+        $ticketUrl = $this->firstNonEmptyString(
+            $intent['ticket_url'] ?? null,
+            $existingPaymentIntent['ticket_url'] ?? null,
+            $existingSaleIntent['ticket_url'] ?? null
+        );
+        $checkoutUrl = $this->firstNonEmptyString(
+            $intent['checkout_url'] ?? null,
+            $existingPaymentIntent['checkout_url'] ?? null,
+            $existingSaleIntent['checkout_url'] ?? null
+        );
+        $qrCode = $this->firstNonEmptyString(
+            $intent['qr_code'] ?? null,
+            $existingPaymentIntent['qr_code'] ?? null,
+            $existingSaleIntent['qr_code'] ?? null
+        );
+        $qrCodeBase64 = $this->firstNonEmptyString(
+            $intent['qr_code_base64'] ?? null,
+            $existingPaymentIntent['qr_code_base64'] ?? null,
+            $existingSaleIntent['qr_code_base64'] ?? null
+        );
+        $paymentMethodCode = $this->firstNonEmptyString(
+            $intent['payment_method_code'] ?? null,
+            $existingPaymentIntent['payment_method_code'] ?? null,
+            $existingSaleIntent['payment_method_code'] ?? null,
+            $salePayment->paymentMethod?->code
+        );
+        $dateOfExpiration = $intent['date_of_expiration']
+            ?? $existingPaymentIntent['date_of_expiration']
+            ?? $existingSaleIntent['date_of_expiration']
+            ?? $this->resolveReservationExpiresAtIso8601($sale);
+
+        $normalizedIntent = array_merge($intent, [
+            'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            'status' => $intentStatus,
+            'transaction_reference' => $transactionReference,
+            'ticket_url' => $ticketUrl,
+            'checkout_url' => $checkoutUrl,
+            'qr_code' => $qrCode,
+            'qr_code_base64' => $qrCodeBase64,
+            'payment_method_code' => $paymentMethodCode,
+            'date_of_expiration' => $dateOfExpiration,
+        ]);
+
+        $paymentStatus = $this->mapProviderStatusToSalePaymentStatus((string) ($normalizedIntent['status'] ?? ''));
+        $gatewayPayload = $existingGatewayPayload;
+        $gatewayPayload['payment_intent'] = $normalizedIntent;
 
         $salePayment->fill([
             'status' => $paymentStatus,
-            'transaction_reference' => (string) ($intent['transaction_reference'] ?? $salePayment->transaction_reference),
+            'transaction_reference' => $transactionReference !== ''
+                ? $transactionReference
+                : $salePayment->transaction_reference,
             'gateway_payload' => $gatewayPayload,
             'metadata' => array_filter([
                 ...(is_array($salePayment->metadata) ? $salePayment->metadata : []),
                 'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
-                'intent_status' => (string) ($intent['status'] ?? ''),
-                'payment_method_code' => (string) ($intent['payment_method_code'] ?? ''),
-                'ticket_url' => (string) ($intent['ticket_url'] ?? ''),
-                'checkout_url' => (string) ($intent['checkout_url'] ?? ''),
-                'date_of_expiration' => $intent['date_of_expiration'] ?? null,
+                'intent_status' => (string) ($normalizedIntent['status'] ?? ''),
+                'payment_method_code' => (string) ($normalizedIntent['payment_method_code'] ?? ''),
+                'ticket_url' => (string) ($normalizedIntent['ticket_url'] ?? ''),
+                'checkout_url' => (string) ($normalizedIntent['checkout_url'] ?? ''),
+                'date_of_expiration' => $normalizedIntent['date_of_expiration'] ?? null,
             ], static fn (mixed $value): bool => $value !== null),
             'paid_at' => $paymentStatus === SalePayment::STATUS_PAID ? now() : $salePayment->paid_at,
         ])->save();
 
-        $saleMetadata = is_array($sale->metadata) ? $sale->metadata : [];
         $saleMetadata['payment_intent'] = [
             'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
-            'status' => (string) ($intent['status'] ?? ''),
-            'transaction_reference' => (string) ($intent['transaction_reference'] ?? ''),
-            'ticket_url' => (string) ($intent['ticket_url'] ?? ''),
-            'checkout_url' => (string) ($intent['checkout_url'] ?? ''),
-            'qr_code' => (string) ($intent['qr_code'] ?? ''),
-            'qr_code_base64' => (string) ($intent['qr_code_base64'] ?? ''),
-            'payment_method_code' => (string) ($intent['payment_method_code'] ?? ''),
-            'date_of_expiration' => $intent['date_of_expiration'] ?? null,
+            'status' => (string) ($normalizedIntent['status'] ?? ''),
+            'transaction_reference' => (string) ($normalizedIntent['transaction_reference'] ?? ''),
+            'ticket_url' => (string) ($normalizedIntent['ticket_url'] ?? ''),
+            'checkout_url' => (string) ($normalizedIntent['checkout_url'] ?? ''),
+            'qr_code' => (string) ($normalizedIntent['qr_code'] ?? ''),
+            'qr_code_base64' => (string) ($normalizedIntent['qr_code_base64'] ?? ''),
+            'payment_method_code' => (string) ($normalizedIntent['payment_method_code'] ?? ''),
+            'date_of_expiration' => $normalizedIntent['date_of_expiration'] ?? null,
         ];
-        $sale->metadata = $saleMetadata;
 
         if ($paymentStatus === SalePayment::STATUS_PAID) {
+            $saleMetadata['stock_reservation_finalized_at'] = now()->toIso8601String();
             $sale->status = Sale::STATUS_PAID;
             $sale->paid_amount = (float) $sale->total_amount;
             $sale->completed_at = $sale->completed_at ?? now();
@@ -2444,6 +3185,7 @@ class PublicShopService
             $sale->status = Sale::STATUS_REJECTED;
         }
 
+        $sale->metadata = $saleMetadata;
         $sale->save();
     }
 
@@ -2477,6 +3219,12 @@ class PublicShopService
         if (! is_array($saleIntent)) {
             $saleIntent = [];
         }
+        $reservationExpiresAt = $this->resolveReservationExpiresAtIso8601($sale);
+        $reservationExpired = (bool) ($saleMetadata['stock_reservation_expired'] ?? false);
+        $reservationTimeoutMinutes = max(
+            1,
+            (int) ($saleMetadata['stock_reservation_timeout_minutes'] ?? self::CHECKOUT_RESERVATION_TIMEOUT_MINUTES)
+        );
 
         $transactionReference = trim((string) ($salePayment->transaction_reference
             ?? ($paymentIntent['transaction_reference'] ?? ($saleIntent['transaction_reference'] ?? ''))));
@@ -2515,6 +3263,9 @@ class PublicShopService
             'qr_code' => $qrCode,
             'qr_code_base64' => $qrCodeBase64,
             'expires_at' => $expiresAt,
+            'reservation_expires_at' => $reservationExpiresAt,
+            'reservation_expired' => $reservationExpired,
+            'reservation_timeout_minutes' => $reservationTimeoutMinutes,
         ];
 
         $payload['is_pix'] = $this->isPixPaymentPayload($payload);

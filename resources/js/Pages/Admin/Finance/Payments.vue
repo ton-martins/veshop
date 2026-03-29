@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Modal from '@/Components/Modal.vue';
 import DeleteConfirmModal from '@/Components/App/DeleteConfirmModal.vue';
@@ -8,7 +8,7 @@ import UiSelect from '@/Components/App/UiSelect.vue';
 import { useBranding } from '@/branding';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
-import { Plus, PlugZap, ShieldCheck, CreditCard, HandCoins, Pencil, Trash2 } from 'lucide-vue-next';
+import { Plus, PlugZap, ShieldCheck, CreditCard, HandCoins, Pencil, Trash2, X } from 'lucide-vue-next';
 
 const props = defineProps({
     paymentConfig: {
@@ -175,6 +175,7 @@ const autoGatewayConnectionLoading = ref(false);
 const autoGatewayConnectionStatus = ref('idle');
 const autoGatewayConnectionMessage = ref('');
 const autoMethodFeedback = ref({});
+const showMercadoPagoFeesNotice = ref(true);
 
 const selectedAutoGateway = computed(() => {
     const providerCode = String(autoConfigForm.provider_code ?? '').trim().toLowerCase();
@@ -758,8 +759,24 @@ hydrateAutomaticConfig();
                 <div v-if="autoGatewayConnectionMessage" class="mt-3 rounded-xl border px-3 py-2 text-xs font-semibold" :class="autoGatewayConnectionToneClass">
                     {{ autoGatewayConnectionMessage }}
                 </div>
+                <div
+                    v-if="showMercadoPagoFeesNotice"
+                    class="mt-4 flex items-start justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2"
+                >
+                    <p class="text-xs font-semibold text-amber-800">
+                        Consulte as taxas do Mercado Pago antes da integração.
+                    </p>
+                    <button
+                        type="button"
+                        class="inline-flex h-5 w-5 items-center justify-center rounded-md border border-amber-200 bg-white text-amber-700 hover:bg-amber-100"
+                        aria-label="Fechar aviso de taxas"
+                        @click="showMercadoPagoFeesNotice = false"
+                    >
+                        <X class="h-3.5 w-3.5" />
+                    </button>
+                </div>
 
-                <div class="mt-4 space-y-3">
+                <div class="mt-4 grid gap-3 md:grid-cols-2">
                     <article
                         v-for="method in autoConfigForm.methods"
                         :key="`auto-method-${method.code}`"
@@ -1059,3 +1076,4 @@ hydrateAutomaticConfig();
     color: #ffffff;
 }
 </style>
+

@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
 use App\Models\Contractor;
 use App\Models\Product;
 use App\Models\ServiceCatalog;
+use App\Support\BrazilData;
 use App\Support\StorefrontSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -27,6 +28,11 @@ class AdminStorefrontService
 
     private const TAB_SHIPPING = 'frete';
 
+    public function __construct(
+        private readonly AddressDirectoryService $addressDirectory,
+    ) {
+    }
+
     public function edit(Request $request): Response
     {
         $contractor = $this->resolveCurrentContractor($request);
@@ -37,6 +43,7 @@ class AdminStorefrontService
         $storefront = StorefrontSettings::normalize($contractor, $settings['shop_storefront'] ?? []);
         $tab = $this->resolveTab($request, $supportsShipping);
         $shopShipping = is_array($settings['shop_shipping'] ?? null) ? $settings['shop_shipping'] : [];
+        $normalizedShopShipping = $this->normalizeShippingSettings($shopShipping);
 
         $products = Product::query()
             ->where('contractor_id', $contractor->id)
@@ -90,13 +97,7 @@ class AdminStorefrontService
                 'primary_color' => (string) ($contractor->brand_primary_color ?: '#073341'),
             ],
             'storefront' => $storefront,
-            'shopShipping' => [
-                'pickup_enabled' => (bool) ($shopShipping['pickup_enabled'] ?? true),
-                'delivery_enabled' => (bool) ($shopShipping['delivery_enabled'] ?? true),
-                'fixed_fee' => (float) ($shopShipping['fixed_fee'] ?? 0),
-                'free_over' => (float) ($shopShipping['free_over'] ?? 0),
-                'estimated_days' => (int) ($shopShipping['estimated_days'] ?? 2),
-            ],
+            'shopShipping' => $normalizedShopShipping,
             'products' => $products,
             'services' => $services,
             'templates' => [
@@ -112,7 +113,40 @@ class AdminStorefrontService
                 ],
             ],
             'shop_url' => route('shop.show', ['slug' => $contractor->slug]),
+            'addressDirectory' => [
+                'states' => $this->addressDirectory->stateOptions(),
+                'routes' => [
+                    'states' => route('admin.storefront.location.states'),
+                    'cities' => route('admin.storefront.location.cities'),
+                ],
+            ],
         ]);
+    }
+
+    /**
+     * @return array<int, array{value: string, label: string}>
+     */
+    public function locationStates(Request $request): array
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        return $this->addressDirectory->stateOptions();
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function locationCities(Request $request): array
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $validated = $request->validate([
+            'state' => ['required', 'string', 'size:2', Rule::in(BrazilData::STATE_CODES)],
+        ]);
+
+        return $this->addressDirectory->cityNamesByState((string) $validated['state']);
     }
 
     public function update(Request $request): RedirectResponse
@@ -173,6 +207,7 @@ class AdminStorefrontService
             'banners.*.image_file' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
             'banners.*.image_url' => ['nullable', 'string', 'max:255'],
             'banners.*.cta_label' => ['nullable', 'string', 'max:40'],
+            'banners.*.use_original_image_colors' => ['nullable', 'boolean'],
             'banners.*.background_color' => [
                 'nullable',
                 'string',
@@ -325,22 +360,109 @@ class AdminStorefrontService
         $validated = $request->validate([
             'shipping_pickup_enabled' => ['required', 'boolean'],
             'shipping_delivery_enabled' => ['required', 'boolean'],
-            'shipping_fixed_fee' => ['required', 'numeric', 'min:0', 'max:999999.99'],
-            'shipping_free_over' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_nationwide_enabled' => ['required', 'boolean'],
+            'shipping_nationwide_fee' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_nationwide_free_over' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_state_rates' => ['nullable', 'array', 'max:27'],
+            'shipping_state_rates.*.state' => ['required_with:shipping_state_rates', 'string', 'size:2', Rule::in(BrazilData::STATE_CODES)],
+            'shipping_state_rates.*.fee' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_state_rates.*.free_over' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_state_rates.*.active' => ['nullable', 'boolean'],
+            'shipping_statewide_enabled' => ['nullable', 'boolean'],
+            'shipping_statewide_state' => ['nullable', 'string', 'size:2'],
+            'shipping_statewide_fee' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_statewide_free_over' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
             'shipping_estimated_days' => ['nullable', 'integer', 'min:1', 'max:60'],
+            'shipping_city_rates' => ['nullable', 'array', 'max:500'],
+            'shipping_city_rates.*.city' => ['nullable', 'string', 'max:120'],
+            'shipping_city_rates.*.state' => ['nullable', 'string', 'size:2'],
+            'shipping_city_rates.*.fee' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_city_rates.*.free_over' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+            'shipping_city_rates.*.estimated_days' => ['nullable', 'integer', 'min:1', 'max:60'],
+            'shipping_city_rates.*.active' => ['nullable', 'boolean'],
+            'shipping_city_rates.*.is_free' => ['nullable', 'boolean'],
         ]);
 
         $settings = is_array($contractor->settings) ? $contractor->settings : [];
+        $defaultFixedFee = isset($validated['shipping_nationwide_fee'])
+            ? round((float) $validated['shipping_nationwide_fee'], 2)
+            : 0.0;
+        $defaultFreeOver = isset($validated['shipping_nationwide_free_over'])
+            ? round((float) $validated['shipping_nationwide_free_over'], 2)
+            : 0.0;
+        $defaultEstimatedDays = isset($validated['shipping_estimated_days'])
+            ? (int) $validated['shipping_estimated_days']
+            : 2;
+        $nationwideFee = isset($validated['shipping_nationwide_fee'])
+            ? round((float) $validated['shipping_nationwide_fee'], 2)
+            : $defaultFixedFee;
+        $nationwideFreeOver = isset($validated['shipping_nationwide_free_over'])
+            ? round((float) $validated['shipping_nationwide_free_over'], 2)
+            : $defaultFreeOver;
+        $legacyStatewideEnabled = (bool) ($validated['shipping_statewide_enabled'] ?? false);
+        $legacyStatewideState = strtoupper(trim((string) ($validated['shipping_statewide_state'] ?? '')));
+        if (preg_match('/^[A-Z]{2}$/', $legacyStatewideState) !== 1) {
+            $legacyStatewideState = '';
+        }
+        $legacyStatewideFee = isset($validated['shipping_statewide_fee'])
+            ? round((float) $validated['shipping_statewide_fee'], 2)
+            : $defaultFixedFee;
+        $legacyStatewideFreeOver = isset($validated['shipping_statewide_free_over'])
+            ? round((float) $validated['shipping_statewide_free_over'], 2)
+            : $defaultFreeOver;
+
+        $stateRatesPayload = is_array($validated['shipping_state_rates'] ?? null)
+            ? $validated['shipping_state_rates']
+            : [];
+
+        if ($legacyStatewideEnabled && $legacyStatewideState === '' && $stateRatesPayload === []) {
+            throw ValidationException::withMessages([
+                'shipping_statewide_state' => 'Selecione a UF para entrega em todo o estado.',
+            ]);
+        }
+
+        if ($stateRatesPayload === [] && $legacyStatewideEnabled && $legacyStatewideState !== '') {
+            $stateRatesPayload = [[
+                'state' => $legacyStatewideState,
+                'fee' => $legacyStatewideFee,
+                'free_over' => $legacyStatewideFreeOver,
+                'active' => true,
+            ]];
+        }
+
+        $stateRates = $this->normalizeShippingStateRates(
+            $stateRatesPayload,
+            $defaultFixedFee,
+            $defaultFreeOver
+        );
+
+        $primaryActiveStateRate = collect($stateRates)->first(static fn (array $row): bool => (bool) ($row['active'] ?? false));
+        $statewideEnabled = is_array($primaryActiveStateRate);
+        $statewideState = $statewideEnabled ? (string) ($primaryActiveStateRate['state'] ?? '') : '';
+        $statewideFee = $statewideEnabled ? max(0, round((float) ($primaryActiveStateRate['fee'] ?? 0), 2)) : 0.0;
+        $statewideFreeOver = $statewideEnabled ? max(0, round((float) ($primaryActiveStateRate['free_over'] ?? 0), 2)) : 0.0;
+
+        $cityRates = $this->normalizeShippingCityRates(
+            is_array($validated['shipping_city_rates'] ?? null) ? $validated['shipping_city_rates'] : [],
+            $defaultFixedFee,
+            $defaultFreeOver,
+            $defaultEstimatedDays,
+            true
+        );
+
         $settings['shop_shipping'] = [
             'pickup_enabled' => (bool) $validated['shipping_pickup_enabled'],
             'delivery_enabled' => (bool) $validated['shipping_delivery_enabled'],
-            'fixed_fee' => round((float) $validated['shipping_fixed_fee'], 2),
-            'free_over' => isset($validated['shipping_free_over'])
-                ? round((float) $validated['shipping_free_over'], 2)
-                : 0,
-            'estimated_days' => isset($validated['shipping_estimated_days'])
-                ? (int) $validated['shipping_estimated_days']
-                : 2,
+            'nationwide_enabled' => (bool) $validated['shipping_nationwide_enabled'],
+            'nationwide_fee' => max(0, $nationwideFee),
+            'nationwide_free_over' => max(0, $nationwideFreeOver),
+            'state_rates' => $stateRates,
+            'statewide_enabled' => $statewideEnabled,
+            'statewide_state' => $statewideState,
+            'statewide_fee' => max(0, $statewideFee),
+            'statewide_free_over' => max(0, $statewideFreeOver),
+            'estimated_days' => $defaultEstimatedDays,
+            'city_rates' => $cityRates,
         ];
 
         $contractor->settings = $settings;
@@ -421,6 +543,7 @@ class AdminStorefrontService
                 'image_path' => $imagePath ?: '',
                 'cta_label' => (string) ($banner['cta_label'] ?? ''),
                 'background_color' => (string) ($banner['background_color'] ?? ''),
+                'use_original_image_colors' => (bool) ($banner['use_original_image_colors'] ?? false),
             ];
         }
 
@@ -510,6 +633,254 @@ class AdminStorefrontService
         if (Storage::disk('public')->exists($normalized)) {
             Storage::disk('public')->delete($normalized);
         }
+    }
+
+    /**
+     * @param  array<int, mixed>  $rows
+     * @return array<int, array{state: string, fee: float, free_over: float, active: bool}>
+     */
+    private function normalizeShippingStateRates(array $rows, float $defaultFixedFee, float $defaultFreeOver): array
+    {
+        $byState = collect($rows)
+            ->filter(static fn (mixed $row): bool => is_array($row))
+            ->map(static function (array $row): ?array {
+                $state = strtoupper(trim((string) ($row['state'] ?? '')));
+                if (! in_array($state, BrazilData::STATE_CODES, true)) {
+                    return null;
+                }
+
+                $fee = isset($row['fee']) && $row['fee'] !== ''
+                    ? round((float) $row['fee'], 2)
+                    : null;
+                $freeOver = isset($row['free_over']) && $row['free_over'] !== ''
+                    ? round((float) $row['free_over'], 2)
+                    : null;
+
+                return [
+                    'state' => $state,
+                    'fee' => $fee,
+                    'free_over' => $freeOver,
+                    'active' => (bool) ($row['active'] ?? false),
+                ];
+            })
+            ->filter()
+            ->keyBy(static fn (array $row): string => $row['state']);
+
+        return collect(BrazilData::STATE_CODES)
+            ->map(static function (string $stateCode) use ($byState, $defaultFixedFee, $defaultFreeOver): array {
+                /** @var array{state:string,fee:float|null,free_over:float|null,active:bool}|null $row */
+                $row = $byState->get($stateCode);
+
+                $fee = isset($row['fee']) ? (float) $row['fee'] : $defaultFixedFee;
+                $freeOver = isset($row['free_over']) ? (float) $row['free_over'] : $defaultFreeOver;
+
+                return [
+                    'state' => $stateCode,
+                    'fee' => max(0, round($fee, 2)),
+                    'free_over' => max(0, round($freeOver, 2)),
+                    'active' => (bool) ($row['active'] ?? false),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, mixed>  $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeShippingCityRates(
+        array $rows,
+        float $defaultFixedFee,
+        float $defaultFreeOver,
+        int $defaultEstimatedDays,
+        bool $strictValidation = false
+    ): array {
+        $normalized = collect($rows)
+            ->filter(static fn (mixed $row): bool => is_array($row))
+            ->map(function (array $row, int $index) use (
+                $defaultFixedFee,
+                $defaultFreeOver,
+                $defaultEstimatedDays,
+                $strictValidation
+            ): ?array {
+                $city = trim((string) ($row['city'] ?? ''));
+                $state = strtoupper(trim((string) ($row['state'] ?? '')));
+
+                if ($city === '' && $state === '') {
+                    return null;
+                }
+
+                if ($city === '') {
+                    if ($strictValidation) {
+                        throw ValidationException::withMessages([
+                            "shipping_city_rates.{$index}.city" => 'Selecione uma cidade válida.',
+                        ]);
+                    }
+
+                    return null;
+                }
+
+                if (preg_match('/^[A-Z]{2}$/', $state) !== 1) {
+                    if ($strictValidation) {
+                        throw ValidationException::withMessages([
+                            "shipping_city_rates.{$index}.state" => 'Selecione uma UF válida.',
+                        ]);
+                    }
+
+                    return null;
+                }
+
+                if ($strictValidation) {
+                    $canonical = $this->addressDirectory->resolveCanonicalCity($state, $city);
+                    if (! $canonical) {
+                        throw ValidationException::withMessages([
+                            "shipping_city_rates.{$index}.city" => 'Cidade/UF inválida. Selecione uma cidade existente para a UF informada.',
+                        ]);
+                    }
+
+                    $state = $canonical['state_code'];
+                    $city = $canonical['city'];
+                }
+
+                $active = ! array_key_exists('active', $row) || (bool) $row['active'];
+                $isFree = (bool) ($row['is_free'] ?? false);
+                $fee = isset($row['fee']) && $row['fee'] !== ''
+                    ? round((float) $row['fee'], 2)
+                    : $defaultFixedFee;
+                $freeOver = isset($row['free_over']) && $row['free_over'] !== ''
+                    ? round((float) $row['free_over'], 2)
+                    : $defaultFreeOver;
+                $estimatedDays = isset($row['estimated_days']) && (int) $row['estimated_days'] > 0
+                    ? (int) $row['estimated_days']
+                    : $defaultEstimatedDays;
+
+                return [
+                    'city' => $city,
+                    'city_key' => $this->normalizeShippingCityKey($city),
+                    'state' => $state,
+                    'fee' => $isFree ? 0.0 : max(0, $fee),
+                    'free_over' => $isFree ? 0.0 : max(0, $freeOver),
+                    'estimated_days' => max(1, $estimatedDays),
+                    'active' => $active,
+                    'is_free' => $isFree,
+                ];
+            })
+            ->filter()
+            ->unique(static fn (array $row): string => $row['city_key'].'|'.$row['state'])
+            ->values()
+            ->all();
+
+        return array_map(static function (array $row): array {
+            unset($row['city_key']);
+            return $row;
+        }, $normalized);
+    }
+
+    private function normalizeShippingCityKey(string $city): string
+    {
+        $normalized = Str::ascii(mb_strtolower(trim($city)));
+        $normalized = preg_replace('/[^a-z0-9\s-]+/', ' ', $normalized) ?? '';
+        $normalized = preg_replace('/\s+/', ' ', $normalized) ?? '';
+
+        return trim($normalized);
+    }
+
+    /**
+     * @param  array<string, mixed>  $shipping
+     * @return array<string, mixed>
+     */
+    private function normalizeShippingSettings(array $shipping): array
+    {
+        $pickupEnabled = (bool) ($shipping['pickup_enabled'] ?? true);
+        $deliveryEnabled = (bool) ($shipping['delivery_enabled'] ?? true);
+        $estimatedDays = (int) ($shipping['estimated_days'] ?? 2);
+        if ($estimatedDays < 1) {
+            $estimatedDays = 2;
+        }
+
+        $nationwideFee = array_key_exists('nationwide_fee', $shipping)
+            ? max(0, round((float) $shipping['nationwide_fee'], 2))
+            : (
+                array_key_exists('fixed_fee', $shipping)
+                    ? max(0, round((float) $shipping['fixed_fee'], 2))
+                    : 0.0
+            );
+        $nationwideFreeOver = array_key_exists('nationwide_free_over', $shipping)
+            ? max(0, round((float) $shipping['nationwide_free_over'], 2))
+            : (
+                array_key_exists('free_over', $shipping)
+                    ? max(0, round((float) $shipping['free_over'], 2))
+                    : 0.0
+            );
+        $statewideFee = array_key_exists('statewide_fee', $shipping)
+            ? max(0, round((float) $shipping['statewide_fee'], 2))
+            : 0.0;
+        $statewideFreeOver = array_key_exists('statewide_free_over', $shipping)
+            ? max(0, round((float) $shipping['statewide_free_over'], 2))
+            : 0.0;
+
+        $stateRates = $this->normalizeShippingStateRates(
+            is_array($shipping['state_rates'] ?? null) ? $shipping['state_rates'] : [],
+            $nationwideFee,
+            $nationwideFreeOver
+        );
+
+        if (! collect($stateRates)->contains(static fn (array $row): bool => (bool) ($row['active'] ?? false))) {
+            $legacyStatewideState = strtoupper(trim((string) ($shipping['statewide_state'] ?? '')));
+            if (preg_match('/^[A-Z]{2}$/', $legacyStatewideState) === 1 && (bool) ($shipping['statewide_enabled'] ?? false)) {
+                $stateRates = array_map(
+                    static function (array $row) use ($legacyStatewideState, $statewideFee, $statewideFreeOver): array {
+                        if (($row['state'] ?? '') !== $legacyStatewideState) {
+                            return $row;
+                        }
+
+                        $row['active'] = true;
+                        $row['fee'] = $statewideFee;
+                        $row['free_over'] = $statewideFreeOver;
+
+                        return $row;
+                    },
+                    $stateRates
+                );
+            }
+        }
+
+        $primaryActiveStateRate = collect($stateRates)->first(static fn (array $row): bool => (bool) ($row['active'] ?? false));
+        $statewideState = is_array($primaryActiveStateRate)
+            ? strtoupper(trim((string) ($primaryActiveStateRate['state'] ?? '')))
+            : '';
+        $statewideEnabled = $statewideState !== '';
+        if (! $statewideEnabled) {
+            $statewideFee = 0.0;
+            $statewideFreeOver = 0.0;
+        } else {
+            $statewideFee = max(0, round((float) ($primaryActiveStateRate['fee'] ?? 0), 2));
+            $statewideFreeOver = max(0, round((float) ($primaryActiveStateRate['free_over'] ?? 0), 2));
+        }
+
+        $cityRates = $this->normalizeShippingCityRates(
+            is_array($shipping['city_rates'] ?? null) ? $shipping['city_rates'] : [],
+            $nationwideFee,
+            $nationwideFreeOver,
+            $estimatedDays,
+            false,
+        );
+
+        return [
+            'pickup_enabled' => $pickupEnabled,
+            'delivery_enabled' => $deliveryEnabled,
+            'nationwide_enabled' => (bool) ($shipping['nationwide_enabled'] ?? false),
+            'nationwide_fee' => $nationwideFee,
+            'nationwide_free_over' => $nationwideFreeOver,
+            'state_rates' => $stateRates,
+            'statewide_enabled' => $statewideEnabled,
+            'statewide_state' => $statewideState,
+            'statewide_fee' => $statewideFee,
+            'statewide_free_over' => $statewideFreeOver,
+            'estimated_days' => $estimatedDays,
+            'city_rates' => $cityRates,
+        ];
     }
 
     private function resolveTab(Request $request, bool $supportsShipping): string

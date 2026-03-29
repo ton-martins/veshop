@@ -64,12 +64,14 @@ class ShopRegisteredCustomerController extends Controller
             'phone' => ['nullable', 'string', 'regex:/^\(\d{2}\)\s\d{5}-\d{4}$/'],
             'cep' => ['required', 'string', 'regex:/^\d{5}-\d{3}$/'],
             'street' => ['required', 'string', 'max:160'],
-            'number' => ['nullable', 'string', 'max:20'],
+            'number' => ['required', 'string', 'max:20'],
             'complement' => ['nullable', 'string', 'max:120'],
             'neighborhood' => ['required', 'string', 'max:120'],
             'city' => ['required', 'string', 'max:120'],
             'state' => ['required', 'string', Rule::in(BrazilData::STATE_CODES)],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
+        ], [], [
+            'number' => 'número',
         ]);
 
         $email = strtolower(trim((string) $validated['email']));
@@ -170,7 +172,7 @@ class ShopRegisteredCustomerController extends Controller
 
             if ($dispatchResult === ShopVerificationNotificationService::RESULT_FAILED) {
                 return redirect()->route('shop.verification.notice', ['slug' => $contractor->slug])
-                    ->with('status', 'Conta criada, mas nao foi possivel enviar o e-mail agora. Use "Reenviar verificacao".');
+                    ->with('status', 'Conta criada, mas não foi possível enviar o e-mail agora. Use "Reenviar verificação".');
             }
 
             return redirect()->route('shop.verification.notice', ['slug' => $contractor->slug])

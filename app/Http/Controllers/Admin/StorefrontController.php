@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Application\Storefront\Services\AdminStorefrontService;
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Response;
@@ -22,5 +23,19 @@ class StorefrontController extends Controller
     public function update(Request $request): RedirectResponse
     {
         return $this->service->update($request);
+    }
+
+    public function locationStates(Request $request): JsonResponse
+    {
+        return response()->json([
+            'states' => $this->service->locationStates($request),
+        ]);
+    }
+
+    public function locationCities(Request $request): JsonResponse
+    {
+        return response()->json([
+            'cities' => $this->service->locationCities($request),
+        ]);
     }
 }

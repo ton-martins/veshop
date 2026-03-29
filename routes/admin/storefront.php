@@ -6,4 +6,6 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('contractor.module:checkout,services_storefront')->group(function (): void {
     Route::get('/storefront', [StorefrontController::class, 'edit'])->name('storefront.index');
     Route::put('/storefront', [StorefrontController::class, 'update'])->name('storefront.update');
+    Route::get('/storefront/location/states', [StorefrontController::class, 'locationStates'])->name('storefront.location.states');
+    Route::get('/storefront/location/cities', [StorefrontController::class, 'locationCities'])->name('storefront.location.cities');
 });

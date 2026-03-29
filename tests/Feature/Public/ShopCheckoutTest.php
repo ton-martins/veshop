@@ -8,6 +8,7 @@ use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\ProductVariation;
 use App\Models\Sale;
+use App\Models\SaleItem;
 use App\Models\SalePayment;
 use App\Models\ShopCustomer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -126,7 +127,7 @@ class ShopCheckoutTest extends TestCase
 
         $this->assertDatabaseHas('products', [
             'id' => $product->id,
-            'stock_quantity' => 12,
+            'stock_quantity' => 10,
         ]);
     }
 
@@ -692,6 +693,21 @@ class ShopCheckoutTest extends TestCase
             ],
         ]);
 
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => null,
+            'code' => PaymentMethod::CODE_PIX,
+            'name' => 'Pix',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
         SalePayment::query()->create([
             'contractor_id' => $contractor->id,
             'sale_id' => $sale->id,
@@ -951,8 +967,9 @@ class ShopCheckoutTest extends TestCase
             'shop_shipping' => [
                 'pickup_enabled' => true,
                 'delivery_enabled' => true,
-                'fixed_fee' => 12.50,
-                'free_over' => 200,
+                'nationwide_enabled' => true,
+                'nationwide_fee' => 12.50,
+                'nationwide_free_over' => 200,
                 'estimated_days' => 3,
             ],
         ]);
@@ -1046,6 +1063,14 @@ class ShopCheckoutTest extends TestCase
                 'customer_name' => 'Cliente Sem Endereco',
                 'customer_phone' => '(71) 99999-0111',
                 'customer_email' => 'cliente-sem-endereco@example.com',
+                'delivery_mode' => 'delivery',
+                'shipping_postal_code' => '41810-000',
+                'shipping_street' => 'Rua das Flores',
+                'shipping_number' => '123',
+                'shipping_complement' => '',
+                'shipping_district' => 'Centro',
+                'shipping_city' => 'Salvador',
+                'shipping_state' => 'BA',
                 'items' => [
                     ['product_id' => $product->id, 'quantity' => 1],
                 ],
@@ -1058,6 +1083,159 @@ class ShopCheckoutTest extends TestCase
             'contractor_id' => $contractor->id,
             'shop_customer_id' => $shopCustomer->id,
             'source' => Sale::SOURCE_CATALOG,
+        ]);
+    }
+
+    public function test_checkout_with_statewide_shipping_blocks_other_states(): void
+    {
+        $contractor = $this->createContractor('loja-frete-estadual');
+        $contractor->settings = array_replace((array) $contractor->settings, [
+            'shop_shipping' => [
+                'pickup_enabled' => false,
+                'delivery_enabled' => true,
+                'statewide_enabled' => true,
+                'statewide_state' => 'BA',
+                'statewide_fee' => 10,
+                'statewide_free_over' => 0,
+                'estimated_days' => 2,
+            ],
+        ]);
+        $contractor->save();
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Produto Estadual',
+            'sku' => 'EST-BA-001',
+            'sale_price' => 80.00,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Estadual',
+            'email' => 'cliente-estadual@example.com',
+            'phone' => '71999990031',
+            'cep' => '41810-000',
+            'street' => 'Rua das Flores',
+            'number' => '123',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), [
+                'customer_name' => 'Cliente Estadual',
+                'customer_phone' => '(71) 99999-0031',
+                'customer_email' => 'cliente-estadual@example.com',
+                'delivery_mode' => 'delivery',
+                'shipping_postal_code' => '01001-000',
+                'shipping_street' => 'Praça da Sé',
+                'shipping_number' => '1',
+                'shipping_complement' => '',
+                'shipping_district' => 'Sé',
+                'shipping_city' => 'São Paulo',
+                'shipping_state' => 'SP',
+                'items' => [
+                    ['product_id' => $product->id, 'quantity' => 1],
+                ],
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+        $response->assertSessionHasErrors('delivery_mode');
+
+        $this->assertDatabaseMissing('sales', [
+            'contractor_id' => $contractor->id,
+            'shop_customer_id' => $shopCustomer->id,
+            'source' => Sale::SOURCE_CATALOG,
+        ]);
+    }
+
+    public function test_checkout_with_city_shipping_free_flag_sets_zero_shipping_amount(): void
+    {
+        $contractor = $this->createContractor('loja-frete-cidade-gratis');
+        $contractor->settings = array_replace((array) $contractor->settings, [
+            'shop_shipping' => [
+                'pickup_enabled' => true,
+                'delivery_enabled' => true,
+                'estimated_days' => 2,
+                'city_rates' => [
+                    [
+                        'city' => 'Salvador',
+                        'state' => 'BA',
+                        'fee' => 12.50,
+                        'free_over' => 120,
+                        'estimated_days' => 2,
+                        'active' => true,
+                        'is_free' => true,
+                    ],
+                ],
+            ],
+        ]);
+        $contractor->save();
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Produto Frete Grátis Cidade',
+            'sku' => 'CIT-001',
+            'sale_price' => 70.00,
+            'stock_quantity' => 10,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Cidade',
+            'email' => 'cliente-cidade@example.com',
+            'phone' => '71999990032',
+            'cep' => '41810-000',
+            'street' => 'Rua das Flores',
+            'number' => '123',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), [
+                'customer_name' => 'Cliente Cidade',
+                'customer_phone' => '(71) 99999-0032',
+                'customer_email' => 'cliente-cidade@example.com',
+                'delivery_mode' => 'delivery',
+                'shipping_postal_code' => '41810-000',
+                'shipping_street' => 'Rua das Flores',
+                'shipping_number' => '123',
+                'shipping_complement' => '',
+                'shipping_district' => 'Centro',
+                'shipping_city' => 'Salvador',
+                'shipping_state' => 'BA',
+                'items' => [
+                    ['product_id' => $product->id, 'quantity' => 1],
+                ],
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+
+        $this->assertDatabaseHas('sales', [
+            'contractor_id' => $contractor->id,
+            'shop_customer_id' => $shopCustomer->id,
+            'shipping_mode' => 'delivery',
+            'shipping_amount' => '0.00',
+            'surcharge_amount' => '0.00',
+            'total_amount' => '70.00',
         ]);
     }
 
@@ -1175,6 +1353,302 @@ class ShopCheckoutTest extends TestCase
             'shop_customer_id' => $shopCustomer->id,
             'source' => Sale::SOURCE_CATALOG,
         ]);
+    }
+
+    public function test_checkout_rejects_quantity_above_available_stock(): void
+    {
+        $contractor = $this->createContractor('loja-estoque-limite');
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Produto com Estoque Curto',
+            'sku' => 'EST-001',
+            'sale_price' => 50.00,
+            'stock_quantity' => 2,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Estoque',
+            'email' => 'cliente-estoque@example.com',
+            'phone' => '71999990223',
+            'cep' => '41810-000',
+            'street' => 'Rua das Flores',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->from(route('shop.show', ['slug' => $contractor->slug]))
+            ->post(route('shop.checkout', ['slug' => $contractor->slug]), [
+                'customer_name' => 'Cliente Estoque',
+                'customer_phone' => '(71) 99999-0223',
+                'customer_email' => 'cliente-estoque@example.com',
+                'items' => [
+                    ['product_id' => $product->id, 'quantity' => 3],
+                ],
+            ]);
+
+        $response->assertRedirect(route('shop.show', ['slug' => $contractor->slug]));
+        $response->assertSessionHasErrors('items');
+
+        $this->assertDatabaseMissing('sales', [
+            'contractor_id' => $contractor->id,
+            'shop_customer_id' => $shopCustomer->id,
+            'source' => Sale::SOURCE_CATALOG,
+        ]);
+        $this->assertSame(2, (int) Product::query()->findOrFail($product->id)->stock_quantity);
+    }
+
+    public function test_checkout_payment_status_keeps_existing_pix_qr_when_provider_response_has_no_qr(): void
+    {
+        $contractor = $this->createContractor('loja-qr-persistente');
+
+        $gateway = PaymentGateway::query()->create([
+            'contractor_id' => $contractor->id,
+            'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            'name' => 'Mercado Pago',
+            'is_active' => true,
+            'is_default' => true,
+            'is_sandbox' => true,
+            'credentials' => [
+                'access_token' => 'APP_USR_TEST_TOKEN',
+                'webhook_secret' => 'mp-webhook-token',
+            ],
+            'settings' => null,
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => $gateway->id,
+            'code' => PaymentMethod::CODE_PIX,
+            'name' => 'Pix Mercado Pago',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente QR Persistente',
+            'email' => 'cliente-qr-persistente@example.com',
+            'phone' => '71999990224',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $sale = Sale::query()->create([
+            'contractor_id' => $contractor->id,
+            'shop_customer_id' => $shopCustomer->id,
+            'code' => 'PED-QR-PERSIST-001',
+            'source' => Sale::SOURCE_CATALOG,
+            'status' => Sale::STATUS_AWAITING_PAYMENT,
+            'subtotal_amount' => 89.90,
+            'discount_amount' => 0,
+            'surcharge_amount' => 0,
+            'total_amount' => 89.90,
+            'paid_amount' => 0,
+            'change_amount' => 0,
+            'metadata' => [
+                'stock_reduced' => true,
+                'stock_restored' => false,
+                'stock_reservation' => true,
+                'stock_reservation_expires_at' => now()->addMinutes(5)->toIso8601String(),
+                'payment_intent' => [
+                    'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+                    'status' => 'pending',
+                    'transaction_reference' => 'TX-QR-PERSIST-001',
+                    'ticket_url' => 'https://www.mercadopago.com.br/payments/qr/TX-QR-PERSIST-001',
+                    'qr_code' => '000201PERSISTENTE',
+                    'qr_code_base64' => 'RkFLRV9RUl9QRVJTSVNURU5URQ==',
+                    'payment_method_code' => 'pix',
+                    'date_of_expiration' => now()->addMinutes(5)->toIso8601String(),
+                ],
+            ],
+        ]);
+
+        SalePayment::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'payment_method_id' => $paymentMethod->id,
+            'payment_gateway_id' => $gateway->id,
+            'status' => SalePayment::STATUS_PENDING,
+            'amount' => 89.90,
+            'transaction_reference' => 'TX-QR-PERSIST-001',
+            'gateway_payload' => [
+                'payment_intent' => [
+                    'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+                    'status' => 'pending',
+                    'transaction_reference' => 'TX-QR-PERSIST-001',
+                    'ticket_url' => 'https://www.mercadopago.com.br/payments/qr/TX-QR-PERSIST-001',
+                    'qr_code' => '000201PERSISTENTE',
+                    'qr_code_base64' => 'RkFLRV9RUl9QRVJTSVNURU5URQ==',
+                    'payment_method_code' => 'pix',
+                    'date_of_expiration' => now()->addMinutes(5)->toIso8601String(),
+                ],
+            ],
+            'metadata' => [
+                'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
+            ],
+        ]);
+
+        Http::fake([
+            'https://api.mercadopago.com/v1/payments/TX-QR-PERSIST-001' => Http::response([
+                'id' => 'TX-QR-PERSIST-001',
+                'status' => 'pending',
+                'external_reference' => 'PED-QR-PERSIST-001',
+            ], 200),
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->getJson(route('shop.checkout.payment.status', [
+                'slug' => $contractor->slug,
+                'sale' => $sale->id,
+            ]));
+
+        $response
+            ->assertOk()
+            ->assertJson([
+                'ok' => true,
+                'payment' => [
+                    'sale_id' => $sale->id,
+                    'payment_method_code' => 'pix',
+                    'transaction_reference' => 'TX-QR-PERSIST-001',
+                    'qr_code' => '000201PERSISTENTE',
+                ],
+            ]);
+
+        $updatedPayment = SalePayment::query()
+            ->where('sale_id', $sale->id)
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertSame('000201PERSISTENTE', (string) data_get($updatedPayment->gateway_payload, 'payment_intent.qr_code'));
+    }
+
+    public function test_expired_stock_reservation_cancels_sale_and_restores_stock(): void
+    {
+        $contractor = $this->createContractor('loja-reserva-expirada');
+
+        $product = Product::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Produto Reservado',
+            'sku' => 'RES-001',
+            'sale_price' => 25.00,
+            'stock_quantity' => 3,
+            'unit' => 'un',
+            'is_active' => true,
+        ]);
+
+        $shopCustomer = ShopCustomer::query()->create([
+            'contractor_id' => $contractor->id,
+            'name' => 'Cliente Reserva',
+            'email' => 'cliente-reserva@example.com',
+            'phone' => '71999990225',
+            'cep' => '41810-000',
+            'street' => 'Rua das Flores',
+            'neighborhood' => 'Centro',
+            'city' => 'Salvador',
+            'state' => 'BA',
+            'password' => '12345678',
+            'is_active' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $sale = Sale::query()->create([
+            'contractor_id' => $contractor->id,
+            'shop_customer_id' => $shopCustomer->id,
+            'code' => 'PED-RESERVA-001',
+            'source' => Sale::SOURCE_CATALOG,
+            'status' => Sale::STATUS_AWAITING_PAYMENT,
+            'subtotal_amount' => 50.00,
+            'discount_amount' => 0,
+            'surcharge_amount' => 0,
+            'total_amount' => 50.00,
+            'paid_amount' => 0,
+            'change_amount' => 0,
+            'metadata' => [
+                'stock_reduced' => true,
+                'stock_restored' => false,
+                'stock_reservation' => true,
+                'stock_reservation_expires_at' => now()->subMinutes(2)->toIso8601String(),
+                'stock_reservation_timeout_minutes' => 5,
+            ],
+        ]);
+
+        SaleItem::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'product_id' => $product->id,
+            'product_variation_id' => null,
+            'description' => 'Produto Reservado',
+            'sku' => 'RES-001',
+            'quantity' => 2,
+            'unit_price' => 25.00,
+            'discount_amount' => 0,
+            'total_amount' => 50.00,
+            'metadata' => null,
+        ]);
+
+        $paymentMethod = PaymentMethod::query()->create([
+            'contractor_id' => $contractor->id,
+            'payment_gateway_id' => null,
+            'code' => PaymentMethod::CODE_PIX,
+            'name' => 'Pix',
+            'is_active' => true,
+            'is_default' => true,
+            'allows_installments' => false,
+            'max_installments' => null,
+            'fee_fixed' => null,
+            'fee_percent' => null,
+            'sort_order' => 10,
+            'settings' => null,
+        ]);
+
+        SalePayment::query()->create([
+            'contractor_id' => $contractor->id,
+            'sale_id' => $sale->id,
+            'payment_method_id' => $paymentMethod->id,
+            'payment_gateway_id' => null,
+            'status' => SalePayment::STATUS_PENDING,
+            'amount' => 50.00,
+            'transaction_reference' => 'TX-RESERVA-001',
+            'gateway_payload' => null,
+            'metadata' => null,
+        ]);
+
+        $response = $this
+            ->actingAs($shopCustomer, 'shop')
+            ->get(route('shop.show', ['slug' => $contractor->slug]));
+
+        $response->assertOk();
+
+        $updatedSale = Sale::query()->findOrFail($sale->id);
+        $updatedPayment = SalePayment::query()
+            ->where('sale_id', $sale->id)
+            ->latest('id')
+            ->firstOrFail();
+        $updatedProduct = Product::query()->findOrFail($product->id);
+
+        $this->assertSame(Sale::STATUS_CANCELLED, (string) $updatedSale->status);
+        $this->assertTrue((bool) data_get($updatedSale->metadata, 'stock_restored'));
+        $this->assertTrue((bool) data_get($updatedSale->metadata, 'stock_reservation_expired'));
+        $this->assertSame(SalePayment::STATUS_CANCELLED, (string) $updatedPayment->status);
+        $this->assertSame(5, (int) $updatedProduct->stock_quantity);
     }
 
     /**
