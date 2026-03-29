@@ -18,6 +18,7 @@ use Inertia\Response;
 class AdminAccessAuditService
 {
     private const ACTIVE_SESSION_KEY = 'active_admin_session_id';
+    private const ACTIVE_DEVICE_HASH_KEY = 'active_admin_device_hash';
 
     /**
      * @var list<string>
@@ -96,6 +97,7 @@ class AdminAccessAuditService
         }
 
         $this->setActiveSessionOnUserPreferences($user, $sessionId);
+        $this->setActiveDeviceHashOnUserPreferences($user, $this->resolveDeviceHash($request));
 
         $context = $this->requestContext($request, [
             'session_id' => $sessionId,
@@ -220,6 +222,19 @@ class AdminAccessAuditService
         $user->forceFill(['preferences' => $preferences])->save();
     }
 
+    private function setActiveDeviceHashOnUserPreferences(User $user, string $deviceHash): void
+    {
+        $deviceHash = trim($deviceHash);
+        if ($deviceHash === '') {
+            return;
+        }
+
+        $preferences = is_array($user->preferences) ? $user->preferences : [];
+        $preferences[self::ACTIVE_DEVICE_HASH_KEY] = $deviceHash;
+
+        $user->forceFill(['preferences' => $preferences])->save();
+    }
+
     private function clearActiveSessionFromUserPreferences(User $user, ?string $onlyIfMatchesSessionId = null): void
     {
         $preferences = is_array($user->preferences) ? $user->preferences : [];
@@ -230,12 +245,24 @@ class AdminAccessAuditService
             return;
         }
 
-        if (! array_key_exists(self::ACTIVE_SESSION_KEY, $preferences)) {
+        if (! array_key_exists(self::ACTIVE_SESSION_KEY, $preferences)
+            && ! array_key_exists(self::ACTIVE_DEVICE_HASH_KEY, $preferences)) {
             return;
         }
 
         unset($preferences[self::ACTIVE_SESSION_KEY]);
+        unset($preferences[self::ACTIVE_DEVICE_HASH_KEY]);
         $user->forceFill(['preferences' => $preferences])->save();
+    }
+
+    private function resolveDeviceHash(Request $request): string
+    {
+        $userAgent = strtolower(trim((string) ($request->userAgent() ?? '')));
+        if ($userAgent === '') {
+            return '';
+        }
+
+        return hash('sha256', $userAgent);
     }
 
     private function resolveContractorId(Request $request): ?int
