@@ -3,6 +3,7 @@
 namespace App\Services\Payments;
 
 use App\Models\PaymentGateway;
+use App\Models\PaymentMethod;
 use App\Models\Sale;
 use App\Models\SalePayment;
 use App\Services\Payments\Contracts\PaymentProviderContract;
@@ -28,18 +29,52 @@ class PaymentProviderManager
      * @param array<string, mixed> $context
      * @return array<string, mixed>
      */
+    public function createPaymentIntent(
+        PaymentGateway $gateway,
+        Sale $sale,
+        SalePayment $salePayment,
+        string $paymentMethodCode,
+        array $context = []
+    ): array {
+        return $this->resolveProvider($gateway)->createPaymentIntent(
+            $gateway,
+            $sale,
+            $salePayment,
+            $paymentMethodCode,
+            $context
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function fetchPaymentIntent(
+        PaymentGateway $gateway,
+        string $transactionReference,
+        ?string $paymentMethodCode = null
+    ): array {
+        return $this->resolveProvider($gateway)->fetchPaymentIntent($gateway, $transactionReference, $paymentMethodCode);
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     * @return array<string, mixed>
+     */
     public function createPixPayment(
         PaymentGateway $gateway,
         Sale $sale,
         SalePayment $salePayment,
         array $context = []
     ): array {
-        return $this->resolveProvider($gateway)->createPixPayment(
-            $gateway,
-            $sale,
-            $salePayment,
-            $context
-        );
+        return $this->createPaymentIntent($gateway, $sale, $salePayment, PaymentMethod::CODE_PIX, $context);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function fetchPixPayment(PaymentGateway $gateway, string $transactionReference): array
+    {
+        return $this->fetchPaymentIntent($gateway, $transactionReference, PaymentMethod::CODE_PIX);
     }
 
     /**
@@ -49,7 +84,7 @@ class PaymentProviderManager
      *   details: array<string, mixed>
      * }
      */
-    public function testGatewayConnection(PaymentGateway $gateway): array
+    public function testGatewayConnection(PaymentGateway $gateway, ?string $paymentMethodCode = null): array
     {
         if ((string) $gateway->provider === PaymentGateway::PROVIDER_MANUAL) {
             return [
@@ -61,7 +96,7 @@ class PaymentProviderManager
             ];
         }
 
-        return $this->resolveProvider($gateway)->testConnection($gateway);
+        return $this->resolveProvider($gateway)->testConnection($gateway, $paymentMethodCode);
     }
 
     /**

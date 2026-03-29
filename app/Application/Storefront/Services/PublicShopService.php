@@ -35,6 +35,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -376,14 +377,7 @@ class PublicShopService
             }
         }
 
-        $paymentGateway = null;
-        if ($paymentMethod?->payment_gateway_id) {
-            $paymentGateway = PaymentGateway::query()
-                ->where('contractor_id', $contractor->id)
-                ->where('id', $paymentMethod->payment_gateway_id)
-                ->where('is_active', true)
-                ->first();
-        }
+        $paymentGateway = $this->resolveCheckoutPaymentGateway($contractor, $paymentMethod);
 
         $rawItems = collect($data['items'] ?? []);
         if ($rawItems->isEmpty()) {
@@ -573,9 +567,20 @@ class PublicShopService
                     ]);
                 }
 
-                $checkoutMode = $paymentMethod && $paymentGateway && $this->shouldCreatePixIntent($paymentMethod, $paymentGateway)
-                    ? 'integrated'
-                    : 'manual';
+                $usesIntegratedGateway = $paymentMethod
+                    && $paymentGateway
+                    && $this->isIntegratedGatewayCheckout($paymentGateway);
+
+                if (
+                    $usesIntegratedGateway
+                    && ! $this->supportsIntegratedGatewayCheckoutNow($paymentMethod, $paymentGateway)
+                ) {
+                    throw ValidationException::withMessages([
+                        'payment_method_id' => $this->resolveUnsupportedIntegratedCheckoutMessage($paymentMethod),
+                    ]);
+                }
+
+                $checkoutMode = $usesIntegratedGateway ? 'integrated' : 'manual';
 
                 $client = $this->resolveOrCreateCheckoutClient($contractor, $data, $shopCustomer);
 
@@ -680,11 +685,12 @@ class PublicShopService
                         ],
                     ]);
 
-                    if ($paymentGateway && $this->shouldCreatePixIntent($paymentMethod, $paymentGateway)) {
-                        $this->createCheckoutPixIntent(
+                    if ($paymentGateway && $this->supportsIntegratedGatewayCheckoutNow($paymentMethod, $paymentGateway)) {
+                        $this->createCheckoutIntegratedIntent(
                             $contractor,
                             $sale,
                             $salePayment,
+                            $paymentMethod,
                             $paymentGateway,
                             $idempotencyKey
                         );
@@ -708,14 +714,14 @@ class PublicShopService
             if ($createdSale) {
                 app(OrderNotificationService::class)->notifyOrderCreated($createdSale);
                 $checkoutPayment = $this->resolveCheckoutPaymentPayload($createdSale);
-                if (! ($checkoutPayment !== null && $this->isPixPaymentPayload($checkoutPayment))) {
+                if (! ($checkoutPayment !== null && $this->isIntegratedPaymentPayload($checkoutPayment))) {
                     $checkoutManual = $this->resolveManualCheckoutPayload($contractor, $createdSale);
                 }
             }
         }
 
         $redirect = back()->with('status', 'Pedido enviado com sucesso. Aguarde a confirmação da loja.');
-        if ($checkoutPayment !== null && $this->isPixPaymentPayload($checkoutPayment)) {
+        if ($checkoutPayment !== null && $this->isIntegratedPaymentPayload($checkoutPayment)) {
             $redirect = $redirect->with('checkout_payment', $checkoutPayment);
         } elseif ($checkoutManual !== null) {
             $redirect = $redirect->with('checkout_manual', $checkoutManual);
@@ -757,11 +763,16 @@ class PublicShopService
         }
 
         $checkoutPayment = $this->resolveCheckoutPaymentPayload($saleModel);
-        if ($checkoutPayment === null || ! $this->isPixPaymentPayload($checkoutPayment)) {
+        if ($checkoutPayment === null || ! $this->isIntegratedPaymentPayload($checkoutPayment)) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Cobrança Pix não localizada para este pedido.',
+                'message' => 'Cobrança integrada não localizada para este pedido.',
             ], 404);
+        }
+
+        if ($this->shouldReconcileCheckoutIntegratedPayment($checkoutPayment)) {
+            $this->reconcileCheckoutIntegratedPayment($saleModel, $checkoutPayment);
+            $checkoutPayment = $this->resolveCheckoutPaymentPayload($saleModel->refresh()) ?? $checkoutPayment;
         }
 
         return response()->json([
@@ -1073,6 +1084,12 @@ class PublicShopService
      */
     private function resolveCheckoutPaymentMethods(Contractor $contractor): array
     {
+        $hasActiveMercadoPagoGateway = PaymentGateway::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('provider', PaymentGateway::PROVIDER_MERCADO_PAGO)
+            ->where('is_active', true)
+            ->exists();
+
         return PaymentMethod::query()
             ->where('contractor_id', $contractor->id)
             ->where('is_active', true)
@@ -1080,9 +1097,14 @@ class PublicShopService
             ->orderByDesc('is_default')
             ->orderBy('sort_order')
             ->orderBy('name')
-            ->get(['id', 'name', 'code', 'fee_fixed', 'fee_percent', 'payment_gateway_id'])
-            ->map(static function (PaymentMethod $method): array {
+            ->get(['id', 'name', 'code', 'fee_fixed', 'fee_percent', 'payment_gateway_id', 'settings'])
+            ->map(static function (PaymentMethod $method) use ($hasActiveMercadoPagoGateway): array {
                 $gateway = $method->paymentGateway;
+                $settings = is_array($method->settings) ? $method->settings : [];
+                $integrationProvider = strtolower(trim((string) data_get($settings, 'gateway_integration.provider', '')));
+                $isIntegratedBySettings = $integrationProvider !== ''
+                    && $integrationProvider !== PaymentGateway::PROVIDER_MANUAL
+                    && $hasActiveMercadoPagoGateway;
                 $isIntegrated = $gateway
                     && (bool) $gateway->is_active
                     && (string) $gateway->provider !== PaymentGateway::PROVIDER_MANUAL;
@@ -1093,11 +1115,60 @@ class PublicShopService
                     'code' => (string) $method->code,
                     'fee_fixed' => round((float) ($method->fee_fixed ?? 0), 2),
                     'fee_percent' => round((float) ($method->fee_percent ?? 0), 2),
-                    'checkout_mode' => $isIntegrated ? 'integrated' : 'manual',
+                    'checkout_mode' => ($isIntegrated || $isIntegratedBySettings) ? 'integrated' : 'manual',
                 ];
             })
             ->values()
             ->all();
+    }
+
+    private function resolveCheckoutPaymentGateway(Contractor $contractor, ?PaymentMethod $paymentMethod): ?PaymentGateway
+    {
+        if (! $paymentMethod) {
+            return null;
+        }
+
+        $gatewayId = (int) ($paymentMethod->payment_gateway_id ?? 0);
+        if ($gatewayId > 0) {
+            $gateway = PaymentGateway::query()
+                ->where('contractor_id', $contractor->id)
+                ->where('id', $gatewayId)
+                ->where('is_active', true)
+                ->first();
+
+            if ($gateway) {
+                return $gateway;
+            }
+        }
+
+        if (! $this->methodLooksIntegratedForMercadoPago($paymentMethod)) {
+            return null;
+        }
+
+        return PaymentGateway::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('provider', PaymentGateway::PROVIDER_MERCADO_PAGO)
+            ->where('is_active', true)
+            ->orderByDesc('is_default')
+            ->latest('id')
+            ->first();
+    }
+
+    private function methodLooksIntegratedForMercadoPago(PaymentMethod $paymentMethod): bool
+    {
+        $settings = is_array($paymentMethod->settings) ? $paymentMethod->settings : [];
+        $integrationProvider = strtolower(trim((string) data_get($settings, 'gateway_integration.provider', '')));
+
+        if ($integrationProvider === PaymentGateway::PROVIDER_MERCADO_PAGO) {
+            return true;
+        }
+
+        if ($integrationProvider !== '') {
+            return false;
+        }
+
+        return (int) ($paymentMethod->payment_gateway_id ?? 0) > 0
+            && in_array(strtolower(trim((string) $paymentMethod->code)), PaymentMethod::INTEGRATED_CODES, true);
     }
 
     /**
@@ -1939,16 +2010,24 @@ class PublicShopService
 
         $transactionReference = trim((string) ($salePayment->transaction_reference
             ?? ($paymentIntent['transaction_reference'] ?? ($saleIntent['transaction_reference'] ?? ''))));
-        $paymentMethodCode = strtolower(trim((string) ($salePayment->paymentMethod?->code ?? '')));
-        $paymentMethodName = trim((string) ($salePayment->paymentMethod?->name ?? ''));
+        $paymentMethodCode = strtolower(trim((string) (
+            $salePayment->paymentMethod?->code
+            ?? ($paymentIntent['payment_method_code'] ?? ($saleIntent['payment_method_code'] ?? ''))
+        )));
+        $paymentMethodName = trim((string) (
+            $salePayment->paymentMethod?->name
+            ?? ($paymentIntent['payment_method_name'] ?? ($saleIntent['payment_method_name'] ?? ''))
+        ));
         $provider = trim((string) (data_get($salePayment->metadata ?? [], 'provider')
+            ?? data_get($salePayment, 'paymentGateway.provider')
             ?? ($paymentIntent['provider'] ?? ($saleIntent['provider'] ?? ''))));
         $ticketUrl = trim((string) ($paymentIntent['ticket_url'] ?? ($saleIntent['ticket_url'] ?? '')));
         $qrCode = trim((string) ($paymentIntent['qr_code'] ?? ($saleIntent['qr_code'] ?? '')));
         $qrCodeBase64 = trim((string) ($paymentIntent['qr_code_base64'] ?? ($saleIntent['qr_code_base64'] ?? '')));
+        $checkoutUrl = trim((string) ($paymentIntent['checkout_url'] ?? ($saleIntent['checkout_url'] ?? '')));
         $expiresAt = $paymentIntent['date_of_expiration'] ?? ($saleIntent['date_of_expiration'] ?? null);
 
-        return [
+        $payload = [
             'status' => (string) $salePayment->status,
             'status_label' => $this->resolveSalePaymentStatusLabel((string) $salePayment->status),
             'method_code' => $paymentMethodCode,
@@ -1957,11 +2036,32 @@ class PublicShopService
             'transaction_reference' => $transactionReference,
             'amount' => round((float) $salePayment->amount, 2),
             'ticket_url' => $ticketUrl,
+            'checkout_url' => $checkoutUrl,
             'qr_code' => $qrCode,
             'qr_code_base64' => $qrCodeBase64,
             'expires_at' => $expiresAt,
-            'is_pix' => $this->hasPixCheckoutData($paymentMethodCode, $qrCode, $qrCodeBase64, $ticketUrl),
         ];
+
+        $payload['is_pix'] = $this->isPixPaymentPayload([
+            'provider' => $provider,
+            'payment_method_code' => $paymentMethodCode,
+            'ticket_url' => $ticketUrl,
+            'checkout_url' => $checkoutUrl,
+            'qr_code' => $qrCode,
+            'qr_code_base64' => $qrCodeBase64,
+            'transaction_reference' => $transactionReference,
+        ]);
+        $payload['is_integrated'] = $this->isIntegratedPaymentPayload([
+            'provider' => $provider,
+            'payment_method_code' => $paymentMethodCode,
+            'checkout_url' => $checkoutUrl,
+            'qr_code' => $qrCode,
+            'qr_code_base64' => $qrCodeBase64,
+            'ticket_url' => $ticketUrl,
+            'transaction_reference' => $transactionReference,
+        ]);
+
+        return $payload;
     }
 
     private function resolveCurrentShopCustomerForContractor(Contractor $contractor): ?ShopCustomer
@@ -2006,27 +2106,75 @@ class PublicShopService
         return $code;
     }
 
-    private function shouldCreatePixIntent(PaymentMethod $paymentMethod, PaymentGateway $paymentGateway): bool
+    private function isIntegratedGatewayCheckout(PaymentGateway $paymentGateway): bool
+    {
+        return (bool) $paymentGateway->is_active
+            && (string) $paymentGateway->provider !== PaymentGateway::PROVIDER_MANUAL;
+    }
+
+    private function resolveIntegratedMethodCode(PaymentMethod $paymentMethod): ?string
+    {
+        $settings = is_array($paymentMethod->settings) ? $paymentMethod->settings : [];
+        $integrationCode = strtolower(trim((string) data_get($settings, 'gateway_integration.payment_method_code', '')));
+        if (in_array($integrationCode, PaymentMethod::INTEGRATED_CODES, true)) {
+            return $integrationCode;
+        }
+
+        $code = strtolower(trim((string) $paymentMethod->code));
+        if (in_array($code, PaymentMethod::INTEGRATED_CODES, true)) {
+            return $code;
+        }
+
+        if (str_contains($code, 'pix')) {
+            return PaymentMethod::CODE_PIX;
+        }
+        if (str_contains($code, 'boleto')) {
+            return PaymentMethod::CODE_BOLETO;
+        }
+        if (str_contains($code, 'credit') || str_contains($code, 'credito')) {
+            return PaymentMethod::CODE_CREDIT_CARD;
+        }
+        if (str_contains($code, 'debit') || str_contains($code, 'debito')) {
+            return PaymentMethod::CODE_DEBIT_CARD;
+        }
+
+        return null;
+    }
+
+    private function supportsIntegratedGatewayCheckoutNow(PaymentMethod $paymentMethod, PaymentGateway $paymentGateway): bool
     {
         if ((string) $paymentGateway->provider !== PaymentGateway::PROVIDER_MERCADO_PAGO) {
             return false;
         }
 
-        $methodCode = strtolower(trim((string) $paymentMethod->code));
-        $methodName = strtolower(trim((string) $paymentMethod->name));
-
-        return $methodCode === PaymentMethod::CODE_PIX
-            || str_contains($methodCode, 'pix')
-            || str_contains($methodName, 'pix');
+        return $this->resolveIntegratedMethodCode($paymentMethod) !== null;
     }
 
-    private function createCheckoutPixIntent(
+    private function resolveUnsupportedIntegratedCheckoutMessage(PaymentMethod $paymentMethod): string
+    {
+        $code = $this->resolveIntegratedMethodCode($paymentMethod);
+        if ($code !== null) {
+            return 'Esta forma automática está temporariamente indisponível. Tente novamente em instantes.';
+        }
+
+        return 'Esta forma de pagamento integrada não está disponível para checkout online.';
+    }
+
+    private function createCheckoutIntegratedIntent(
         Contractor $contractor,
         Sale $sale,
         SalePayment $salePayment,
+        PaymentMethod $paymentMethod,
         PaymentGateway $paymentGateway,
         ?string $checkoutIdempotencyKey
     ): void {
+        $methodCode = $this->resolveIntegratedMethodCode($paymentMethod);
+        if ($methodCode === null) {
+            throw ValidationException::withMessages([
+                'payment_method_id' => 'Forma de pagamento integrada inválida para este checkout.',
+            ]);
+        }
+
         $credentials = is_array($paymentGateway->credentials) ? $paymentGateway->credentials : [];
         $webhookSecret = trim((string) ($credentials['webhook_secret'] ?? ''));
 
@@ -2044,30 +2192,156 @@ class PublicShopService
 
         $payerEmail = trim((string) data_get($sale->metadata, 'customer_email', ''));
         $idempotency = $checkoutIdempotencyKey !== null && $checkoutIdempotencyKey !== ''
-            ? $checkoutIdempotencyKey.'-pix'
+            ? $checkoutIdempotencyKey.'-'.$methodCode
             : 'sale-'.$sale->id.'-payment-'.$salePayment->id.'-'.Str::random(8);
 
         try {
-            $intent = app(PaymentProviderManager::class)->createPixPayment(
+            $intent = app(PaymentProviderManager::class)->createPaymentIntent(
                 $paymentGateway,
                 $sale,
                 $salePayment,
+                $methodCode,
                 [
                     'idempotency_key' => substr($idempotency, 0, 80),
                     'notification_url' => $notificationUrl,
                     'payer_email' => $payerEmail,
                     'description' => 'Pedido '.$sale->code,
                     'expires_at' => now()->addMinutes(30),
+                    'max_installments' => (bool) $paymentMethod->allows_installments
+                        ? max(1, (int) ($paymentMethod->max_installments ?? 1))
+                        : 1,
                 ]
             );
         } catch (PaymentProviderException $exception) {
             report($exception);
 
             throw ValidationException::withMessages([
-                'order' => $this->resolveCheckoutPixProviderErrorMessage($exception),
+                'order' => $this->resolveCheckoutIntegratedProviderErrorMessage($exception),
             ]);
         }
 
+        $this->applyCheckoutPaymentIntentResult($sale, $salePayment, $intent);
+    }
+
+    /**
+     * @param  array<string, mixed>  $checkoutPayment
+     */
+    private function shouldReconcileCheckoutIntegratedPayment(array $checkoutPayment): bool
+    {
+        if (! $this->isIntegratedPaymentPayload($checkoutPayment)) {
+            return false;
+        }
+
+        $provider = strtolower(trim((string) ($checkoutPayment['provider'] ?? '')));
+        $transactionReference = trim((string) ($checkoutPayment['transaction_reference'] ?? ''));
+        $paymentStatus = strtolower(trim((string) ($checkoutPayment['payment_status'] ?? '')));
+        $checkoutUrl = trim((string) ($checkoutPayment['checkout_url'] ?? ''));
+
+        if ($provider !== PaymentGateway::PROVIDER_MERCADO_PAGO || $transactionReference === '') {
+            return false;
+        }
+
+        if ($this->isPixPaymentPayload($checkoutPayment)) {
+            $hasVisiblePixData = $this->hasPixCheckoutData(
+                (string) ($checkoutPayment['payment_method_code'] ?? ''),
+                (string) ($checkoutPayment['qr_code'] ?? ''),
+                (string) ($checkoutPayment['qr_code_base64'] ?? ''),
+                (string) ($checkoutPayment['ticket_url'] ?? '')
+            );
+
+            return ! $hasVisiblePixData
+                || in_array($paymentStatus, [SalePayment::STATUS_PENDING, SalePayment::STATUS_AUTHORIZED], true);
+        }
+
+        if ($checkoutUrl !== '') {
+            return false;
+        }
+
+        return in_array($paymentStatus, [SalePayment::STATUS_PENDING, SalePayment::STATUS_AUTHORIZED], true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $checkoutPayment
+     */
+    private function reconcileCheckoutIntegratedPayment(Sale $sale, array $checkoutPayment): void
+    {
+        $paymentGatewayColumns = ['id', 'contractor_id', 'provider', 'is_active', 'credentials'];
+        if (Schema::hasColumns('payment_gateways', ['mp_access_token', 'mp_refresh_token', 'mp_token_expires_at', 'mp_status'])) {
+            $paymentGatewayColumns = array_merge($paymentGatewayColumns, [
+                'mp_access_token',
+                'mp_refresh_token',
+                'mp_token_expires_at',
+                'mp_status',
+            ]);
+        }
+
+        $salePayment = SalePayment::query()
+            ->where('contractor_id', $sale->contractor_id)
+            ->where('sale_id', $sale->id)
+            ->with([
+                'paymentGateway:'.implode(',', $paymentGatewayColumns),
+                'paymentMethod:id,code',
+            ])
+            ->latest('id')
+            ->first();
+
+        if (! $salePayment) {
+            return;
+        }
+
+        $paymentGateway = $salePayment->paymentGateway;
+        if (! $paymentGateway && $salePayment->payment_gateway_id) {
+            $paymentGateway = PaymentGateway::query()
+                ->where('contractor_id', $sale->contractor_id)
+                ->where('id', (int) $salePayment->payment_gateway_id)
+                ->first();
+        }
+
+        if (
+            ! $paymentGateway
+            || (string) $paymentGateway->provider !== PaymentGateway::PROVIDER_MERCADO_PAGO
+            || ! (bool) $paymentGateway->is_active
+        ) {
+            return;
+        }
+
+        $transactionReference = trim((string) (
+            $salePayment->transaction_reference
+            ?? data_get($salePayment->gateway_payload, 'payment_intent.transaction_reference')
+            ?? data_get($sale->metadata, 'payment_intent.transaction_reference')
+            ?? ''
+        ));
+
+        if ($transactionReference === '') {
+            return;
+        }
+
+        $paymentMethodCode = strtolower(trim((string) (
+            $salePayment->paymentMethod?->code
+            ?? $checkoutPayment['payment_method_code']
+            ?? PaymentMethod::CODE_PIX
+        )));
+
+        try {
+            $intent = app(PaymentProviderManager::class)->fetchPaymentIntent(
+                $paymentGateway,
+                $transactionReference,
+                $paymentMethodCode
+            );
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return;
+        }
+
+        $this->applyCheckoutPaymentIntentResult($sale, $salePayment, $intent);
+    }
+
+    /**
+     * @param  array<string, mixed>  $intent
+     */
+    private function applyCheckoutPaymentIntentResult(Sale $sale, SalePayment $salePayment, array $intent): void
+    {
         $paymentStatus = $this->mapProviderStatusToSalePaymentStatus((string) ($intent['status'] ?? ''));
         $gatewayPayload = is_array($salePayment->gateway_payload) ? $salePayment->gateway_payload : [];
         $gatewayPayload['payment_intent'] = $intent;
@@ -2080,10 +2354,12 @@ class PublicShopService
                 ...(is_array($salePayment->metadata) ? $salePayment->metadata : []),
                 'provider' => PaymentGateway::PROVIDER_MERCADO_PAGO,
                 'intent_status' => (string) ($intent['status'] ?? ''),
+                'payment_method_code' => (string) ($intent['payment_method_code'] ?? ''),
                 'ticket_url' => (string) ($intent['ticket_url'] ?? ''),
+                'checkout_url' => (string) ($intent['checkout_url'] ?? ''),
                 'date_of_expiration' => $intent['date_of_expiration'] ?? null,
             ], static fn (mixed $value): bool => $value !== null),
-            'paid_at' => $paymentStatus === SalePayment::STATUS_PAID ? now() : null,
+            'paid_at' => $paymentStatus === SalePayment::STATUS_PAID ? now() : $salePayment->paid_at,
         ])->save();
 
         $saleMetadata = is_array($sale->metadata) ? $sale->metadata : [];
@@ -2092,11 +2368,12 @@ class PublicShopService
             'status' => (string) ($intent['status'] ?? ''),
             'transaction_reference' => (string) ($intent['transaction_reference'] ?? ''),
             'ticket_url' => (string) ($intent['ticket_url'] ?? ''),
+            'checkout_url' => (string) ($intent['checkout_url'] ?? ''),
             'qr_code' => (string) ($intent['qr_code'] ?? ''),
             'qr_code_base64' => (string) ($intent['qr_code_base64'] ?? ''),
+            'payment_method_code' => (string) ($intent['payment_method_code'] ?? ''),
             'date_of_expiration' => $intent['date_of_expiration'] ?? null,
         ];
-
         $sale->metadata = $saleMetadata;
 
         if ($paymentStatus === SalePayment::STATUS_PAID) {
@@ -2109,6 +2386,8 @@ class PublicShopService
             $sale->status = Sale::STATUS_CANCELLED;
         } elseif ($paymentStatus === SalePayment::STATUS_REFUNDED) {
             $sale->status = Sale::STATUS_REFUNDED;
+        } elseif ($paymentStatus === SalePayment::STATUS_FAILED) {
+            $sale->status = Sale::STATUS_REJECTED;
         }
 
         $sale->save();
@@ -2122,7 +2401,10 @@ class PublicShopService
         $salePayment = SalePayment::query()
             ->where('contractor_id', $sale->contractor_id)
             ->where('sale_id', $sale->id)
-            ->with('paymentMethod:id,code,name')
+            ->with([
+                'paymentMethod:id,code,name',
+                'paymentGateway:id,provider',
+            ])
             ->latest('id')
             ->first();
 
@@ -2144,16 +2426,24 @@ class PublicShopService
 
         $transactionReference = trim((string) ($salePayment->transaction_reference
             ?? ($paymentIntent['transaction_reference'] ?? ($saleIntent['transaction_reference'] ?? ''))));
-        $paymentMethodCode = strtolower(trim((string) ($salePayment->paymentMethod?->code ?? '')));
-        $paymentMethodName = trim((string) ($salePayment->paymentMethod?->name ?? ''));
+        $paymentMethodCode = strtolower(trim((string) (
+            $salePayment->paymentMethod?->code
+            ?? ($paymentIntent['payment_method_code'] ?? ($saleIntent['payment_method_code'] ?? ''))
+        )));
+        $paymentMethodName = trim((string) (
+            $salePayment->paymentMethod?->name
+            ?? ($paymentIntent['payment_method_name'] ?? ($saleIntent['payment_method_name'] ?? ''))
+        ));
         $provider = trim((string) (data_get($salePayment->metadata ?? [], 'provider')
+            ?? data_get($salePayment, 'paymentGateway.provider')
             ?? ($paymentIntent['provider'] ?? ($saleIntent['provider'] ?? ''))));
         $ticketUrl = trim((string) ($paymentIntent['ticket_url'] ?? ($saleIntent['ticket_url'] ?? '')));
         $qrCode = trim((string) ($paymentIntent['qr_code'] ?? ($saleIntent['qr_code'] ?? '')));
         $qrCodeBase64 = trim((string) ($paymentIntent['qr_code_base64'] ?? ($saleIntent['qr_code_base64'] ?? '')));
         $expiresAt = $paymentIntent['date_of_expiration'] ?? ($saleIntent['date_of_expiration'] ?? null);
+        $checkoutUrl = trim((string) ($paymentIntent['checkout_url'] ?? ($saleIntent['checkout_url'] ?? '')));
 
-        return [
+        $payload = [
             'sale_id' => (int) $sale->id,
             'sale_code' => (string) $sale->code,
             'sale_status' => (string) $sale->status,
@@ -2167,11 +2457,16 @@ class PublicShopService
             'transaction_reference' => $transactionReference,
             'amount' => round((float) $salePayment->amount, 2),
             'ticket_url' => $ticketUrl,
+            'checkout_url' => $checkoutUrl,
             'qr_code' => $qrCode,
             'qr_code_base64' => $qrCodeBase64,
             'expires_at' => $expiresAt,
-            'is_pix' => $this->hasPixCheckoutData($paymentMethodCode, $qrCode, $qrCodeBase64, $ticketUrl),
         ];
+
+        $payload['is_pix'] = $this->isPixPaymentPayload($payload);
+        $payload['is_integrated'] = $this->isIntegratedPaymentPayload($payload);
+
+        return $payload;
     }
 
     /**
@@ -2181,7 +2476,6 @@ class PublicShopService
     {
         $paymentMethodCode = strtolower(trim((string) ($checkoutPayment['payment_method_code'] ?? '')));
         $provider = strtolower(trim((string) ($checkoutPayment['provider'] ?? '')));
-        $transactionReference = trim((string) ($checkoutPayment['transaction_reference'] ?? ''));
 
         if ($this->hasPixCheckoutData(
             $paymentMethodCode,
@@ -2194,8 +2488,32 @@ class PublicShopService
 
         return $provider === PaymentGateway::PROVIDER_MERCADO_PAGO
             && ($paymentMethodCode === PaymentMethod::CODE_PIX
-                || str_contains($paymentMethodCode, 'pix')
-                || $transactionReference !== '');
+                || str_contains($paymentMethodCode, 'pix'));
+    }
+
+    /**
+     * @param  array<string, mixed>  $checkoutPayment
+     */
+    private function isIntegratedPaymentPayload(array $checkoutPayment): bool
+    {
+        $provider = strtolower(trim((string) ($checkoutPayment['provider'] ?? '')));
+        if ($provider !== PaymentGateway::PROVIDER_MERCADO_PAGO) {
+            return false;
+        }
+
+        $paymentMethodCode = strtolower(trim((string) ($checkoutPayment['payment_method_code'] ?? '')));
+        $transactionReference = trim((string) ($checkoutPayment['transaction_reference'] ?? ''));
+        $checkoutUrl = trim((string) ($checkoutPayment['checkout_url'] ?? ''));
+
+        if ($this->isPixPaymentPayload($checkoutPayment)) {
+            return true;
+        }
+
+        if ($checkoutUrl !== '') {
+            return true;
+        }
+
+        return $transactionReference !== '' && in_array($paymentMethodCode, PaymentMethod::INTEGRATED_CODES, true);
     }
 
     private function hasPixCheckoutData(
@@ -2204,9 +2522,14 @@ class PublicShopService
         string $qrCodeBase64,
         string $ticketUrl
     ): bool {
-        return trim($qrCode) !== ''
-            || trim($qrCodeBase64) !== ''
-            || trim($ticketUrl) !== '';
+        if (trim($qrCode) !== '' || trim($qrCodeBase64) !== '') {
+            return true;
+        }
+
+        $method = strtolower(trim($paymentMethodCode));
+
+        return ($method === PaymentMethod::CODE_PIX || str_contains($method, 'pix'))
+            && trim($ticketUrl) !== '';
     }
 
     private function normalizePixWebhookNotificationUrl(string $url): ?string
@@ -2236,11 +2559,11 @@ class PublicShopService
         return $safeUrl;
     }
 
-    private function resolveCheckoutPixProviderErrorMessage(PaymentProviderException $exception): string
+    private function resolveCheckoutIntegratedProviderErrorMessage(PaymentProviderException $exception): string
     {
         $rawMessage = trim((string) $exception->getMessage());
         $normalized = strtolower($rawMessage);
-        $default = 'Não foi possível iniciar o pagamento Pix agora. Tente novamente em instantes.';
+        $default = 'Não foi possível iniciar o pagamento automático agora. Tente novamente em instantes.';
 
         if ($normalized === '') {
             return $default;
@@ -2249,6 +2572,12 @@ class PublicShopService
         if (str_contains($normalized, 'unauthorized use of live credentials')) {
             return 'Mercado Pago recusou as credenciais informadas para este ambiente. '
                 .'Revise as credenciais de teste/produção no gateway.';
+        }
+
+        if (str_contains($normalized, 'não está disponível na conta conectada do mercado pago')
+            || str_contains($normalized, 'nao esta disponivel na conta conectada do mercado pago')) {
+            return 'A conta Mercado Pago conectada nesta loja não possui Pix habilitado. '
+                .'Conecte uma conta com Pix ativo e tente novamente.';
         }
 
         if (str_contains($normalized, 'notification_url') || str_contains($normalized, 'notificaction_url')) {
@@ -2308,9 +2637,10 @@ class PublicShopService
         $normalized = strtolower(trim($status));
 
         return match ($normalized) {
-            'approved', 'accredited', 'paid', 'completed' => SalePayment::STATUS_PAID,
+            'approved', 'accredited', 'paid', 'completed', 'processed' => SalePayment::STATUS_PAID,
             'authorized', 'authorised' => SalePayment::STATUS_AUTHORIZED,
-            'cancelled', 'canceled' => SalePayment::STATUS_CANCELLED,
+            'action_required', 'waiting_transfer', 'pending', 'waiting', 'in_process', 'processing' => SalePayment::STATUS_PENDING,
+            'cancelled', 'canceled', 'expired' => SalePayment::STATUS_CANCELLED,
             'refunded', 'charged_back', 'chargeback' => SalePayment::STATUS_REFUNDED,
             'rejected', 'failed', 'denied', 'error' => SalePayment::STATUS_FAILED,
             default => SalePayment::STATUS_PENDING,
@@ -2371,3 +2701,4 @@ class PublicShopService
             ->all();
     }
 }
+

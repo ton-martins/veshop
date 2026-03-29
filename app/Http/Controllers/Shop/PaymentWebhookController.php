@@ -37,7 +37,7 @@ class PaymentWebhookController extends Controller
             ], 404);
         }
 
-        if (! $this->passesWebhookSecretValidation($request, $gateway)) {
+        if (! $this->passesWebhookValidation($request, $gateway)) {
             return response()->json([
                 'ok' => false,
                 'message' => 'Webhook nao autorizado.',
@@ -220,7 +220,72 @@ class PaymentWebhookController extends Controller
         ]);
     }
 
-    private function passesWebhookSecretValidation(Request $request, PaymentGateway $gateway): bool
+    private function passesWebhookValidation(Request $request, PaymentGateway $gateway): bool
+    {
+        if ((string) $gateway->provider === PaymentGateway::PROVIDER_MERCADO_PAGO) {
+            $signatureHeader = trim((string) $request->header('x-signature', ''));
+
+            if ($signatureHeader !== '') {
+                if ($this->passesMercadoPagoSignatureValidation($request)) {
+                    return true;
+                }
+
+                if (trim((string) config('services.mercadopago.webhook_secret', '')) !== '') {
+                    return false;
+                }
+            }
+        }
+
+        return $this->passesLegacyWebhookSecretValidation($request, $gateway);
+    }
+
+    private function passesMercadoPagoSignatureValidation(Request $request): bool
+    {
+        $secret = trim((string) config('services.mercadopago.webhook_secret', ''));
+        if ($secret === '') {
+            return false;
+        }
+
+        $signatureHeader = trim((string) $request->header('x-signature', ''));
+        $requestId = trim((string) $request->header('x-request-id', ''));
+        if ($signatureHeader === '' || $requestId === '') {
+            return false;
+        }
+
+        $signatureMap = [];
+        foreach (explode(',', $signatureHeader) as $chunk) {
+            $parts = explode('=', trim($chunk), 2);
+            if (count($parts) !== 2) {
+                continue;
+            }
+
+            $signatureMap[strtolower(trim($parts[0]))] = trim($parts[1]);
+        }
+
+        $ts = trim((string) ($signatureMap['ts'] ?? ''));
+        $v1 = trim((string) ($signatureMap['v1'] ?? ''));
+        if ($ts === '' || $v1 === '') {
+            return false;
+        }
+
+        $dataId = trim((string) (
+            $request->query('data.id')
+            ?? $request->input('data.id')
+            ?? data_get($request->all(), 'data.id')
+            ?? ''
+        ));
+
+        if ($dataId === '') {
+            return false;
+        }
+
+        $manifest = sprintf('id:%s;request-id:%s;ts:%s;', strtolower($dataId), $requestId, $ts);
+        $expected = hash_hmac('sha256', $manifest, $secret);
+
+        return hash_equals($expected, strtolower($v1));
+    }
+
+    private function passesLegacyWebhookSecretValidation(Request $request, PaymentGateway $gateway): bool
     {
         $credentials = is_array($gateway->credentials) ? $gateway->credentials : [];
         $expected = trim((string) ($credentials['webhook_secret'] ?? ''));
@@ -354,12 +419,13 @@ class PaymentWebhookController extends Controller
 
     private function mapWebhookStatusToPaymentStatus(string $status): string
     {
-        return match ($status) {
-            'paid', 'succeeded', 'approved', 'completed' => SalePayment::STATUS_PAID,
+        return match (strtolower(trim($status))) {
+            'paid', 'succeeded', 'approved', 'completed', 'processed', 'accredited' => SalePayment::STATUS_PAID,
             'authorized', 'authorised' => SalePayment::STATUS_AUTHORIZED,
-            'failed', 'declined', 'denied', 'error' => SalePayment::STATUS_FAILED,
-            'cancelled', 'canceled', 'voided' => SalePayment::STATUS_CANCELLED,
-            'refunded', 'chargeback' => SalePayment::STATUS_REFUNDED,
+            'action_required', 'waiting_transfer', 'pending', 'waiting', 'in_process', 'processing' => SalePayment::STATUS_PENDING,
+            'failed', 'declined', 'denied', 'error', 'rejected' => SalePayment::STATUS_FAILED,
+            'cancelled', 'canceled', 'voided', 'expired' => SalePayment::STATUS_CANCELLED,
+            'refunded', 'chargeback', 'charged_back' => SalePayment::STATUS_REFUNDED,
             default => SalePayment::STATUS_PENDING,
         };
     }
@@ -368,11 +434,12 @@ class PaymentWebhookController extends Controller
     {
         $currentStatus = (string) ($sale?->status ?? Sale::STATUS_PENDING_CONFIRMATION);
 
-        return match ($status) {
-            'paid', 'succeeded', 'approved', 'completed' => Sale::STATUS_PAID,
-            'authorized', 'authorised', 'pending', 'waiting' => Sale::STATUS_AWAITING_PAYMENT,
-            'refunded', 'chargeback' => Sale::STATUS_REFUNDED,
-            'cancelled', 'canceled', 'voided' => Sale::STATUS_CANCELLED,
+        return match (strtolower(trim($status))) {
+            'paid', 'succeeded', 'approved', 'completed', 'processed', 'accredited' => Sale::STATUS_PAID,
+            'authorized', 'authorised', 'pending', 'waiting', 'action_required', 'waiting_transfer', 'in_process', 'processing' => Sale::STATUS_AWAITING_PAYMENT,
+            'refunded', 'chargeback', 'charged_back' => Sale::STATUS_REFUNDED,
+            'cancelled', 'canceled', 'voided', 'expired' => Sale::STATUS_CANCELLED,
+            'rejected', 'failed' => Sale::STATUS_REJECTED,
             default => $currentStatus,
         };
     }

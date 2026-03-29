@@ -1,121 +1,151 @@
-# Checklist técnico de auditoria
-
-## Mercado Pago (Checkout API via Orders + Pix)
+# Checklist de Implementação - Mercado Pago Orders + Pix
 
 Data: 28/03/2026  
-Objetivo: garantir geração automática de QR Code Pix na loja virtual e consistência de status entre storefront, ERP e Mercado Pago.
+Status: Planejamento técnico  
+Decisão: substituir a integração legada de Mercado Pago por uma integração nova, completa e multi-tenant.
 
-## 1) Escopo e pré-requisitos
+## 1) Decisão de arquitetura (fechamento)
 
-- [ ] Fluxo auditado por **contratante** (`contractor_id`).
-- [ ] Aplicação Mercado Pago criada para Checkout API via Orders.
-- [ ] Credenciais corretas por ambiente:
-  - [ ] Homologação usa token `TEST-...`.
-  - [ ] Produção usa token `APP_USR-...`.
-- [ ] Forma de pagamento Pix vinculada ao gateway correto do contratante.
-- [ ] Loja com HTTPS público para webhook (em produção/homologação pública).
+- [x] Descontinuar fluxo legado atual (token manual + endpoints legados).
+- [x] Adotar integração oficial via Orders + Pix com webhook assinado.
+- [x] Manter segregação por `contractor_id` em toda leitura/escrita.
+- [x] Tratar `shop/{slug_contratante}` como contexto de loja do contratante.
+- [x] Confirmar que o valor do pagamento deve cair na conta do contratante (OAuth por contratante), não na conta da Veshop.
 
-## 2) Configuração da aplicação no Mercado Pago
+## 2) Escopo funcional (v1 obrigatória)
 
-- [ ] Aplicação criada em “Suas integrações”.
-- [ ] Produto correto habilitado para Checkout API via Orders.
-- [ ] Notificações configuradas para tópico/evento de **order**.
-- [ ] URL de notificação salva com sucesso no painel.
-- [ ] Secret de webhook definido e armazenado no ERP.
+- [ ] Conectar conta Mercado Pago no painel admin da loja (OAuth).
+- [ ] Criar cobrança Pix no checkout da loja virtual (produto e serviço).
+- [ ] Exibir QR Code automaticamente na finalização.
+- [ ] Atualizar status por webhook e reconciliação ativa.
+- [ ] Refletir status consistente em storefront, admin e histórico do cliente.
+- [ ] Suportar ambientes de teste e produção sem mistura de credenciais.
 
-## 3) Criação da cobrança (POST /v1/orders)
+## 3) Modelagem e dados
 
-- [ ] Chamada usa `POST /v1/orders`.
-- [ ] Header `Authorization: Bearer <token>` presente.
-- [ ] Header `X-Idempotency-Key` único por tentativa de checkout.
-- [ ] Payload mínimo válido:
-  - [ ] `type = online`
-  - [ ] `processing_mode = automatic` (ou estratégia definida pelo negócio)
-  - [ ] `transactions.payments[0].payment_method.id = pix`
-  - [ ] `transactions.payments[0].payment_method.type = bank_transfer`
-  - [ ] `external_reference` com código do pedido/agendamento
-  - [ ] `payer.email` válido
-- [ ] Resposta salva no `gateway_payload` sem perda de campos.
+- [ ] Criar estrutura para conexão OAuth por contratante:
+  - [ ] `contractor_id`
+  - [ ] `provider = mercado_pago`
+  - [ ] `mp_user_id`
+  - [ ] `access_token` (criptografado)
+  - [ ] `refresh_token` (criptografado)
+  - [ ] `expires_at`
+  - [ ] `scopes`
+  - [ ] `status` (`connected`, `expired`, `revoked`, `error`)
+- [ ] Criar trilha de sincronização:
+  - [ ] `last_sync_at`
+  - [ ] `last_error`
+  - [ ] `webhook_fail_count`
+- [ ] Revisar `sale_payments` para garantir persistência de:
+  - [ ] `transaction_reference` (id da order/pagamento no MP)
+  - [ ] `gateway_payload` (sanitizado)
+  - [ ] `metadata` (estado interno e auditoria)
+- [ ] Criar migration de transição para desligar campos legados sem quebrar leitura histórica.
 
-## 4) Extração do QR (payload por payload)
+## 4) Backend - serviços de integração
 
-Validar leitura em **todas** as variações possíveis:
+- [ ] Implementar `MercadoPagoOAuthService`:
+  - [ ] gerar URL de autorização
+  - [ ] trocar `code` por tokens
+  - [ ] renovar token expirado
+  - [ ] revogar/desconectar conta
+- [ ] Implementar `MercadoPagoOrdersService`:
+  - [ ] criar order Pix com `X-Idempotency-Key`
+  - [ ] consultar order/pagamento por id
+  - [ ] normalizar payload de QR Code e status
+- [ ] Padronizar contrato de provider:
+  - [ ] `createPixOrder`
+  - [ ] `fetchOrder`
+  - [ ] `normalizeWebhook`
+  - [ ] `testConnection`
+- [ ] Garantir idempotência por pedido/agendamento no domínio interno.
 
-- [ ] `transactions.payments[].payment_method.qr_code`
-- [ ] `transactions.payments[].payment_method.data.qr_code`
-- [ ] `transactions.payments[].qr_code`
-- [ ] `point_of_interaction.transaction_data.qr_code` (fallback)
-- [ ] `qr_code_base64` em variações equivalentes
-- [ ] `ticket_url` em variações equivalentes
+## 5) Webhook e segurança
 
-Resultado esperado:
+- [ ] Receber webhook de order/payment do Mercado Pago.
+- [ ] Validar assinatura oficial (`x-signature`) e timestamp.
+- [ ] Implementar processamento idempotente por `event_id`.
+- [ ] Sempre buscar estado atualizado no MP antes de persistir.
+- [ ] Mapear status do MP para estados internos:
+  - [ ] pendente
+  - [ ] processando
+  - [ ] pago
+  - [ ] cancelado/expirado
+- [ ] Registrar logs técnicos sem expor segredo/token.
 
-- [ ] `checkout_payment.qr_code` preenchido quando disponível.
-- [ ] `checkout_payment.qr_code_base64` preenchido quando disponível.
-- [ ] `checkout_payment.ticket_url` preenchido quando disponível.
+## 6) Frontend admin (configuração simplificada)
 
-## 5) Geração automática no storefront
+- [ ] Unificar fluxo no cadastro de forma de pagamento:
+  - [ ] opção manual
+  - [ ] opção Mercado Pago Pix (conectar conta)
+- [ ] Remover necessidade de colar token manual para MP.
+- [ ] Exibir status da conexão:
+  - [ ] conectado
+  - [ ] token expirado
+  - [ ] desconectado
+  - [ ] erro de permissão/escopo
+- [ ] Exibir ação de reconectar e desconectar.
 
-- [ ] Após finalizar pedido/agendamento Pix, tela exibe bloco de cobrança Pix.
-- [ ] Se QR não vier na primeira resposta, frontend faz atualização automática de status.
-- [ ] Polling para quando QR aparece ou quando expira número máximo de tentativas.
-- [ ] Botão manual “Atualizar cobrança” permanece como fallback.
-- [ ] QR renderiza por `qr_code_base64`; se ausente, gera imagem via `qr_code`.
-- [ ] Mensagem clara em pt-BR quando ainda está aguardando retorno da cobrança.
+## 7) Frontend loja virtual (checkout)
 
-## 6) Consulta de status (GET /v1/orders/{id})
+- [ ] Após finalizar pedido, abrir bloco Pix com:
+  - [ ] QR Code (imagem base64 ou fallback por payload textual)
+  - [ ] código Pix copia-e-cola
+  - [ ] valor, expiração e status
+- [ ] Atualizar status automático (polling controlado) até confirmação/expiração.
+- [ ] Tratar falhas com mensagem clara em pt-BR e botão de tentativa.
+- [ ] Garantir fluxo em desktop e mobile.
 
-- [ ] Endpoint de status interno consulta Mercado Pago quando ainda sem QR/status final.
-- [ ] `transaction_reference` do pedido interno corresponde ao `order.id` do MP.
-- [ ] Dados reconciliados persistem em `sale_payments` e `sales.metadata`.
-- [ ] Requisições de consulta respeitam segurança do cliente dono do pedido.
+## 8) Remoção do legado (obrigatório nesta entrega)
 
-## 7) Webhook e segurança
+- [ ] Remover provider/serviço legado de criação Pix atual.
+- [ ] Remover telas/campos legados de credencial manual do MP.
+- [ ] Remover rotas/handlers legados não utilizados.
+- [ ] Manter apenas adaptador temporário de leitura para dados antigos (se existir).
+- [ ] Após 1 ciclo estável, remover código de compatibilidade temporária.
 
-- [ ] Webhook recebe eventos de order do Mercado Pago.
-- [ ] Validação de assinatura (`x-signature`) implementada e ativa.
-- [ ] Validação de secret/token adicional (quando aplicável) ativa.
-- [ ] Processamento idempotente por `event_id`/chave de evento.
-- [ ] Ao receber webhook, sistema consulta o recurso atualizado no MP antes de persistir.
+## 9) Testes e homologação
 
-## 8) Mapeamento de status (negócio)
+- [ ] Testes unitários:
+  - [ ] OAuth callback/refresh
+  - [ ] normalização de payload
+  - [ ] mapeamento de status
+- [ ] Testes de integração:
+  - [ ] create order Pix
+  - [ ] fetch order
+  - [ ] webhook válido/inválido
+- [ ] Testes E2E:
+  - [ ] nicho comercial (produto)
+  - [ ] nicho serviços (agendamento)
+  - [ ] QR imediato
+  - [ ] QR tardio via atualização
+- [ ] Teste de não regressão multi-tenant:
+  - [ ] contratante A não acessa dados do contratante B.
 
-- [ ] `action_required` / `waiting_transfer` => pagamento pendente.
-- [ ] `in_process` / `processing` => pagamento em processamento.
-- [ ] `processed` / `approved` / `accredited` => pagamento confirmado.
-- [ ] `cancelled` / `rejected` / `refunded` => pagamento não concluído.
-- [ ] Status de venda/agendamento refletido corretamente após cada transição.
+## 10) Impacto e riscos
 
-## 9) Cenários obrigatórios de homologação
+- [ ] Impacto técnico: médio/alto (financeiro, checkout, webhook, admin).
+- [ ] Impacto em dados: médio (nova modelagem OAuth + transição).
+- [ ] Impacto operacional: alto positivo (menos suporte manual).
+- [ ] Risco principal: quebra de checkout Pix durante transição.
+- [ ] Mitigação:
+  - [ ] rollout por feature flag
+  - [ ] logs estruturados por `contractor_id`/`sale_id`
+  - [ ] monitoramento de taxa de geração de QR e aprovação.
 
-- [ ] Cenário A: QR retornado imediatamente no `POST /v1/orders`.
-- [ ] Cenário B: QR ausente no create e retornado no `GET /v1/orders/{id}`.
-- [ ] Cenário C: evento webhook recebido e status atualizado automaticamente.
-- [ ] Cenário D: token inválido => erro claro e ação corretiva orientada.
-- [ ] Cenário E: ambiente misto (`TEST` vs `APP_USR`) bloqueado com mensagem explícita.
-- [ ] Cenário F: repetição de checkout com mesma idempotency key não duplica cobrança.
+## 11) Plano de rollout
 
-## 10) Observabilidade e diagnóstico
+- [ ] Fase 1: modelagem + OAuth + provider novo (sem ativar para clientes).
+- [ ] Fase 2: ativar em homologação e validar cenários completos.
+- [ ] Fase 3: ativar por lote de contratantes em produção.
+- [ ] Fase 4: remover compatibilidade temporária e limpar legado.
 
-- [ ] Log com `contractor_id`, `sale_id`, `payment_id`, `transaction_reference`.
-- [ ] Log de chamada MP com método, endpoint e status HTTP (sem expor segredo).
-- [ ] Log de erro com mensagem normalizada do provedor.
-- [ ] Métrica de tempo médio para disponibilidade de QR.
-- [ ] Métrica de taxa de sucesso na geração de QR por ambiente.
+## 12) Critérios de aceite (DoD desta frente)
 
-## 11) Critérios de aceite final
-
-- [ ] Cliente final sempre recebe QR automaticamente (imediato ou por atualização automática).
-- [ ] Não há criação de cobrança duplicada.
-- [ ] Status de pagamento e pedido/agendamento ficam consistentes entre frontend e admin.
-- [ ] Fluxo funciona para nicho comercial e nicho serviços.
-- [ ] Fluxo validado em ambiente local (com fallback sem webhook público) e homologação pública (com webhook).
-
-## 12) Evidências (preencher)
-
-- [ ] Prints/vídeos do fluxo completo.
-- [ ] Payload real mascarado de `POST /v1/orders`.
-- [ ] Payload real mascarado de `GET /v1/orders/{id}`.
-- [ ] Evento real de webhook mascarado.
-- [ ] Evidência de status final no admin e na conta do cliente.
+- [ ] Checkout Pix gera QR automaticamente.
+- [ ] Status sincroniza por webhook + reconciliação.
+- [ ] Integração funciona para produto e serviço.
+- [ ] Configuração do contratante é simples (conectar conta, sem colar token manual).
+- [ ] Não há mistura de dados entre contratantes.
+- [ ] Logs permitem diagnóstico rápido de falha.
 

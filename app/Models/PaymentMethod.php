@@ -14,6 +14,8 @@ class PaymentMethod extends Model
 
     public const CODE_PIX = 'pix';
 
+    public const CODE_BOLETO = 'boleto';
+
     public const CODE_CREDIT_CARD = 'credit_card';
 
     public const CODE_DEBIT_CARD = 'debit_card';
@@ -21,6 +23,28 @@ class PaymentMethod extends Model
     public const CODE_CASH = 'cash';
 
     public const CODE_INSTALLMENT = 'installment';
+
+    /**
+     * @var list<string>
+     */
+    public const INTEGRATED_CODES = [
+        self::CODE_PIX,
+        self::CODE_CREDIT_CARD,
+        self::CODE_DEBIT_CARD,
+        self::CODE_BOLETO,
+    ];
+
+    /**
+     * @var list<string>
+     */
+    public const MANUAL_CODES = [
+        self::CODE_PIX,
+        self::CODE_BOLETO,
+        self::CODE_CASH,
+        self::CODE_DEBIT_CARD,
+        self::CODE_CREDIT_CARD,
+        self::CODE_INSTALLMENT,
+    ];
 
     /**
      * @var list<string>
@@ -72,4 +96,3 @@ class PaymentMethod extends Model
         return $this->hasMany(SalePayment::class);
     }
 }
-

@@ -17,17 +17,27 @@ interface PaymentProviderContract
      *   details: array<string, mixed>
      * }
      */
-    public function testConnection(PaymentGateway $gateway): array;
+    public function testConnection(PaymentGateway $gateway, ?string $paymentMethodCode = null): array;
 
     /**
      * @param array<string, mixed> $context
      * @return array<string, mixed>
      */
-    public function createPixPayment(
+    public function createPaymentIntent(
         PaymentGateway $gateway,
         Sale $sale,
         SalePayment $salePayment,
+        string $paymentMethodCode,
         array $context = []
+    ): array;
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function fetchPaymentIntent(
+        PaymentGateway $gateway,
+        string $transactionReference,
+        ?string $paymentMethodCode = null
     ): array;
 
     /**

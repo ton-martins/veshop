@@ -37,6 +37,11 @@ return [
 
     'mercadopago' => [
         'base_url' => env('MERCADOPAGO_BASE_URL', 'https://api.mercadopago.com'),
+        'oauth_authorize_url' => env('MERCADOPAGO_OAUTH_AUTHORIZE_URL', 'https://auth.mercadopago.com.br/authorization'),
+        'client_id' => env('MERCADOPAGO_CLIENT_ID'),
+        'client_secret' => env('MERCADOPAGO_CLIENT_SECRET'),
+        'oauth_redirect_uri' => env('MERCADOPAGO_OAUTH_REDIRECT_URI'),
+        'webhook_secret' => env('MERCADOPAGO_WEBHOOK_SECRET'),
         'timeout' => (int) env('MERCADOPAGO_TIMEOUT', 15),
     ],
 

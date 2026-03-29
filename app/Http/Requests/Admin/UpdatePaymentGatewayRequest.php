@@ -16,20 +16,13 @@ class UpdatePaymentGatewayRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $provider = strtolower(trim((string) $this->input('provider', '')));
-        $mercadoPagoAccessToken = trim((string) $this->input('mercado_pago_access_token', ''));
         $mercadoPagoWebhookSecret = trim((string) $this->input('mercado_pago_webhook_secret', ''));
 
         $credentials = null;
-        if ($provider === 'mercado_pago') {
-            $credentials = [];
-
-            if ($mercadoPagoAccessToken !== '') {
-                $credentials['access_token'] = $mercadoPagoAccessToken;
-            }
-
-            if ($mercadoPagoWebhookSecret !== '') {
-                $credentials['webhook_secret'] = $mercadoPagoWebhookSecret;
-            }
+        if ($provider === PaymentGateway::PROVIDER_MERCADO_PAGO && $mercadoPagoWebhookSecret !== '') {
+            $credentials = [
+                'webhook_secret' => $mercadoPagoWebhookSecret,
+            ];
         }
 
         $this->merge([
@@ -38,7 +31,6 @@ class UpdatePaymentGatewayRequest extends FormRequest
             'is_active' => $this->boolean('is_active', true),
             'is_default' => $this->boolean('is_default', false),
             'is_sandbox' => $this->boolean('is_sandbox', true),
-            'mercado_pago_access_token' => $mercadoPagoAccessToken !== '' ? $mercadoPagoAccessToken : null,
             'mercado_pago_webhook_secret' => $mercadoPagoWebhookSecret !== '' ? $mercadoPagoWebhookSecret : null,
             'credentials' => $credentials,
         ]);
@@ -55,9 +47,9 @@ class UpdatePaymentGatewayRequest extends FormRequest
             'is_active' => ['required', 'boolean'],
             'is_default' => ['required', 'boolean'],
             'is_sandbox' => ['required', 'boolean'],
-            'mercado_pago_access_token' => ['nullable', 'string', 'max:255'],
             'mercado_pago_webhook_secret' => ['nullable', 'string', 'max:255'],
             'credentials' => ['nullable', 'array'],
         ];
     }
 }
+

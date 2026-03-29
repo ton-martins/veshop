@@ -156,27 +156,51 @@ const checkoutManual = computed(() => page.props?.flash?.checkout_manual ?? null
 const bookingWhatsappUrl = computed(() => String(page.props?.flash?.service_booking_whatsapp_url ?? '').trim());
 const checkoutPixRefreshLoading = ref(false);
 const checkoutPixRefreshError = ref('');
+const checkoutPixAutoRefreshAttempts = ref(0);
+const checkoutPixAutoRefreshTimer = ref(null);
 const checkoutEffectivePayment = computed(() => checkoutLivePayment.value ?? checkoutPayment.value);
+const integratedPaymentCodes = ['pix', 'credit_card', 'debit_card', 'boleto'];
+const checkoutProviderCode = computed(() => String(checkoutEffectivePayment.value?.provider ?? '').trim().toLowerCase());
+const checkoutMethodCode = computed(() => String(checkoutEffectivePayment.value?.payment_method_code ?? '').trim().toLowerCase());
+const checkoutTransactionReference = computed(() => String(checkoutEffectivePayment.value?.transaction_reference ?? '').trim());
+const checkoutTicketUrl = computed(() => String(checkoutEffectivePayment.value?.ticket_url ?? '').trim());
+const checkoutHasCheckoutUrl = computed(() => String(checkoutEffectivePayment.value?.checkout_url ?? '').trim() !== '');
+const checkoutHasVisibleQrData = computed(() => (
+    String(checkoutEffectivePayment.value?.qr_code ?? '').trim() !== ''
+    || String(checkoutEffectivePayment.value?.qr_code_base64 ?? '').trim() !== ''
+));
+const checkoutHasPixPayload = computed(() => {
+    if (Boolean(checkoutEffectivePayment.value?.is_pix)) return true;
+    if (checkoutHasVisibleQrData.value) return true;
+    return checkoutProviderCode.value === 'mercado_pago' && checkoutMethodCode.value.includes('pix');
+});
+const checkoutIsIntegratedPayload = computed(() => {
+    if (Boolean(checkoutEffectivePayment.value?.is_integrated)) return true;
+    if (checkoutProviderCode.value !== 'mercado_pago') return false;
+    if (checkoutHasPixPayload.value) return true;
+    if (checkoutHasCheckoutUrl.value) return true;
+    return checkoutTransactionReference.value !== '' && integratedPaymentCodes.includes(checkoutMethodCode.value);
+});
+const checkoutIntegratedActionUrl = computed(() => {
+    const checkoutUrl = String(checkoutEffectivePayment.value?.checkout_url ?? '').trim();
+    if (checkoutUrl !== '') return checkoutUrl;
+    return checkoutHasPixPayload.value ? checkoutTicketUrl.value : '';
+});
+const checkoutIntegratedMethodLabel = computed(() => {
+    const raw = String(checkoutEffectivePayment.value?.payment_method_name ?? '').trim();
+    if (raw !== '') return raw;
+    if (checkoutMethodCode.value === 'credit_card') return 'cartão de crédito';
+    if (checkoutMethodCode.value === 'debit_card') return 'cartão de débito';
+    if (checkoutMethodCode.value === 'boleto') return 'boleto';
+    if (checkoutMethodCode.value === 'pix') return 'Pix';
+    return 'pagamento';
+});
 const checkoutPaymentStatusUrl = computed(() => {
     const saleId = toInt(checkoutEffectivePayment.value?.sale_id, 0);
     return saleId > 0 ? `/shop/${storeSlug.value}/checkout/pagamento/${saleId}` : null;
 });
 const checkoutHasVisiblePixData = computed(() => {
-    return String(checkoutEffectivePayment.value?.qr_code ?? '').trim() !== ''
-        || String(checkoutEffectivePayment.value?.qr_code_base64 ?? '').trim() !== ''
-        || String(checkoutEffectivePayment.value?.ticket_url ?? '').trim() !== '';
-});
-const checkoutHasPixPayload = computed(() => {
-    if (checkoutHasVisiblePixData.value) {
-        return true;
-    }
-
-    const provider = String(checkoutEffectivePayment.value?.provider ?? '').trim().toLowerCase();
-    const methodCode = String(checkoutEffectivePayment.value?.payment_method_code ?? '').trim().toLowerCase();
-    const transactionReference = String(checkoutEffectivePayment.value?.transaction_reference ?? '').trim();
-
-    return provider === 'mercado_pago'
-        && (methodCode.includes('pix') || transactionReference !== '');
+    return checkoutHasVisibleQrData.value || checkoutTicketUrl.value !== '';
 });
 const checkoutPixQrImageSrc = ref('');
 const refreshCheckoutPixPayment = async () => {
@@ -208,7 +232,7 @@ const refreshCheckoutPixPayment = async () => {
             checkoutLivePayment.value = payment;
         }
     } catch {
-        checkoutPixRefreshError.value = 'Não foi possível atualizar a cobrança Pix agora.';
+        checkoutPixRefreshError.value = 'Não foi possível atualizar o status do pagamento agora.';
     } finally {
         checkoutPixRefreshLoading.value = false;
     }
@@ -220,6 +244,33 @@ const ensureCheckoutPixPayload = async () => {
     }
 
     await refreshCheckoutPixPayment();
+};
+
+const stopCheckoutPixAutoRefresh = () => {
+    if (checkoutPixAutoRefreshTimer.value) {
+        clearTimeout(checkoutPixAutoRefreshTimer.value);
+        checkoutPixAutoRefreshTimer.value = null;
+    }
+};
+
+const scheduleCheckoutPixAutoRefresh = () => {
+    if (!checkoutHasPixPayload.value || checkoutHasVisiblePixData.value || checkoutPixRefreshLoading.value) {
+        return;
+    }
+
+    if (checkoutPixAutoRefreshAttempts.value >= 6) {
+        return;
+    }
+
+    stopCheckoutPixAutoRefresh();
+    checkoutPixAutoRefreshTimer.value = setTimeout(async () => {
+        checkoutPixAutoRefreshAttempts.value += 1;
+        await refreshCheckoutPixPayment();
+
+        if (!checkoutHasVisiblePixData.value) {
+            scheduleCheckoutPixAutoRefresh();
+        }
+    }, 3000);
 };
 
 const resolveCheckoutPixQrImage = async () => {
@@ -252,13 +303,25 @@ const resolveCheckoutPixQrImage = async () => {
 watch(checkoutPayment, () => {
     checkoutLivePayment.value = checkoutPayment.value ? { ...checkoutPayment.value } : null;
     checkoutPixRefreshError.value = '';
+    checkoutPixAutoRefreshAttempts.value = 0;
+    stopCheckoutPixAutoRefresh();
     void ensureCheckoutPixPayload();
+    scheduleCheckoutPixAutoRefresh();
     void resolveCheckoutPixQrImage();
 }, { immediate: true, deep: true });
 
 watch(checkoutLivePayment, () => {
+    if (checkoutHasVisiblePixData.value) {
+        stopCheckoutPixAutoRefresh();
+    } else {
+        scheduleCheckoutPixAutoRefresh();
+    }
     void resolveCheckoutPixQrImage();
 }, { deep: true });
+
+onBeforeUnmount(() => {
+    stopCheckoutPixAutoRefresh();
+});
 
 const fallbackImage = computed(() => (
     storeLogo.value || 'https://placehold.co/800x600/e5e7eb/334155?text=Loja'
@@ -1574,8 +1637,8 @@ onBeforeUnmount(() => {
                                 Referência: <span class="font-semibold">{{ checkoutEffectivePayment.transaction_reference }}</span>
                             </p>
                             <a
-                                v-if="checkoutEffectivePayment?.ticket_url"
-                                :href="checkoutEffectivePayment.ticket_url"
+                                v-if="checkoutIntegratedActionUrl"
+                                :href="checkoutIntegratedActionUrl"
                                 target="_blank"
                                 rel="noopener"
                                 class="mt-2 inline-flex font-semibold underline"
@@ -1591,6 +1654,33 @@ onBeforeUnmount(() => {
                                 {{ checkoutPixRefreshLoading ? 'Atualizando...' : 'Atualizar cobrança' }}
                             </button>
                             <p v-if="checkoutPixRefreshError" class="mt-1 text-xs text-orange-700">
+                                {{ checkoutPixRefreshError }}
+                            </p>
+                        </div>
+                        <div v-else-if="checkoutIsIntegratedPayload" class="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-sm px-4 py-2.5">
+                            <p class="font-semibold">Pagamento {{ checkoutIntegratedMethodLabel }} pronto para finalizar.</p>
+                            <p class="mt-1">Finalize no ambiente seguro do Mercado Pago.</p>
+                            <p v-if="checkoutEffectivePayment?.transaction_reference" class="mt-1 break-all">
+                                Referência: <span class="font-semibold">{{ checkoutEffectivePayment.transaction_reference }}</span>
+                            </p>
+                            <a
+                                v-if="checkoutIntegratedActionUrl"
+                                :href="checkoutIntegratedActionUrl"
+                                target="_blank"
+                                rel="noopener"
+                                class="mt-2 inline-flex font-semibold underline"
+                            >
+                                Finalizar pagamento
+                            </a>
+                            <button
+                                type="button"
+                                class="mt-2 inline-flex rounded-lg border border-indigo-200 bg-white px-3 py-1.5 font-semibold text-indigo-800 hover:bg-indigo-100 disabled:opacity-60"
+                                :disabled="checkoutPixRefreshLoading"
+                                @click="refreshCheckoutPixPayment()"
+                            >
+                                {{ checkoutPixRefreshLoading ? 'Atualizando...' : 'Atualizar status' }}
+                            </button>
+                            <p v-if="checkoutPixRefreshError" class="mt-1 text-xs text-indigo-700">
                                 {{ checkoutPixRefreshError }}
                             </p>
                         </div>
@@ -2246,5 +2336,3 @@ onBeforeUnmount(() => {
     }
 }
 </style>
-
-

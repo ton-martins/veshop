@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Application\Finance\Services\AdminPaymentMethodService;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\SyncMercadoPagoPaymentMethodsRequest;
 use App\Http\Requests\Admin\StorePaymentMethodRequest;
 use App\Http\Requests\Admin\UpdatePaymentMethodRequest;
 use App\Models\PaymentMethod;
@@ -29,5 +30,10 @@ class PaymentMethodController extends Controller
     public function destroy(Request $request, PaymentMethod $paymentMethod): RedirectResponse
     {
         return $this->service->destroy($request, $paymentMethod);
+    }
+
+    public function syncMercadoPago(SyncMercadoPagoPaymentMethodsRequest $request): RedirectResponse
+    {
+        return $this->service->syncMercadoPagoMethods($request);
     }
 }

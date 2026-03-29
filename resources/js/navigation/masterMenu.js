@@ -60,6 +60,13 @@
                 match: ['master.branding.*'],
                 icon: 'Palette',
             },
+            {
+                key: 'master-payment-gateways',
+                label: 'Gateways de pagamento',
+                route: 'master.payment-gateways.index',
+                match: ['master.payment-gateways.*'],
+                icon: 'WalletCards',
+            },
         ],
     },
 ];

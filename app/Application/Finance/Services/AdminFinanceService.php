@@ -7,8 +7,10 @@ use App\Models\Contractor;
 use App\Models\FinancialEntry;
 use App\Models\PaymentGateway;
 use App\Models\PaymentMethod;
+use App\Services\Payments\PaymentGatewayCatalogService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -16,6 +18,10 @@ use Inertia\Response;
 class AdminFinanceService
 {
     use ResolvesCurrentContractor;
+
+    public function __construct(
+        private readonly PaymentGatewayCatalogService $gatewayCatalogService,
+    ) {}
 
     /**
      * @var list<string>
@@ -111,6 +117,8 @@ class AdminFinanceService
             ->get()
             ->map(static function (PaymentGateway $gateway): array {
                 $credentials = is_array($gateway->credentials) ? $gateway->credentials : [];
+                $mpMetadata = is_array($gateway->mp_metadata) ? $gateway->mp_metadata : [];
+                $hasAccessToken = $gateway->resolveMercadoPagoAccessToken() !== '';
 
                 return [
                     'id' => $gateway->id,
@@ -120,8 +128,19 @@ class AdminFinanceService
                     'is_default' => (bool) $gateway->is_default,
                     'is_sandbox' => (bool) $gateway->is_sandbox,
                     'credentials_status' => [
-                        'access_token_configured' => trim((string) ($credentials['access_token'] ?? '')) !== '',
+                        'access_token_configured' => $hasAccessToken,
                         'webhook_secret_configured' => trim((string) ($credentials['webhook_secret'] ?? '')) !== '',
+                        'oauth_connected' => $gateway->hasMercadoPagoOAuthConnection(),
+                    ],
+                    'oauth' => [
+                        'status' => (string) ($gateway->mp_status ?? PaymentGateway::MP_STATUS_DISCONNECTED),
+                        'connected_at' => optional($gateway->mp_connected_at)?->format('d/m/Y H:i'),
+                        'expires_at' => optional($gateway->mp_token_expires_at)?->format('d/m/Y H:i'),
+                        'live_mode' => $gateway->mp_live_mode,
+                        'account_email' => trim((string) ($mpMetadata['email'] ?? '')),
+                        'account_nickname' => trim((string) ($mpMetadata['nickname'] ?? '')),
+                        'user_id' => $gateway->mp_user_id ? (string) $gateway->mp_user_id : '',
+                        'last_error' => trim((string) ($gateway->mp_last_error ?? '')),
                     ],
                     'methods_count' => (int) $gateway->payment_methods_count,
                     'last_health_check_at' => optional($gateway->last_health_check_at)?->format('d/m/Y H:i'),
@@ -142,6 +161,19 @@ class AdminFinanceService
                 $gatewayCredentials = is_array($method->paymentGateway?->credentials)
                     ? $method->paymentGateway->credentials
                     : [];
+                $gatewayMetadata = is_array($method->paymentGateway?->mp_metadata)
+                    ? $method->paymentGateway->mp_metadata
+                    : [];
+                $methodSettings = is_array($method->settings) ? $method->settings : [];
+                $integrationProfile = is_array($methodSettings['gateway_integration'] ?? null)
+                    ? $methodSettings['gateway_integration']
+                    : null;
+                $integrationProvider = strtolower(trim((string) data_get($integrationProfile, 'provider', '')));
+                $gatewayHasAccessToken = $method->paymentGateway
+                    ? $method->paymentGateway->resolveMercadoPagoAccessToken() !== ''
+                    : false;
+                $isIntegrated = (int) ($method->payment_gateway_id ?? 0) > 0
+                    || $integrationProvider === PaymentGateway::PROVIDER_MERCADO_PAGO;
 
                 return [
                     'id' => $method->id,
@@ -160,10 +192,14 @@ class AdminFinanceService
                         ? (bool) $method->paymentGateway->is_sandbox
                         : null,
                     'payment_gateway_credentials_status' => [
-                        'access_token_configured' => trim((string) ($gatewayCredentials['access_token'] ?? '')) !== '',
+                        'access_token_configured' => $gatewayHasAccessToken,
                         'webhook_secret_configured' => trim((string) ($gatewayCredentials['webhook_secret'] ?? '')) !== '',
+                        'oauth_connected' => (bool) $method->paymentGateway?->hasMercadoPagoOAuthConnection(),
                     ],
-                    'checkout_mode' => $method->payment_gateway_id ? 'integrated' : 'manual',
+                    'payment_gateway_oauth_status' => (string) ($method->paymentGateway?->mp_status ?? PaymentGateway::MP_STATUS_DISCONNECTED),
+                    'payment_gateway_oauth_email' => trim((string) ($gatewayMetadata['email'] ?? '')),
+                    'payment_gateway_oauth_nickname' => trim((string) ($gatewayMetadata['nickname'] ?? '')),
+                    'checkout_mode' => $isIntegrated ? 'integrated' : 'manual',
                     'is_active' => (bool) $method->is_active,
                     'is_default' => (bool) $method->is_default,
                     'allows_installments' => (bool) $method->allows_installments,
@@ -171,6 +207,7 @@ class AdminFinanceService
                     'fee_fixed' => $method->fee_fixed !== null ? (float) $method->fee_fixed : null,
                     'fee_percent' => $method->fee_percent !== null ? (float) $method->fee_percent : null,
                     'sort_order' => (int) $method->sort_order,
+                    'integration_profile' => $integrationProfile,
                 ];
             })
             ->values()
@@ -196,12 +233,44 @@ class AdminFinanceService
             ->where('is_default', true)
             ->first();
 
+        $defaultMercadoPagoGateway = PaymentGateway::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('provider', PaymentGateway::PROVIDER_MERCADO_PAGO)
+            ->orderByDesc('is_default')
+            ->latest('id')
+            ->first();
+        $mercadoPagoOauthReady = Schema::hasColumns('payment_gateways', [
+            'mp_user_id',
+            'mp_public_key',
+            'mp_access_token',
+            'mp_refresh_token',
+            'mp_token_expires_at',
+            'mp_scope',
+            'mp_live_mode',
+            'mp_status',
+            'mp_connected_at',
+            'mp_last_error',
+            'mp_metadata',
+        ]);
+
         return [
             'gateways' => $gateways,
             'methods' => $methods,
+            'contractor_context' => [
+                'niche' => $contractor->niche(),
+                'business_type' => $contractor->businessType(),
+            ],
             'provider_options' => [
                 ['value' => PaymentGateway::PROVIDER_MANUAL, 'label' => 'Operação manual'],
                 ['value' => PaymentGateway::PROVIDER_MERCADO_PAGO, 'label' => 'Mercado Pago'],
+            ],
+            'gateway_catalog' => [
+                'automatic' => $this->gatewayCatalogService->activeAutomaticForAdmin(),
+            ],
+            'integrated_method_options' => $this->resolveIntegratedMethodOptions(),
+            'mercado_pago' => [
+                'default_gateway_id' => $defaultMercadoPagoGateway?->id,
+                'oauth_ready' => $mercadoPagoOauthReady,
             ],
             'stats' => [
                 'gateways_total' => count($gateways),
@@ -210,6 +279,39 @@ class AdminFinanceService
                 'methods_active' => $activeMethods,
                 'default_gateway' => $defaultGateway?->name,
                 'default_method' => $defaultMethod?->name,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function resolveIntegratedMethodOptions(): array
+    {
+        return [
+            [
+                'code' => PaymentMethod::CODE_PIX,
+                'label' => 'Pix',
+                'description' => 'Pagamento instantâneo com QR Code e copia e cola.',
+                'supports_installments' => false,
+            ],
+            [
+                'code' => PaymentMethod::CODE_CREDIT_CARD,
+                'label' => 'Cartão de crédito',
+                'description' => 'Cobrança com possibilidade de parcelamento.',
+                'supports_installments' => true,
+            ],
+            [
+                'code' => PaymentMethod::CODE_DEBIT_CARD,
+                'label' => 'Cartão de débito',
+                'description' => 'Pagamento por débito à vista.',
+                'supports_installments' => false,
+            ],
+            [
+                'code' => PaymentMethod::CODE_BOLETO,
+                'label' => 'Boleto',
+                'description' => 'Cobrança por boleto/ticket com confirmação assíncrona.',
+                'supports_installments' => false,
             ],
         ];
     }

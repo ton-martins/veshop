@@ -11,6 +11,8 @@ class SystemSetting extends Model
 
     public const KEY_BRANDING = 'branding';
 
+    public const KEY_PAYMENT_GATEWAY_CATALOG = 'payment_gateway_catalog';
+
     protected $fillable = [
         'key',
         'value',
@@ -41,4 +43,3 @@ class SystemSetting extends Model
         );
     }
 }
-
