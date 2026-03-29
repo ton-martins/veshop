@@ -27,17 +27,20 @@ class AdminMercadoPagoOAuthService
         $clientSecret = $this->resolveClientSecret();
         if ($clientId === '' || $clientSecret === '') {
             return back()->withErrors([
-                'mercado_pago_oauth' => 'Configure MERCADOPAGO_CLIENT_ID e MERCADOPAGO_CLIENT_SECRET no ambiente.',
+                'mercado_pago_oauth' => 'Conexão OAuth do Mercado Pago indisponível no momento. Contate o suporte da plataforma.',
             ]);
         }
 
         $state = Str::uuid()->toString();
+        $codeVerifier = $this->generatePkceCodeVerifier();
+        $codeChallenge = $this->generatePkceCodeChallenge($codeVerifier);
         $fallbackReturnTo = route('admin.finance.payments');
         $requestedReturnTo = trim((string) $request->query('return_to', ''));
         $returnTo = $this->resolveSafeReturnTo($requestedReturnTo, $fallbackReturnTo);
 
         $request->session()->put(self::SESSION_STATE_KEY, [
             'state' => $state,
+            'code_verifier' => $codeVerifier,
             'user_id' => (int) ($request->user()?->id ?? 0),
             'contractor_id' => (int) $contractor->id,
             'return_to' => $returnTo,
@@ -50,6 +53,8 @@ class AdminMercadoPagoOAuthService
             'platform_id' => 'mp',
             'state' => $state,
             'redirect_uri' => $this->resolveRedirectUri(),
+            'code_challenge' => $codeChallenge,
+            'code_challenge_method' => 'S256',
         ]);
 
         return redirect()->away($this->resolveAuthorizeUrl().'?'.$query);
@@ -82,6 +87,13 @@ class AdminMercadoPagoOAuthService
             ]);
         }
 
+        $codeVerifier = trim((string) ($sessionState['code_verifier'] ?? ''));
+        if ($codeVerifier === '') {
+            return redirect()->route('admin.finance.payments')->withErrors([
+                'mercado_pago_oauth' => 'Sessão de autorização inválida. Tente conectar novamente.',
+            ]);
+        }
+
         $returnTo = $this->resolveSafeReturnTo(
             (string) ($sessionState['return_to'] ?? ''),
             route('admin.finance.payments')
@@ -108,7 +120,7 @@ class AdminMercadoPagoOAuthService
         }
 
         try {
-            $tokenPayload = $this->exchangeAuthorizationCode($code);
+            $tokenPayload = $this->exchangeAuthorizationCode($code, $codeVerifier);
             $account = $this->fetchAccount($tokenPayload['access_token']);
             $gateway = $this->persistGatewayConnection($contractor->id, $tokenPayload, $account);
         } catch (PaymentProviderException $exception) {
@@ -182,7 +194,7 @@ class AdminMercadoPagoOAuthService
      *   token_type: string|null
      * }
      */
-    private function exchangeAuthorizationCode(string $code): array
+    private function exchangeAuthorizationCode(string $code, string $codeVerifier): array
     {
         $payload = [
             'client_id' => $this->resolveClientId(),
@@ -190,6 +202,7 @@ class AdminMercadoPagoOAuthService
             'grant_type' => 'authorization_code',
             'code' => $code,
             'redirect_uri' => $this->resolveRedirectUri(),
+            'code_verifier' => $codeVerifier,
         ];
 
         $response = $this->baseRequest()
@@ -421,5 +434,15 @@ class AdminMercadoPagoOAuthService
         }
 
         return ' - '.implode(' | ', $parts);
+    }
+
+    private function generatePkceCodeVerifier(): string
+    {
+        return rtrim(strtr(base64_encode(random_bytes(64)), '+/', '-_'), '=');
+    }
+
+    private function generatePkceCodeChallenge(string $codeVerifier): string
+    {
+        return rtrim(strtr(base64_encode(hash('sha256', $codeVerifier, true)), '+/', '-_'), '=');
     }
 }

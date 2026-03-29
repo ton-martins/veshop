@@ -183,6 +183,8 @@ const selectedAutoGateway = computed(() => {
 
 const isMercadoPagoSelected = computed(() => String(autoConfigForm.provider_code ?? '').trim().toLowerCase() === 'mercado_pago');
 const mercadoPagoOauthReady = computed(() => Boolean(props.paymentConfig?.mercado_pago?.oauth_ready));
+const mercadoPagoOauthSchemaReady = computed(() => Boolean(props.paymentConfig?.mercado_pago?.oauth_schema_ready));
+const mercadoPagoOauthClientReady = computed(() => Boolean(props.paymentConfig?.mercado_pago?.oauth_client_ready));
 
 const autoGatewayConnectionToneClass = computed(() => {
     if (autoGatewayConnectionStatus.value === 'success') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
@@ -709,8 +711,11 @@ hydrateAutomaticConfig();
 
                 <div v-if="isMercadoPagoSelected" class="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
                     <p class="font-semibold text-slate-900">Status da conexão</p>
-                    <p v-if="!mercadoPagoOauthReady" class="mt-1 text-amber-700">
+                    <p v-if="!mercadoPagoOauthSchemaReady" class="mt-1 text-amber-700">
                         OAuth será habilitado após executar as migrations pendentes do Mercado Pago.
+                    </p>
+                    <p v-else-if="!mercadoPagoOauthClientReady" class="mt-1 text-amber-700">
+                        Conexão OAuth indisponível no momento. Contate o suporte da plataforma.
                     </p>
                     <p v-else class="mt-1">
                         {{ selectedAutoGateway?.credentials_status?.oauth_connected ? 'Conta Mercado Pago conectada por OAuth.' : 'OAuth não conectado neste gateway.' }}
@@ -1054,4 +1059,3 @@ hydrateAutomaticConfig();
     color: #ffffff;
 }
 </style>
-

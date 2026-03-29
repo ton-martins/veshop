@@ -13,6 +13,7 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class MercadoPagoPaymentProvider implements PaymentProviderContract
 {
@@ -199,15 +200,22 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
     private function createPixIntent(PaymentGateway $gateway, Sale $sale, SalePayment $salePayment, array $context): array
     {
         $idempotencyKey = trim((string) ($context['idempotency_key'] ?? ''));
+        [$payerFirstName, $payerLastName] = $this->splitPayerName((string) ($context['payer_name'] ?? ''));
         $payload = $this->arrayFilterRecursive([
             'transaction_amount' => round((float) $salePayment->amount, 2),
             'payment_method_id' => 'pix',
             'description' => trim((string) ($context['description'] ?? 'Pedido '.$sale->code)),
+            'statement_descriptor' => $this->resolveStatementDescriptor($sale, $context),
             'external_reference' => (string) $sale->code,
             'notification_url' => trim((string) ($context['notification_url'] ?? '')) ?: null,
             'date_of_expiration' => $this->formatDateOfExpiration($context['expires_at'] ?? now()->addMinutes(30)),
             'payer' => [
                 'email' => trim((string) ($context['payer_email'] ?? '')) ?: $this->fallbackPayerEmail(),
+                'first_name' => $payerFirstName !== '' ? $payerFirstName : null,
+                'last_name' => $payerLastName !== '' ? $payerLastName : null,
+                'identification' => $this->resolvePayerIdentification($context['payer_document'] ?? null),
+                'phone' => $this->resolvePayerPhone($context['payer_phone'] ?? null),
+                'address' => $this->resolvePayerAddress($context['payer_address'] ?? null),
             ],
             'metadata' => [
                 'sale_code' => (string) $sale->code,
@@ -262,17 +270,30 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
         array $context
     ): array {
         $idempotencyKey = trim((string) ($context['idempotency_key'] ?? ''));
+        [$payerFirstName, $payerLastName] = $this->splitPayerName((string) ($context['payer_name'] ?? ''));
+        $boletoExpiration = $paymentMethodCode === PaymentMethod::CODE_BOLETO
+            ? $this->formatDateOfExpiration($context['expires_at'] ?? now()->addDays(3))
+            : null;
         $payload = $this->arrayFilterRecursive([
             'items' => $this->resolvePreferenceItems(
                 $sale,
                 $salePayment,
-                trim((string) ($context['description'] ?? 'Pedido '.$sale->code))
+                trim((string) ($context['description'] ?? 'Pedido '.$sale->code)),
+                $context
             ),
             'payer' => [
                 'email' => trim((string) ($context['payer_email'] ?? '')) ?: $this->fallbackPayerEmail(),
+                'first_name' => $payerFirstName !== '' ? $payerFirstName : null,
+                'last_name' => $payerLastName !== '' ? $payerLastName : null,
+                'identification' => $this->resolvePayerIdentification($context['payer_document'] ?? null),
+                'phone' => $this->resolvePayerPhone($context['payer_phone'] ?? null),
+                'address' => $this->resolvePayerAddress($context['payer_address'] ?? null),
             ],
+            'statement_descriptor' => $this->resolveStatementDescriptor($sale, $context),
             'external_reference' => (string) $sale->code,
             'notification_url' => trim((string) ($context['notification_url'] ?? '')) ?: null,
+            'back_urls' => $this->resolvePreferenceBackUrls($context['back_urls'] ?? null),
+            'binary_mode' => isset($context['binary_mode']) ? (bool) $context['binary_mode'] : null,
             'metadata' => [
                 'sale_code' => (string) $sale->code,
                 'sale_payment_id' => (int) $salePayment->id,
@@ -280,6 +301,8 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
                 'payment_method_code' => $paymentMethodCode,
             ],
             'payment_methods' => $this->resolvePreferencePaymentFilters($paymentMethodCode, $context),
+            'expires' => $boletoExpiration !== null ? true : null,
+            'expiration_date_to' => $boletoExpiration,
             'auto_return' => 'approved',
         ]);
 
@@ -327,14 +350,20 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
         ];
     }
 
-    private function resolvePreferenceItems(Sale $sale, SalePayment $salePayment, string $fallbackTitle): array
+    private function resolvePreferenceItems(
+        Sale $sale,
+        SalePayment $salePayment,
+        string $fallbackTitle,
+        array $context = []
+    ): array
     {
+        $categoryId = $this->resolvePreferenceCategoryId($context);
         $items = $sale->relationLoaded('items')
             ? $sale->items
             : $sale->items()->orderBy('id')->limit(50)->get();
 
         $normalized = $items
-            ->map(static function (mixed $item): ?array {
+            ->map(static function (mixed $item) use ($categoryId): ?array {
                 if (! $item instanceof \App\Models\SaleItem) {
                     return null;
                 }
@@ -347,9 +376,17 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
 
                 $title = trim((string) ($item->description ?? ''));
                 $title = $title !== '' ? $title : 'Item do pedido';
+                $description = trim((string) ($item->description ?? $title));
+                $itemId = trim((string) ($item->sku ?? ''));
+                if ($itemId === '') {
+                    $itemId = (string) ($item->product_variation_id ?: ($item->product_id ?: $item->id));
+                }
 
                 return [
+                    'id' => mb_substr($itemId, 0, 120),
                     'title' => mb_substr($title, 0, 120),
+                    'description' => mb_substr($description, 0, 255),
+                    'category_id' => $categoryId,
                     'quantity' => $quantity,
                     'unit_price' => $unitPrice,
                     'currency_id' => 'BRL',
@@ -367,7 +404,10 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
         $title = $title !== '' ? $title : 'Pedido '.$sale->code;
 
         return [[
+            'id' => 'sale-'.$sale->code,
             'title' => mb_substr($title, 0, 120),
+            'description' => mb_substr($title, 0, 255),
+            'category_id' => $categoryId,
             'quantity' => 1,
             'unit_price' => round((float) $salePayment->amount, 2),
             'currency_id' => 'BRL',
@@ -396,6 +436,170 @@ class MercadoPagoPaymentProvider implements PaymentProviderContract
             'excluded_payment_types' => $excluded,
             'installments' => $installments,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    private function resolveStatementDescriptor(Sale $sale, array $context): ?string
+    {
+        $raw = trim((string) ($context['statement_descriptor'] ?? ''));
+        if ($raw === '') {
+            $raw = trim((string) ($context['store_name'] ?? ''));
+        }
+        if ($raw === '') {
+            $raw = 'Pedido '.$sale->code;
+        }
+
+        $normalized = Str::upper(Str::ascii($raw));
+        $normalized = preg_replace('/[^A-Z0-9 ]+/', ' ', $normalized) ?? '';
+        $normalized = preg_replace('/\s+/', ' ', trim($normalized)) ?? '';
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        return mb_substr($normalized, 0, 22);
+    }
+
+    /**
+     * @param mixed $backUrls
+     * @return array<string, string>|null
+     */
+    private function resolvePreferenceBackUrls(mixed $backUrls): ?array
+    {
+        if (! is_array($backUrls)) {
+            return null;
+        }
+
+        $success = trim((string) ($backUrls['success'] ?? ''));
+        $pending = trim((string) ($backUrls['pending'] ?? ''));
+        $failure = trim((string) ($backUrls['failure'] ?? ''));
+
+        $payload = $this->arrayFilterRecursive([
+            'success' => $success !== '' ? $success : null,
+            'pending' => $pending !== '' ? $pending : null,
+            'failure' => $failure !== '' ? $failure : null,
+        ]);
+
+        return $payload !== [] ? $payload : null;
+    }
+
+    /**
+     * @return array{0:string,1:string}
+     */
+    private function splitPayerName(string $fullName): array
+    {
+        $name = trim(preg_replace('/\s+/', ' ', $fullName) ?? '');
+        if ($name === '') {
+            return ['', ''];
+        }
+
+        $parts = explode(' ', $name);
+        $firstName = trim((string) array_shift($parts));
+        $lastName = trim(implode(' ', $parts));
+
+        return [
+            mb_substr($firstName, 0, 60),
+            mb_substr($lastName, 0, 60),
+        ];
+    }
+
+    /**
+     * @param mixed $document
+     * @return array<string, string>|null
+     */
+    private function resolvePayerIdentification(mixed $document): ?array
+    {
+        $digits = preg_replace('/\D+/', '', (string) ($document ?? '')) ?? '';
+        if ($digits === '') {
+            return null;
+        }
+
+        $type = match (strlen($digits)) {
+            11 => 'CPF',
+            14 => 'CNPJ',
+            default => null,
+        };
+
+        if ($type === null) {
+            return null;
+        }
+
+        return [
+            'type' => $type,
+            'number' => $digits,
+        ];
+    }
+
+    /**
+     * @param mixed $phone
+     * @return array<string, string>|null
+     */
+    private function resolvePayerPhone(mixed $phone): ?array
+    {
+        $digits = preg_replace('/\D+/', '', (string) ($phone ?? '')) ?? '';
+        if ($digits === '') {
+            return null;
+        }
+
+        if (str_starts_with($digits, '55') && strlen($digits) >= 12) {
+            $digits = substr($digits, 2);
+        }
+
+        if (strlen($digits) < 10) {
+            return null;
+        }
+
+        $areaCode = substr($digits, 0, 2);
+        $number = substr($digits, 2);
+        if ($areaCode === '' || $number === '') {
+            return null;
+        }
+
+        return [
+            'area_code' => $areaCode,
+            'number' => $number,
+        ];
+    }
+
+    /**
+     * @param mixed $address
+     * @return array<string, string>|null
+     */
+    private function resolvePayerAddress(mixed $address): ?array
+    {
+        if (! is_array($address)) {
+            return null;
+        }
+
+        $zipCode = preg_replace('/\D+/', '', (string) ($address['postal_code'] ?? $address['zip_code'] ?? '')) ?? '';
+        $streetName = trim((string) ($address['street'] ?? $address['street_name'] ?? ''));
+        $streetNumber = trim((string) ($address['number'] ?? $address['street_number'] ?? ''));
+        $neighborhood = trim((string) ($address['district'] ?? $address['neighborhood'] ?? ''));
+        $city = trim((string) ($address['city'] ?? ''));
+        $federalUnit = Str::upper(trim((string) ($address['state'] ?? $address['federal_unit'] ?? '')));
+
+        $payload = $this->arrayFilterRecursive([
+            'zip_code' => $zipCode !== '' ? $zipCode : null,
+            'street_name' => $streetName !== '' ? mb_substr($streetName, 0, 120) : null,
+            'street_number' => $streetNumber !== '' ? mb_substr($streetNumber, 0, 20) : null,
+            'neighborhood' => $neighborhood !== '' ? mb_substr($neighborhood, 0, 120) : null,
+            'city' => $city !== '' ? mb_substr($city, 0, 120) : null,
+            'federal_unit' => $federalUnit !== '' ? mb_substr($federalUnit, 0, 2) : null,
+        ]);
+
+        return $payload !== [] ? $payload : null;
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    private function resolvePreferenceCategoryId(array $context): string
+    {
+        $value = strtolower(trim((string) ($context['item_category_id'] ?? '')));
+
+        return $value !== '' ? mb_substr($value, 0, 120) : 'others';
     }
 
     private function validatePaymentMethodAvailability(PaymentGateway $gateway, string $methodCode): array

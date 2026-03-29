@@ -2191,6 +2191,21 @@ class PublicShopService
         $notificationUrl = $this->normalizePixWebhookNotificationUrl($notificationUrl);
 
         $payerEmail = trim((string) data_get($sale->metadata, 'customer_email', ''));
+        $payerName = trim((string) data_get($sale->metadata, 'customer_name', ''));
+        if ($payerName === '') {
+            $payerName = trim((string) ($sale->client?->name ?? ''));
+        }
+
+        $payerPhone = trim((string) data_get($sale->metadata, 'customer_phone', ''));
+        if ($payerPhone === '') {
+            $payerPhone = trim((string) ($sale->client?->phone ?? ''));
+        }
+
+        $payerDocument = trim((string) ($sale->client?->document ?? ''));
+        $payerAddress = $this->resolveCheckoutPayerAddressPayload($sale);
+        $backUrls = $this->resolveCheckoutBackUrls($contractor, $sale);
+        $statementDescriptor = $this->resolveCheckoutStatementDescriptor($contractor, $sale);
+        $itemCategoryId = $this->resolveCheckoutItemCategoryId($contractor);
         $idempotency = $checkoutIdempotencyKey !== null && $checkoutIdempotencyKey !== ''
             ? $checkoutIdempotencyKey.'-'.$methodCode
             : 'sale-'.$sale->id.'-payment-'.$salePayment->id.'-'.Str::random(8);
@@ -2205,6 +2220,14 @@ class PublicShopService
                     'idempotency_key' => substr($idempotency, 0, 80),
                     'notification_url' => $notificationUrl,
                     'payer_email' => $payerEmail,
+                    'payer_name' => $payerName,
+                    'payer_phone' => $payerPhone,
+                    'payer_document' => $payerDocument,
+                    'payer_address' => $payerAddress,
+                    'back_urls' => $backUrls,
+                    'statement_descriptor' => $statementDescriptor,
+                    'item_category_id' => $itemCategoryId,
+                    'store_name' => trim((string) ($contractor->brand_name ?: $contractor->name)),
                     'description' => 'Pedido '.$sale->code,
                     'expires_at' => now()->addMinutes(30),
                     'max_installments' => (bool) $paymentMethod->allows_installments
@@ -2532,6 +2555,105 @@ class PublicShopService
             && trim($ticketUrl) !== '';
     }
 
+    /**
+     * @return array<string, string>|null
+     */
+    private function resolveCheckoutBackUrls(Contractor $contractor, Sale $sale): ?array
+    {
+        $base = route('shop.show', [
+            'slug' => $contractor->slug,
+            'conta' => 1,
+            'pedido' => $sale->id,
+        ]);
+
+        $separator = str_contains($base, '?') ? '&' : '?';
+        $success = $this->normalizeCheckoutReturnUrl($base.$separator.'mp_status=approved');
+        $pending = $this->normalizeCheckoutReturnUrl($base.$separator.'mp_status=pending');
+        $failure = $this->normalizeCheckoutReturnUrl($base.$separator.'mp_status=failure');
+
+        $payload = array_filter([
+            'success' => $success,
+            'pending' => $pending,
+            'failure' => $failure,
+        ], static fn (mixed $value): bool => is_string($value) && trim($value) !== '');
+
+        return $payload !== [] ? $payload : null;
+    }
+
+    private function normalizeCheckoutReturnUrl(string $url): ?string
+    {
+        $safeUrl = trim($url);
+        if ($safeUrl === '') {
+            return null;
+        }
+
+        $scheme = strtolower((string) parse_url($safeUrl, PHP_URL_SCHEME));
+        $host = strtolower((string) parse_url($safeUrl, PHP_URL_HOST));
+        if ($host === '') {
+            return null;
+        }
+
+        if (in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
+            return app()->environment('local') ? $safeUrl : null;
+        }
+
+        if ($scheme === 'http') {
+            $safeUrl = preg_replace('/^http:/i', 'https:', $safeUrl, 1) ?: $safeUrl;
+            $scheme = 'https';
+        }
+
+        if ($scheme !== 'https') {
+            return null;
+        }
+
+        return $safeUrl;
+    }
+
+    /**
+     * @return array<string, string>|null
+     */
+    private function resolveCheckoutPayerAddressPayload(Sale $sale): ?array
+    {
+        $shipping = is_array($sale->shipping_address) ? $sale->shipping_address : [];
+        $client = $sale->client;
+
+        $payload = array_filter([
+            'postal_code' => trim((string) ($shipping['postal_code'] ?? $client?->cep ?? '')),
+            'street' => trim((string) ($shipping['street'] ?? $client?->street ?? '')),
+            'number' => trim((string) ($shipping['number'] ?? $client?->number ?? '')),
+            'district' => trim((string) ($shipping['district'] ?? $client?->neighborhood ?? '')),
+            'city' => trim((string) ($shipping['city'] ?? $client?->city ?? '')),
+            'state' => strtoupper(trim((string) ($shipping['state'] ?? $client?->state ?? ''))),
+        ], static fn (mixed $value): bool => is_string($value) && trim($value) !== '');
+
+        return $payload !== [] ? $payload : null;
+    }
+
+    private function resolveCheckoutStatementDescriptor(Contractor $contractor, Sale $sale): string
+    {
+        $name = trim((string) ($contractor->brand_name ?: $contractor->name));
+        if ($name === '') {
+            $name = 'Veshop';
+        }
+
+        $normalized = Str::upper(Str::ascii($name));
+        $normalized = preg_replace('/[^A-Z0-9 ]+/', ' ', $normalized) ?? '';
+        $normalized = preg_replace('/\s+/', ' ', trim($normalized)) ?? '';
+
+        $suffix = ' '.$sale->id;
+        $limit = max(1, 22 - strlen($suffix));
+        $base = mb_substr($normalized !== '' ? $normalized : 'VESHOP', 0, $limit);
+
+        return trim($base.$suffix);
+    }
+
+    private function resolveCheckoutItemCategoryId(Contractor $contractor): string
+    {
+        return $contractor->niche() === Contractor::NICHE_SERVICES
+            ? 'services'
+            : 'others';
+    }
+
     private function normalizePixWebhookNotificationUrl(string $url): ?string
     {
         $safeUrl = trim($url);
@@ -2541,6 +2663,11 @@ class PublicShopService
 
         $scheme = strtolower((string) parse_url($safeUrl, PHP_URL_SCHEME));
         $host = strtolower((string) parse_url($safeUrl, PHP_URL_HOST));
+
+        if ($scheme === 'http' && $host !== '' && ! in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
+            $safeUrl = preg_replace('/^http:/i', 'https:', $safeUrl, 1) ?: $safeUrl;
+            $scheme = 'https';
+        }
 
         if ($scheme !== 'https') {
             return null;
@@ -2701,4 +2828,3 @@ class PublicShopService
             ->all();
     }
 }
-

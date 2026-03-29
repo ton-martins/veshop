@@ -239,7 +239,7 @@ class AdminFinanceService
             ->orderByDesc('is_default')
             ->latest('id')
             ->first();
-        $mercadoPagoOauthReady = Schema::hasColumns('payment_gateways', [
+        $mercadoPagoOauthSchemaReady = Schema::hasColumns('payment_gateways', [
             'mp_user_id',
             'mp_public_key',
             'mp_access_token',
@@ -252,6 +252,9 @@ class AdminFinanceService
             'mp_last_error',
             'mp_metadata',
         ]);
+        $mercadoPagoOauthClientReady = trim((string) config('services.mercadopago.client_id', '')) !== ''
+            && trim((string) config('services.mercadopago.client_secret', '')) !== '';
+        $mercadoPagoOauthReady = $mercadoPagoOauthSchemaReady && $mercadoPagoOauthClientReady;
 
         return [
             'gateways' => $gateways,
@@ -271,6 +274,8 @@ class AdminFinanceService
             'mercado_pago' => [
                 'default_gateway_id' => $defaultMercadoPagoGateway?->id,
                 'oauth_ready' => $mercadoPagoOauthReady,
+                'oauth_schema_ready' => $mercadoPagoOauthSchemaReady,
+                'oauth_client_ready' => $mercadoPagoOauthClientReady,
             ],
             'stats' => [
                 'gateways_total' => count($gateways),
