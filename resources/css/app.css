@@ -1563,6 +1563,10 @@
         border-radius: 999px;
     }
 
+    [data-table-view-mode='list'] .veshop-adaptive-table tbody td[data-card-kind='actions'] :is(a, button) {
+        border-radius: 999px;
+    }
+
     [data-table-view-mode='cards'] .veshop-adaptive-table tbody td .veshop-card-field-value > * {
         min-width: 0;
         max-width: 100%;

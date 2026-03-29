@@ -32,6 +32,12 @@ class AdminOrderService
      */
     private const ORDER_SOURCES = [Sale::SOURCE_CATALOG, Sale::SOURCE_ORDER];
 
+    private const DELIVERY_STATUS_PREPARING = 'preparing';
+
+    private const DELIVERY_STATUS_OUT_FOR_DELIVERY = 'out_for_delivery';
+
+    private const DELIVERY_STATUS_DELIVERED = 'delivered';
+
     public function index(Request $request): Response
     {
         $contractor = $this->resolveCurrentContractor($request);
@@ -197,9 +203,10 @@ class AdminOrderService
         $clientId = isset($validated['client_id']) && $validated['client_id'] !== ''
             ? (int) $validated['client_id']
             : null;
+        $canEditCustomer = $this->canEditOrderCustomer($sale);
 
         $selectedClient = null;
-        if ($clientId !== null) {
+        if ($clientId !== null && $canEditCustomer) {
             $selectedClient = Client::query()
                 ->where('contractor_id', $contractor->id)
                 ->where('id', $clientId)
@@ -211,6 +218,10 @@ class AdminOrderService
                     'client_id' => 'Cliente inválido para o contratante ativo.',
                 ]);
             }
+        }
+
+        if (! $canEditCustomer) {
+            $clientId = $sale->client_id ? (int) $sale->client_id : null;
         }
 
         $requestedItems = collect($validated['items'])
@@ -259,6 +270,13 @@ class AdminOrderService
                 throw ValidationException::withMessages([
                     'order' => 'Este pedido não pode ser editado no status atual.',
                 ]);
+            }
+
+            $effectiveClientId = $clientId;
+            $effectiveSelectedClient = $selectedClient;
+            if (! $this->canEditOrderCustomer($lockedSale)) {
+                $effectiveClientId = $lockedSale->client_id ? (int) $lockedSale->client_id : null;
+                $effectiveSelectedClient = $lockedSale->client;
             }
 
             $metadata = is_array($lockedSale->metadata) ? $lockedSale->metadata : [];
@@ -513,13 +531,18 @@ class AdminOrderService
             $itemsChanged = serialize($beforeItems) !== serialize($afterItems);
 
             $nextCustomerName = trim((string) ($validated['customer_name'] ?? ''));
-            if ($nextCustomerName === '' && $selectedClient) {
-                $nextCustomerName = trim((string) $selectedClient->name);
+            if ($nextCustomerName === '' && $effectiveSelectedClient) {
+                $nextCustomerName = trim((string) $effectiveSelectedClient->name);
             }
 
             $nextCustomerContact = trim((string) ($validated['customer_contact'] ?? ''));
-            if ($nextCustomerContact === '' && $selectedClient) {
-                $nextCustomerContact = trim((string) ($selectedClient->phone ?? $selectedClient->email ?? ''));
+            if ($nextCustomerContact === '' && $effectiveSelectedClient) {
+                $nextCustomerContact = trim((string) ($effectiveSelectedClient->phone ?? $effectiveSelectedClient->email ?? ''));
+            }
+
+            if (! $this->canEditOrderCustomer($lockedSale)) {
+                $nextCustomerName = $before['customer_name'];
+                $nextCustomerContact = $before['customer_contact'];
             }
 
             $nextNotes = trim((string) ($validated['notes'] ?? ''));
@@ -538,7 +561,7 @@ class AdminOrderService
             );
 
             $hasClientOrMetaChange = (
-                $beforeClientId !== $clientId
+                $beforeClientId !== $effectiveClientId
                 || $before['customer_name'] !== $nextCustomerName
                 || $before['customer_contact'] !== $nextCustomerContact
                 || $beforeNotes !== $nextNotes
@@ -738,7 +761,7 @@ class AdminOrderService
             ];
 
             $lockedSale->fill([
-                'client_id' => $clientId,
+                'client_id' => $effectiveClientId,
                 'shipping_mode' => $nextShippingMode !== '' ? $nextShippingMode : null,
                 'shipping_amount' => $nextShippingAmount,
                 'shipping_estimate_days' => $nextShippingEstimateDays,
@@ -753,7 +776,7 @@ class AdminOrderService
                 'metadata' => $metadata,
             ])->save();
 
-            if ($beforeClientId !== $clientId) {
+            if ($beforeClientId !== $effectiveClientId) {
                 $changedFields[] = 'client_id';
             }
             if ($before['customer_name'] !== $nextCustomerName) {
@@ -1022,6 +1045,50 @@ class AdminOrderService
         return back()->with('status', 'Pedido confirmado com sucesso.');
     }
 
+    public function markAsAwaitingPayment(Request $request, Sale $sale): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $validated = $request->validate([
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $updatedSaleId = null;
+
+        DB::transaction(function () use ($contractor, $sale, $validated, &$updatedSaleId): void {
+            $lockedSale = $this->lockOrderForContractor($contractor, $sale->id);
+
+            if (in_array($lockedSale->status, [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED, Sale::STATUS_REFUNDED], true)) {
+                throw ValidationException::withMessages([
+                    'order' => 'Este pedido não pode voltar para aguardando pagamento no status atual.',
+                ]);
+            }
+
+            SalePayment::query()
+                ->where('contractor_id', $contractor->id)
+                ->where('sale_id', $lockedSale->id)
+                ->whereIn('status', [SalePayment::STATUS_AUTHORIZED, SalePayment::STATUS_PAID])
+                ->update([
+                    'status' => SalePayment::STATUS_PENDING,
+                    'paid_at' => null,
+                ]);
+
+            $lockedSale->fill([
+                'status' => Sale::STATUS_AWAITING_PAYMENT,
+                'paid_amount' => 0,
+                'completed_at' => null,
+                'notes' => $this->appendNote($lockedSale->notes, $validated['notes'] ?? null),
+            ])->save();
+
+            $updatedSaleId = (int) $lockedSale->id;
+        });
+
+        $this->notifyOrderStatusChanged($updatedSaleId);
+
+        return back()->with('status', 'Pedido marcado como aguardando pagamento.');
+    }
+
     public function reject(Request $request, Sale $sale): RedirectResponse
     {
         $contractor = $this->resolveCurrentContractor($request);
@@ -1276,6 +1343,93 @@ class AdminOrderService
         return back()->with('status', 'Pedido cancelado com sucesso.');
     }
 
+    public function updateDeliveryStatus(Request $request, Sale $sale): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $validated = $request->validate([
+            'delivery_status' => ['required', Rule::in([
+                self::DELIVERY_STATUS_PREPARING,
+                self::DELIVERY_STATUS_OUT_FOR_DELIVERY,
+                self::DELIVERY_STATUS_DELIVERED,
+            ])],
+        ]);
+
+        $updatedSaleId = null;
+        $updatedSaleCode = null;
+        $nextStatus = (string) $validated['delivery_status'];
+
+        DB::transaction(function () use ($contractor, $sale, $nextStatus, &$updatedSaleId, &$updatedSaleCode): void {
+            $lockedSale = $this->lockOrderForContractor($contractor, $sale->id);
+
+            if ((string) $lockedSale->shipping_mode !== Sale::SHIPPING_MODE_DELIVERY) {
+                throw ValidationException::withMessages([
+                    'delivery_status' => 'Somente pedidos de entrega aceitam status de entrega.',
+                ]);
+            }
+
+            if (in_array((string) $lockedSale->status, [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED], true)) {
+                throw ValidationException::withMessages([
+                    'delivery_status' => 'Pedido cancelado/rejeitado não permite atualização de entrega.',
+                ]);
+            }
+
+            $metadata = is_array($lockedSale->metadata) ? $lockedSale->metadata : [];
+            $currentStatus = strtolower(trim((string) ($metadata['delivery_status'] ?? '')));
+            if (! in_array($currentStatus, [
+                self::DELIVERY_STATUS_PREPARING,
+                self::DELIVERY_STATUS_OUT_FOR_DELIVERY,
+                self::DELIVERY_STATUS_DELIVERED,
+            ], true)) {
+                $currentStatus = self::DELIVERY_STATUS_PREPARING;
+            }
+
+            if ($currentStatus === $nextStatus) {
+                return;
+            }
+
+            $metadata['delivery_status'] = $nextStatus;
+            $metadata['delivery_status_updated_at'] = now()->toIso8601String();
+            if ($nextStatus === self::DELIVERY_STATUS_OUT_FOR_DELIVERY) {
+                $metadata['delivery_out_for_delivery_at'] = now()->toIso8601String();
+            }
+            if ($nextStatus === self::DELIVERY_STATUS_DELIVERED) {
+                $metadata['delivery_delivered_at'] = now()->toIso8601String();
+                if ((string) $lockedSale->status === Sale::STATUS_PAID) {
+                    $lockedSale->status = Sale::STATUS_COMPLETED;
+                    $lockedSale->completed_at = $lockedSale->completed_at ?? now();
+                }
+            }
+
+            $lockedSale->metadata = $metadata;
+            $lockedSale->save();
+
+            $updatedSaleId = (int) $lockedSale->id;
+            $updatedSaleCode = (string) $lockedSale->code;
+        });
+
+        if (! $updatedSaleId) {
+            return back()->with('status', 'Status de entrega já estava atualizado.');
+        }
+
+        app(SecurityAuditLogger::class)->log(
+            $request,
+            'order.delivery_status.updated.admin',
+            SecurityAuditLog::SEVERITY_INFO,
+            $contractor->id,
+            [
+                'sale_id' => $updatedSaleId,
+                'sale_code' => $updatedSaleCode,
+                'delivery_status' => $nextStatus,
+            ],
+        );
+
+        $this->notifyOrderStatusChanged($updatedSaleId);
+
+        return back()->with('status', 'Status de entrega atualizado com sucesso.');
+    }
+
     private function lockOrderForContractor(Contractor $contractor, int $saleId): Sale
     {
         $sale = Sale::query()
@@ -1358,14 +1512,32 @@ class AdminOrderService
         $itemDiscountTotal = round((float) $sale->items->sum(static fn (SaleItem $item): float => (float) $item->discount_amount), 2);
         $globalDiscountAmount = max(0.0, round((float) $sale->discount_amount - $itemDiscountTotal, 2));
         $surchargeComponents = $this->resolveOrderSurchargeComponents($sale, $metadata);
+        $shippingMode = $sale->shipping_mode !== null ? (string) $sale->shipping_mode : Sale::SHIPPING_MODE_PICKUP;
+        $shippingModeLabel = $shippingMode === Sale::SHIPPING_MODE_DELIVERY ? 'Entrega' : 'Retirada na loja';
+        $shippingModeTone = $shippingMode === Sale::SHIPPING_MODE_DELIVERY
+            ? 'bg-emerald-100 text-emerald-700'
+            : 'bg-blue-100 text-blue-700';
+        $deliveryStatus = $this->resolveDeliveryStatusMeta(
+            $shippingMode === Sale::SHIPPING_MODE_DELIVERY
+                ? (string) ($metadata['delivery_status'] ?? '')
+                : ''
+        );
+        $source = (string) $sale->source;
+        $channelLabel = match ($source) {
+            Sale::SOURCE_ORDER => 'Pedido direto',
+            Sale::SOURCE_CATALOG => 'Loja virtual',
+            Sale::SOURCE_PDV => 'PDV',
+            default => 'Pedido',
+        };
 
         return [
             'id' => (int) $sale->id,
             'code' => (string) $sale->code,
+            'source' => $source,
             'client_id' => $sale->client_id ? (int) $sale->client_id : null,
             'customer' => $customerName,
             'customer_contact' => $customerContact,
-            'channel' => 'Loja virtual',
+            'channel' => $channelLabel,
             'subtotal_amount' => (float) $sale->subtotal_amount,
             'discount_amount' => (float) $sale->discount_amount,
             'global_discount_amount' => $globalDiscountAmount,
@@ -1392,15 +1564,22 @@ class AdminOrderService
             'status' => $status,
             'payment_label' => $paymentLabel !== '' ? $paymentLabel : 'Não informado',
             'created_at' => optional($sale->created_at)->format('d/m/Y H:i'),
-            'shipping_mode' => $sale->shipping_mode !== null ? (string) $sale->shipping_mode : null,
+            'shipping_mode' => $shippingMode,
+            'shipping_mode_label' => $shippingModeLabel,
+            'shipping_mode_tone' => $shippingModeTone,
+            'delivery_status' => $deliveryStatus,
             'shipping_amount' => (float) $sale->shipping_amount,
             'shipping_estimate_days' => $sale->shipping_estimate_days !== null ? (int) $sale->shipping_estimate_days : null,
             'notes' => $sale->notes !== null ? (string) $sale->notes : null,
             'can_confirm' => in_array($sale->status, [Sale::STATUS_NEW, Sale::STATUS_PENDING_CONFIRMATION], true),
             'can_reject' => in_array($sale->status, [Sale::STATUS_NEW, Sale::STATUS_PENDING_CONFIRMATION], true),
+            'can_set_awaiting_payment' => in_array($sale->status, [Sale::STATUS_NEW, Sale::STATUS_PENDING_CONFIRMATION, Sale::STATUS_CONFIRMED, Sale::STATUS_PAID], true),
             'can_mark_paid' => in_array($sale->status, [Sale::STATUS_CONFIRMED, Sale::STATUS_AWAITING_PAYMENT], true),
             'can_cancel' => ! in_array($sale->status, [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED], true),
+            'can_update_delivery_status' => $shippingMode === Sale::SHIPPING_MODE_DELIVERY
+                && ! in_array($sale->status, [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED], true),
             'can_edit' => $this->canEditOrder($sale),
+            'can_edit_customer' => $this->canEditOrderCustomer($sale),
         ];
     }
 
@@ -1429,6 +1608,37 @@ class AdminOrderService
             Sale::STATUS_COMPLETED,
             Sale::STATUS_REFUNDED,
         ], true);
+    }
+
+    private function canEditOrderCustomer(Sale $sale): bool
+    {
+        return (string) $sale->source === Sale::SOURCE_PDV;
+    }
+
+    /**
+     * @return array{value: string, label: string, tone: string}
+     */
+    private function resolveDeliveryStatusMeta(string $status): array
+    {
+        $normalized = strtolower(trim($status));
+
+        return match ($normalized) {
+            self::DELIVERY_STATUS_OUT_FOR_DELIVERY => [
+                'value' => self::DELIVERY_STATUS_OUT_FOR_DELIVERY,
+                'label' => 'Em entrega',
+                'tone' => 'bg-blue-100 text-blue-700',
+            ],
+            self::DELIVERY_STATUS_DELIVERED => [
+                'value' => self::DELIVERY_STATUS_DELIVERED,
+                'label' => 'Entregue',
+                'tone' => 'bg-emerald-100 text-emerald-700',
+            ],
+            default => [
+                'value' => self::DELIVERY_STATUS_PREPARING,
+                'label' => 'Em preparo',
+                'tone' => 'bg-amber-100 text-amber-700',
+            ],
+        };
     }
 
     /**

@@ -59,6 +59,7 @@ class StorefrontSettings
         return [
             'template' => $template,
             'store_online' => (bool) ($settings['store_online'] ?? true),
+            'customer_whatsapp_contact_enabled' => (bool) ($settings['customer_whatsapp_contact_enabled'] ?? false),
             'offline_message' => self::normalizeText(
                 $settings['offline_message'] ?? null,
                 self::defaultOfflineMessage(),

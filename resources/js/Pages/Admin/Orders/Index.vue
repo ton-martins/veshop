@@ -3,12 +3,13 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import Modal from '@/Components/Modal.vue';
+import WizardModalFrame from '@/Components/App/WizardModalFrame.vue';
 import BrlMoneyInput from '@/Components/App/BrlMoneyInput.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import OrderDetailsModal from '@/Components/App/Orders/OrderDetailsModal.vue';
 import { useBranding } from '@/branding';
 import { Head, useForm, usePage, router } from '@inertiajs/vue3';
-import { ShoppingBag, Search, CheckCircle2, XCircle, Ban, Wallet, ListFilter, Pencil, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-vue-next';
+import { ShoppingBag, Search, Eye, CheckCircle2, XCircle, Ban, Wallet, ListFilter, Pencil, Plus, Trash2 } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 const props = defineProps({
@@ -40,13 +41,9 @@ const editModalOpen = ref(false);
 const editOrder = ref(null);
 const clientInfoModalOpen = ref(false);
 const clientInfo = ref(null);
-const editSectionsDefaultState = () => ({
-    customer: true,
-    items: true,
-    adjustments: false,
-    notes: false,
-});
-const editSections = ref(editSectionsDefaultState());
+const editWizardSteps = ['Cliente e contato', 'Itens do pedido', 'Ajustes e resumo', 'Observações'];
+const editWizardStep = ref(1);
+const deliveryStatusTarget = ref('');
 
 const rejectForm = useForm({ reason: '' });
 const actionForm = useForm({ notes: '' });
@@ -233,6 +230,9 @@ const formTotal = computed(() => {
     const total = formSubtotal.value - formItemsDiscount.value - formGlobalDiscount.value + formShippingAmount.value + formPaymentFee.value;
     return Math.round(Math.max(0, total) * 100) / 100;
 });
+const isFirstEditStep = computed(() => editWizardStep.value <= 1);
+const isLastEditStep = computed(() => editWizardStep.value >= editWizardSteps.length);
+const canEditCustomerOnOrder = computed(() => Boolean(editOrder.value?.can_edit_customer));
 
 const filteredOrders = computed(() => ordersData.value);
 let filterDebounceTimer = null;
@@ -309,6 +309,12 @@ const clearSearch = () => {
 
 const openOrderDetails = (order) => {
     if (!order?.id) return;
+    if (editModalOpen.value) {
+        closeEditModal();
+    }
+    if (actionConfirmModalOpen.value) {
+        closeActionConfirmModal();
+    }
     orderDetails.value = order;
     orderDetailsModalOpen.value = true;
 };
@@ -369,12 +375,36 @@ const actionMeta = computed(() => {
         };
     }
 
+    if (currentType === 'awaiting_payment') {
+        return {
+            title: 'Marcar como aguardando pagamento',
+            description: 'Confirme para retornar o pedido para aguardando pagamento.',
+            confirmLabel: 'Confirmar status',
+            confirmClass: 'bg-indigo-600 hover:bg-indigo-700',
+        };
+    }
+
     if (currentType === 'reject') {
         return {
             title: 'Rejeitar pedido',
             description: 'Confirme para rejeitar este pedido.',
             confirmLabel: 'Confirmar rejeição',
             confirmClass: 'bg-amber-600 hover:bg-amber-700',
+        };
+    }
+
+    if (currentType === 'delivery_status') {
+        const map = {
+            preparing: 'Em preparo',
+            out_for_delivery: 'Em entrega',
+            delivered: 'Entregue',
+        };
+        const label = map[String(deliveryStatusTarget.value ?? '')] ?? 'Atualização';
+        return {
+            title: 'Atualizar status da entrega',
+            description: `Confirme para atualizar a entrega para "${label}".`,
+            confirmLabel: 'Atualizar entrega',
+            confirmClass: 'bg-emerald-600 hover:bg-emerald-700',
         };
     }
 
@@ -390,6 +420,7 @@ const closeActionConfirmModal = () => {
     actionConfirmModalOpen.value = false;
     actionOrder.value = null;
     actionType.value = '';
+    deliveryStatusTarget.value = '';
     rejectReason.value = '';
     actionForm.clearErrors();
     rejectForm.reset();
@@ -401,11 +432,12 @@ const closeEditModal = () => {
     editOrder.value = null;
     editForm.reset();
     editForm.clearErrors();
-    editSections.value = editSectionsDefaultState();
+    editWizardStep.value = 1;
 };
 
 const openEditModal = (order) => {
     if (!order?.id || !order?.can_edit) return;
+    orderDetailsModalOpen.value = false;
 
     const mappedItems = Array.isArray(order.items)
         ? order.items
@@ -435,17 +467,23 @@ const openEditModal = (order) => {
     });
     editForm.reset();
     editForm.clearErrors();
-    editSections.value = editSectionsDefaultState();
+    editWizardStep.value = 1;
     editModalOpen.value = true;
 };
 
-const isEditSectionOpen = (sectionKey) => Boolean(editSections.value?.[sectionKey]);
-const toggleEditSection = (sectionKey) => {
-    if (!Object.prototype.hasOwnProperty.call(editSections.value, sectionKey)) return;
-    editSections.value = {
-        ...editSections.value,
-        [sectionKey]: !editSections.value[sectionKey],
-    };
+const setEditWizardStep = (step) => {
+    const safeStep = Math.min(editWizardSteps.length, Math.max(1, Number(step) || 1));
+    editWizardStep.value = safeStep;
+};
+
+const nextEditWizardStep = () => {
+    if (isLastEditStep.value) return;
+    editWizardStep.value += 1;
+};
+
+const previousEditWizardStep = () => {
+    if (isFirstEditStep.value) return;
+    editWizardStep.value -= 1;
 };
 
 const addItemLine = () => {
@@ -477,6 +515,8 @@ const setItemVariation = (index, variationId) => {
 };
 
 const onClientChange = (clientId) => {
+    if (!canEditCustomerOnOrder.value) return;
+
     const safeId = clientId === '' ? '' : Number(clientId);
     editForm.client_id = safeId;
 
@@ -522,11 +562,12 @@ const submitOrderEdit = () => {
     });
 };
 
-const openActionConfirmModal = (type, order) => {
+const openActionConfirmModal = (type, order, payload = {}) => {
     if (!order?.id) return;
 
     actionType.value = String(type ?? '');
     actionOrder.value = order;
+    deliveryStatusTarget.value = String(payload?.delivery_status ?? '');
     rejectReason.value = 'Pedido rejeitado manualmente pelo operador.';
     actionForm.clearErrors();
     rejectForm.reset();
@@ -557,9 +598,27 @@ const submitActionConfirm = () => {
         return;
     }
 
+    if (type === 'awaiting_payment') {
+        actionForm.transform(() => ({ notes: '' })).post(route('admin.orders.awaiting-payment', orderId), {
+            preserveScroll: true,
+            onSuccess: closeActionConfirmModal,
+        });
+        return;
+    }
+
     if (type === 'reject') {
         rejectForm.reason = String(rejectReason.value ?? '').trim() || 'Pedido rejeitado manualmente pelo operador.';
         rejectForm.post(route('admin.orders.reject', orderId), {
+            preserveScroll: true,
+            onSuccess: closeActionConfirmModal,
+        });
+        return;
+    }
+
+    if (type === 'delivery_status') {
+        actionForm.transform(() => ({
+            delivery_status: String(deliveryStatusTarget.value ?? '').trim(),
+        })).post(route('admin.orders.delivery-status', orderId), {
             preserveScroll: true,
             onSuccess: closeActionConfirmModal,
         });
@@ -585,7 +644,9 @@ const handleOrderDetailsAction = (payload) => {
             return;
         }
 
-        openActionConfirmModal(type, order);
+        openActionConfirmModal(type, order, {
+            delivery_status: payload?.delivery_status ?? '',
+        });
     }, 0);
 };
 </script>
@@ -692,6 +753,15 @@ const handleOrderDetailsAction = (payload) => {
                                         <td class="px-4 py-3">
                                             <div class="flex items-center justify-end gap-1">
                                                 <button
+                                                    type="button"
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                                                    title="Visualizar pedido"
+                                                    aria-label="Visualizar pedido"
+                                                    @click.stop="openOrderDetails(order)"
+                                                >
+                                                    <Eye class="h-4 w-4" />
+                                                </button>
+                                                <button
                                                     v-if="order.can_edit"
                                                     type="button"
                                                     class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
@@ -781,6 +851,15 @@ const handleOrderDetailsAction = (payload) => {
                                 </div>
 
                                 <div class="mt-3 flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700"
+                                        title="Visualizar pedido"
+                                        aria-label="Visualizar pedido"
+                                        @click.stop="openOrderDetails(order)"
+                                    >
+                                        <Eye class="h-4 w-4" />
+                                    </button>
                                     <button
                                         v-if="order.can_edit"
                                         type="button"
@@ -904,294 +983,268 @@ const handleOrderDetailsAction = (payload) => {
             </div>
         </Modal>
 
-        <Modal :show="editModalOpen" max-width="3xl" @close="closeEditModal">
-            <div class="space-y-4 p-5">
-                <div>
-                    <h3 class="text-base font-semibold text-slate-900">Editar pedido</h3>
-                    <p class="mt-1 text-sm text-slate-500">
-                        Atualize os dados operacionais do pedido
-                        <span v-if="editOrder?.code" class="font-semibold text-slate-700">
-                            {{ editOrder.code }}.
-                        </span>
-                    </p>
-                </div>
-
+                <Modal :show="editModalOpen" max-width="4xl" @close="closeEditModal">
+            <WizardModalFrame
+                title="Editar pedido"
+                description="Atualize os dados operacionais do pedido."
+                :steps="editWizardSteps"
+                :current-step="editWizardStep"
+                :steps-clickable="true"
+                @close="closeEditModal"
+                @step-change="setEditWizardStep"
+            >
                 <div class="space-y-3">
-                    <section class="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                        <button
-                            type="button"
-                            class="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left"
-                            @click="toggleEditSection('customer')"
-                        >
-                            <div>
-                                <p class="text-sm font-semibold text-slate-900">Cliente e contato</p>
-                                <p class="text-xs text-slate-500">Dados de identificação do pedido.</p>
-                            </div>
-                            <component :is="isEditSectionOpen('customer') ? ChevronUp : ChevronDown" class="mt-0.5 h-4 w-4 text-slate-500" />
-                        </button>
-                        <div v-if="isEditSectionOpen('customer')" class="border-t border-slate-100 p-3">
-                            <div class="grid gap-3 sm:grid-cols-3">
-                                <label class="space-y-1">
-                                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cliente</span>
-                                    <UiSelect
-                                        :model-value="editForm.client_id"
-                                        :options="clientSelectOptions"
-                                        button-class="w-full"
-                                        @update:model-value="onClientChange"
-                                    />
-                                </label>
-                                <label class="space-y-1 sm:col-span-2">
-                                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome do cliente</span>
-                                    <input
-                                        v-model="editForm.customer_name"
-                                        type="text"
-                                        class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                        placeholder="Nome do cliente"
-                                    >
-                                </label>
-                                <label class="space-y-1 sm:col-span-3">
-                                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Contato</span>
-                                    <input
-                                        v-model="editForm.customer_contact"
-                                        type="text"
-                                        class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                        placeholder="Telefone ou e-mail"
-                                    >
-                                </label>
-                            </div>
+                    <p v-if="editOrder?.code" class="text-xs text-slate-500">
+                        Pedido <span class="font-semibold text-slate-700">{{ editOrder.code }}</span>
+                    </p>
+
+                    <section v-if="editWizardStep === 1" class="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+                        <div v-if="!canEditCustomerOnOrder" class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                            Pedidos da loja virtual têm os dados do cliente bloqueados para edição.
                         </div>
-                    </section>
 
-                    <section class="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                        <button
-                            type="button"
-                            class="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left"
-                            @click="toggleEditSection('items')"
-                        >
-                            <div>
-                                <p class="text-sm font-semibold text-slate-900">Itens do pedido</p>
-                                <p class="text-xs text-slate-500">Produtos, quantidades e descontos por item.</p>
-                            </div>
-                            <component :is="isEditSectionOpen('items') ? ChevronUp : ChevronDown" class="mt-0.5 h-4 w-4 text-slate-500" />
-                        </button>
-                        <div v-if="isEditSectionOpen('items')" class="space-y-2 border-t border-slate-100 p-3">
-                            <div class="flex items-center justify-end">
-                                <button
-                                    type="button"
-                                    class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                                    @click="addItemLine"
-                                >
-                                    <Plus class="h-3.5 w-3.5" />
-                                    Adicionar item
-                                </button>
-                            </div>
-
-                            <div class="space-y-2">
-                                <div
-                                    v-for="(line, index) in editForm.items"
-                                    :key="`order-line-${index}`"
-                                    class="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5"
-                                >
-                                    <div class="grid gap-2 md:grid-cols-12">
-                                        <div class="md:col-span-4">
-                                            <UiSelect
-                                                :model-value="line.product_id"
-                                                :options="productSelectOptions"
-                                                button-class="w-full"
-                                                @update:model-value="(value) => setItemProduct(index, value)"
-                                            />
-                                        </div>
-                                        <div class="md:col-span-3">
-                                            <UiSelect
-                                                :model-value="line.variation_id"
-                                                :options="variationSelectOptionsForLine(line)"
-                                                button-class="w-full"
-                                                @update:model-value="(value) => setItemVariation(index, value)"
-                                            />
-                                        </div>
-                                        <label class="space-y-1 md:col-span-2">
-                                            <span class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Quantidade</span>
-                                            <input
-                                                v-model.number="line.quantity"
-                                                type="number"
-                                                min="1"
-                                                class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700"
-                                            >
-                                        </label>
-                                        <label class="space-y-1 md:col-span-2">
-                                            <span class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Desconto</span>
-                                            <BrlMoneyInput
-                                                v-model="line.discount_amount"
-                                                class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700"
-                                                placeholder="R$ 0,00"
-                                            />
-                                        </label>
-                                        <div class="flex items-end justify-end md:col-span-1">
-                                            <button
-                                                type="button"
-                                                class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-                                                :disabled="editForm.items.length <= 1"
-                                                title="Remover item"
-                                                @click="removeItemLine(index)"
-                                            >
-                                                <Trash2 class="h-3.5 w-3.5" />
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div class="grid gap-2 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
-                                        <p v-if="productLookup.get(Number(line.product_id))">
-                                            Estoque atual:
-                                            <span class="font-semibold">
-                                                {{ lineStockQuantity(line) }}
-                                            </span>
-                                        </p>
-                                        <p>Subtotal: <span class="font-semibold">{{ asCurrency(lineSubtotal(line)) }}</span></p>
-                                        <p>Desconto: <span class="font-semibold">{{ asCurrency(lineDiscount(line)) }}</span></p>
-                                        <p>Total do item: <span class="font-semibold">{{ asCurrency(lineTotal(line)) }}</span></p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                        <button
-                            type="button"
-                            class="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left"
-                            @click="toggleEditSection('adjustments')"
-                        >
-                            <div>
-                                <p class="text-sm font-semibold text-slate-900">Ajustes e resumo financeiro</p>
-                                <p class="text-xs text-slate-500">Desconto, frete, taxa de pagamento e total final.</p>
-                            </div>
-                            <component :is="isEditSectionOpen('adjustments') ? ChevronUp : ChevronDown" class="mt-0.5 h-4 w-4 text-slate-500" />
-                        </button>
-                        <div v-if="isEditSectionOpen('adjustments')" class="space-y-3 border-t border-slate-100 p-3">
-                            <div class="grid gap-3 sm:grid-cols-2">
-                                <label class="space-y-1">
-                                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Desconto geral</span>
-                                    <BrlMoneyInput
-                                        v-model="editForm.discount_amount"
-                                        class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                        placeholder="R$ 0,00"
-                                    />
-                                </label>
-                                <label class="space-y-1">
-                                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Modo de entrega</span>
-                                    <select
-                                        v-model="editForm.shipping_mode"
-                                        class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                    >
-                                        <option value="">Não informado</option>
-                                        <option value="pickup">Retirada</option>
-                                        <option value="delivery">Entrega</option>
-                                    </select>
-                                </label>
-                                <label class="space-y-1">
-                                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor de entrega (R$)</span>
-                                    <BrlMoneyInput
-                                        v-model="editForm.shipping_amount"
-                                        class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                        placeholder="R$ 0,00"
-                                    />
-                                </label>
-                                <label class="space-y-1">
-                                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Estimativa (dias)</span>
-                                    <input
-                                        v-model="editForm.shipping_estimate_days"
-                                        type="number"
-                                        min="0"
-                                        step="1"
-                                        class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                        placeholder="Ex.: 2"
-                                    >
-                                </label>
-                            </div>
-
-                            <div class="grid gap-2 text-xs sm:grid-cols-3">
-                                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                    <p class="text-slate-500">Subtotal</p>
-                                    <p class="mt-1 text-sm font-semibold text-slate-900">{{ asCurrency(formSubtotal) }}</p>
-                                </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                    <p class="text-slate-500">Desconto dos itens</p>
-                                    <p class="mt-1 text-sm font-semibold text-slate-900">{{ asCurrency(formItemsDiscount) }}</p>
-                                </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                    <p class="text-slate-500">Desconto geral</p>
-                                    <p class="mt-1 text-sm font-semibold text-slate-900">{{ asCurrency(formGlobalDiscount) }}</p>
-                                </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                    <p class="text-slate-500">Entrega</p>
-                                    <p class="mt-1 text-sm font-semibold text-slate-900">{{ asCurrency(formShippingAmount) }}</p>
-                                </div>
-                                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                    <p class="text-slate-500">Taxa de pagamento</p>
-                                    <p class="mt-1 text-sm font-semibold text-slate-900">{{ asCurrency(formPaymentFee) }}</p>
-                                </div>
-                                <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-                                    <p class="text-slate-600">Total final</p>
-                                    <p class="mt-1 text-sm font-bold text-slate-900">{{ asCurrency(formTotal) }}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                        <button
-                            type="button"
-                            class="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left"
-                            @click="toggleEditSection('notes')"
-                        >
-                            <div>
-                                <p class="text-sm font-semibold text-slate-900">Observações</p>
-                                <p class="text-xs text-slate-500">Anotações internas da edição do pedido.</p>
-                            </div>
-                            <component :is="isEditSectionOpen('notes') ? ChevronUp : ChevronDown" class="mt-0.5 h-4 w-4 text-slate-500" />
-                        </button>
-                        <div v-if="isEditSectionOpen('notes')" class="border-t border-slate-100 p-3">
+                        <div class="grid gap-3 sm:grid-cols-3">
                             <label class="space-y-1">
-                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Observações</span>
-                                <textarea
-                                    v-model="editForm.notes"
-                                    rows="4"
-                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                                    placeholder="Anotações do pedido"
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cliente</span>
+                                <UiSelect
+                                    :model-value="editForm.client_id"
+                                    :options="clientSelectOptions"
+                                    button-class="w-full"
+                                    :disabled="!canEditCustomerOnOrder"
+                                    @update:model-value="onClientChange"
                                 />
+                            </label>
+                            <label class="space-y-1 sm:col-span-2">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome do cliente</span>
+                                <input
+                                    v-model="editForm.customer_name"
+                                    type="text"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                    placeholder="Nome do cliente"
+                                    :disabled="!canEditCustomerOnOrder"
+                                >
+                            </label>
+                            <label class="space-y-1 sm:col-span-3">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Contato</span>
+                                <input
+                                    v-model="editForm.customer_contact"
+                                    type="text"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                    placeholder="Telefone ou e-mail"
+                                    :disabled="!canEditCustomerOnOrder"
+                                >
                             </label>
                         </div>
                     </section>
+
+                    <section v-else-if="editWizardStep === 2" class="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+                        <div class="flex items-center justify-end">
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                @click="addItemLine"
+                            >
+                                <Plus class="h-3.5 w-3.5" />
+                                Adicionar item
+                            </button>
+                        </div>
+
+                        <div class="space-y-2">
+                            <div
+                                v-for="(line, index) in editForm.items"
+                                :key="`order-line-${index}`"
+                                class="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5"
+                            >
+                                <div class="grid gap-2 md:grid-cols-12">
+                                    <div class="md:col-span-4">
+                                        <UiSelect
+                                            :model-value="line.product_id"
+                                            :options="productSelectOptions"
+                                            button-class="w-full"
+                                            @update:model-value="(value) => setItemProduct(index, value)"
+                                        />
+                                    </div>
+                                    <div class="md:col-span-3">
+                                        <UiSelect
+                                            :model-value="line.variation_id"
+                                            :options="variationSelectOptionsForLine(line)"
+                                            button-class="w-full"
+                                            @update:model-value="(value) => setItemVariation(index, value)"
+                                        />
+                                    </div>
+                                    <label class="space-y-1 md:col-span-2">
+                                        <span class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Quantidade</span>
+                                        <input
+                                            v-model.number="line.quantity"
+                                            type="number"
+                                            min="1"
+                                            class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700"
+                                        >
+                                    </label>
+                                    <label class="space-y-1 md:col-span-2">
+                                        <span class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Desconto</span>
+                                        <BrlMoneyInput
+                                            v-model="line.discount_amount"
+                                            class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700"
+                                            placeholder="R$ 0,00"
+                                        />
+                                    </label>
+                                    <div class="flex items-end justify-end md:col-span-1">
+                                        <button
+                                            type="button"
+                                            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                            :disabled="editForm.items.length <= 1"
+                                            title="Remover item"
+                                            @click="removeItemLine(index)"
+                                        >
+                                            <Trash2 class="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="grid gap-2 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
+                                    <p v-if="productLookup.get(Number(line.product_id))">
+                                        Estoque atual:
+                                        <span class="font-semibold">{{ lineStockQuantity(line) }}</span>
+                                    </p>
+                                    <p>Subtotal: <span class="font-semibold">{{ asCurrency(lineSubtotal(line)) }}</span></p>
+                                    <p>Desconto: <span class="font-semibold">{{ asCurrency(lineDiscount(line)) }}</span></p>
+                                    <p>Total do item: <span class="font-semibold">{{ asCurrency(lineTotal(line)) }}</span></p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section v-else-if="editWizardStep === 3" class="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <label class="space-y-1">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Desconto geral</span>
+                                <BrlMoneyInput
+                                    v-model="editForm.discount_amount"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="R$ 0,00"
+                                />
+                            </label>
+                            <label class="space-y-1">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Modo de entrega</span>
+                                <select
+                                    v-model="editForm.shipping_mode"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                >
+                                    <option value="">Não informado</option>
+                                    <option value="pickup">Retirada</option>
+                                    <option value="delivery">Entrega</option>
+                                </select>
+                            </label>
+                            <label class="space-y-1">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor de entrega (R$)</span>
+                                <BrlMoneyInput
+                                    v-model="editForm.shipping_amount"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="R$ 0,00"
+                                />
+                            </label>
+                            <label class="space-y-1">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Estimativa (dias)</span>
+                                <input
+                                    v-model="editForm.shipping_estimate_days"
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="Ex.: 2"
+                                >
+                            </label>
+                        </div>
+
+                        <div class="grid gap-2 text-xs sm:grid-cols-3">
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <p class="text-slate-500">Subtotal</p>
+                                <p class="mt-1 text-sm font-semibold text-slate-900">{{ asCurrency(formSubtotal) }}</p>
+                            </div>
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <p class="text-slate-500">Desconto dos itens</p>
+                                <p class="mt-1 text-sm font-semibold text-slate-900">{{ asCurrency(formItemsDiscount) }}</p>
+                            </div>
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <p class="text-slate-500">Desconto geral</p>
+                                <p class="mt-1 text-sm font-semibold text-slate-900">{{ asCurrency(formGlobalDiscount) }}</p>
+                            </div>
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <p class="text-slate-500">Entrega</p>
+                                <p class="mt-1 text-sm font-semibold text-slate-900">{{ asCurrency(formShippingAmount) }}</p>
+                            </div>
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <p class="text-slate-500">Taxa de pagamento</p>
+                                <p class="mt-1 text-sm font-semibold text-slate-900">{{ asCurrency(formPaymentFee) }}</p>
+                            </div>
+                            <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                                <p class="text-slate-600">Total final</p>
+                                <p class="mt-1 text-sm font-bold text-slate-900">{{ asCurrency(formTotal) }}</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section v-else class="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+                        <label class="space-y-1">
+                            <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Observações</span>
+                            <textarea
+                                v-model="editForm.notes"
+                                rows="4"
+                                class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                placeholder="Anotações do pedido"
+                            />
+                        </label>
+                    </section>
                 </div>
 
-                <p v-if="editForm.errors.order" class="text-xs font-semibold text-rose-600">
-                    {{ editForm.errors.order }}
-                </p>
-                <p v-if="editForm.errors.items" class="text-xs font-semibold text-rose-600">
-                    {{ editForm.errors.items }}
-                </p>
+                <p v-if="editForm.errors.order" class="text-xs font-semibold text-rose-600">{{ editForm.errors.order }}</p>
+                <p v-if="editForm.errors.items" class="text-xs font-semibold text-rose-600">{{ editForm.errors.items }}</p>
                 <div v-if="Object.keys(editForm.errors).some((key) => key !== 'order')" class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                     Verifique os campos do formulário antes de salvar.
                 </div>
 
-                <div class="flex items-center justify-end gap-2">
-                    <button
-                        type="button"
-                        class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                        @click="closeEditModal"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        type="button"
-                        class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
-                        :disabled="editForm.processing || formTotal <= 0 || !editForm.items.length"
-                        @click="submitOrderEdit"
-                    >
-                        {{ editForm.processing ? 'Salvando...' : 'Salvar alterações' }}
-                    </button>
-                </div>
-            </div>
+                <template #footer>
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                                :disabled="isFirstEditStep"
+                                @click="previousEditWizardStep"
+                            >
+                                Voltar etapa
+                            </button>
+                            <button
+                                v-if="!isLastEditStep"
+                                type="button"
+                                class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                @click="nextEditWizardStep"
+                            >
+                                Próxima etapa
+                            </button>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                @click="closeEditModal"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+                                :disabled="editForm.processing || formTotal <= 0 || !editForm.items.length"
+                                @click="submitOrderEdit"
+                            >
+                                {{ editForm.processing ? 'Salvando...' : 'Salvar alterações' }}
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </WizardModalFrame>
         </Modal>
 
         <Modal :show="actionConfirmModalOpen" max-width="lg" @close="closeActionConfirmModal">

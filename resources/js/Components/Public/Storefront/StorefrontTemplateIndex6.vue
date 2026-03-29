@@ -136,6 +136,24 @@ const storeInitials = computed(() => {
     const last = parts.length > 1 ? parts[parts.length - 1]?.charAt(0) : '';
     return `${first}${last}`.toUpperCase() || 'LJ';
 });
+const storefrontOrderWhatsappEnabled = computed(() => Boolean(props.storefront?.customer_whatsapp_contact_enabled ?? false));
+
+const normalizeWhatsappPhone = (value) => {
+    const digits = String(value ?? '').replace(/\D+/g, '');
+    if (digits === '') return null;
+
+    if ((digits.length === 12 || digits.length === 13) && digits.startsWith('55')) {
+        return digits;
+    }
+
+    if (digits.length === 10 || digits.length === 11) {
+        return `55${digits}`;
+    }
+
+    return digits.length >= 12 ? digits : null;
+};
+
+const contractorWhatsappPhone = computed(() => normalizeWhatsappPhone(props.contractor?.phone));
 
 const themeVars = computed(() => ({
     '--idx-primary': storeAccent.value,
@@ -1903,6 +1921,40 @@ const orders = computed(() => {
     });
 });
 
+const isOrderDetailsOpen = ref(false);
+const selectedOrderDetailsId = ref(null);
+const selectedOrderDetails = computed(() => {
+    const id = toInt(selectedOrderDetailsId.value, 0);
+    if (id <= 0) return null;
+
+    return orders.value.find((order) => toInt(order?.id, 0) === id) ?? null;
+});
+const selectedOrderWhatsappUrl = computed(() => {
+    if (!storefrontOrderWhatsappEnabled.value) return '';
+    if (!contractorWhatsappPhone.value) return '';
+    if (!selectedOrderDetails.value) return '';
+
+    const orderCode = String(selectedOrderDetails.value.code || `#${selectedOrderDetails.value.id}`).trim();
+    const message = isServicesMode.value
+        ? `Olá! Preciso de informações sobre meu agendamento ${orderCode}.`
+        : `Olá! Preciso de informações sobre meu pedido ${orderCode}.`;
+
+    return `https://wa.me/${contractorWhatsappPhone.value}?text=${encodeURIComponent(message)}`;
+});
+
+const openOrderDetailsModal = (order) => {
+    const id = toInt(order?.id, 0);
+    if (id <= 0) return;
+
+    selectedOrderDetailsId.value = id;
+    isOrderDetailsOpen.value = true;
+};
+
+const closeOrderDetailsModal = () => {
+    isOrderDetailsOpen.value = false;
+    selectedOrderDetailsId.value = null;
+};
+
 const resolvePaymentQrImageSrc = async (payment) => {
     const base64 = String(payment?.qr_code_base64 ?? '').trim();
     if (base64 !== '') {
@@ -2053,6 +2105,13 @@ watch(orders, async (list) => {
     orderPaymentQrById.value = nextQr;
     syncOrderPaymentAutoRefresh();
 }, { immediate: true, deep: true });
+
+watch(selectedOrderDetails, (order) => {
+    if (!isOrderDetailsOpen.value) return;
+    if (order) return;
+
+    closeOrderDetailsModal();
+});
 
 const stateOptions = computed(() => ([
     { value: '', label: 'Selecione a UF' },
@@ -2522,15 +2581,15 @@ onBeforeUnmount(() => {
                                     </div>
                                     <img :src="item.image" :alt="item.title" class="w-full h-32 md:h-40 object-cover group-hover:scale-105 transition-transform duration-300">
                                     <div class="p-4">
-                                        <h4 class="font-semibold text-sm md:text-base mb-1 truncate">{{ item.title }}</h4>
-                                        <p class="text-xs text-gray-400 truncate">{{ item.subtitle }}</p>
+                                        <h4 class="font-semibold text-sm md:text-base truncate">{{ item.title }}</h4>
+                                        <span class="text-gray-700 text-xs font-semibold">{{ formatMoney(item.price) }}</span>
+                                        <!-- <p class="text-xs text-gray-400 truncate">{{ item.subtitle }}</p>
                                         <div class="flex items-center gap-1 mt-1 text-xs text-amber-500">
                                             <Star :size="12" />
                                             <span class="font-semibold">{{ item.rating.toFixed(1) }}</span>
                                             <span class="text-gray-400">({{ item.reviews }})</span>
-                                        </div>
-                                        <div class="flex justify-between items-center mt-2">
-                                            <span class="text-gray-700 text-xs font-semibold">{{ formatMoney(item.price) }}</span>
+                                        </div> -->
+                                        <div class="flex w-full justify-between items-center mt-2">
                                             <button
                                                 class="inline-flex items-center gap-1 text-white text-xs px-3 py-1 rounded-full font-medium disabled:opacity-70"
                                                 :style="{ backgroundColor: 'var(--idx-add-button)' }"
@@ -2577,7 +2636,12 @@ onBeforeUnmount(() => {
                         <template v-else-if="activeTab === 'orders'">
                             <h3 class="text-lg font-bold mb-4">{{ isServicesMode ? 'Meus agendamentos' : 'Meus pedidos' }}</h3>
                             <div class="space-y-3">
-                                <article v-for="order in orders" :key="`order-${order.code}-${order.id}`" class="bg-white rounded-2xl border border-gray-100 p-4">
+                                <article
+                                    v-for="order in orders"
+                                    :key="`order-${order.code}-${order.id}`"
+                                    class="bg-white rounded-2xl border border-gray-100 p-4 transition md:cursor-pointer md:hover:border-[var(--idx-primary-border)] md:hover:shadow-sm"
+                                    @click="openOrderDetailsModal(order)"
+                                >
                                     <div class="flex items-center justify-between gap-3">
                                         <strong class="text-sm text-gray-800">{{ order.code || `#${order.id}` }}</strong>
                                         <span class="text-xs px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 font-semibold">{{ order.status }}</span>
@@ -2604,7 +2668,7 @@ onBeforeUnmount(() => {
                                                 type="button"
                                                 class="inline-flex items-center gap-1 rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-100 disabled:opacity-60"
                                                 :disabled="!order.payment_pix_code"
-                                                @click="copyOrderPixCode(order.id, order.payment_pix_code)"
+                                                @click.stop="copyOrderPixCode(order.id, order.payment_pix_code)"
                                             >
                                                 <Copy :size="12" />
                                                 {{ orderPixCodeCopiedById[order.id] ? 'Código copiado' : 'Copiar código Pix' }}
@@ -2615,6 +2679,7 @@ onBeforeUnmount(() => {
                                                 target="_blank"
                                                 rel="noopener"
                                                 class="inline-flex items-center rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-100"
+                                                @click.stop
                                             >
                                                 Abrir cobrança Pix
                                             </a>
@@ -2622,7 +2687,7 @@ onBeforeUnmount(() => {
                                                 type="button"
                                                 class="inline-flex items-center rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-100 disabled:opacity-60"
                                                 :disabled="orderPaymentRefreshLoadingById[order.id]"
-                                                @click="refreshOrderPayment(order.id)"
+                                                @click.stop="refreshOrderPayment(order.id)"
                                             >
                                                 {{ orderPaymentRefreshLoadingById[order.id] ? 'Atualizando...' : 'Atualizar cobrança Pix' }}
                                             </button>
@@ -2645,6 +2710,7 @@ onBeforeUnmount(() => {
                                                 target="_blank"
                                                 rel="noopener"
                                                 class="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
+                                                @click.stop
                                             >
                                                 Finalizar pagamento
                                             </a>
@@ -2652,7 +2718,7 @@ onBeforeUnmount(() => {
                                                 type="button"
                                                 class="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 disabled:opacity-60"
                                                 :disabled="orderPaymentRefreshLoadingById[order.id]"
-                                                @click="refreshOrderPayment(order.id)"
+                                                @click.stop="refreshOrderPayment(order.id)"
                                             >
                                                 {{ orderPaymentRefreshLoadingById[order.id] ? 'Atualizando...' : 'Atualizar status' }}
                                             </button>
@@ -2661,6 +2727,13 @@ onBeforeUnmount(() => {
                                             {{ orderPaymentRefreshErrorById[order.id] }}
                                         </p>
                                     </div>
+                                    <button
+                                        type="button"
+                                        class="mt-3 inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                        @click.stop="openOrderDetailsModal(order)"
+                                    >
+                                        Ver detalhes
+                                    </button>
                                 </article>
                             </div>
                             <div v-if="!orders.length" class="bg-white rounded-2xl border border-dashed border-gray-300 text-gray-500 text-sm p-6 text-center">
@@ -2668,7 +2741,144 @@ onBeforeUnmount(() => {
                             </div>
                         </template>
 
-                        <template v-else>
+                        <transition
+                            enter-active-class="transition duration-200 ease-out"
+                            enter-from-class="opacity-0 translate-y-2 scale-[0.99]"
+                            enter-to-class="opacity-100 translate-y-0 scale-100"
+                            leave-active-class="transition duration-150 ease-in"
+                            leave-from-class="opacity-100 translate-y-0 scale-100"
+                            leave-to-class="opacity-0 translate-y-2 scale-[0.99]"
+                        >
+                            <div
+                                v-if="isOrderDetailsOpen && selectedOrderDetails"
+                                class="absolute inset-0 z-[75]"
+                            >
+                                <div class="absolute inset-0 bg-slate-900/55" @click="closeOrderDetailsModal" />
+                                <section class="absolute left-1/2 top-1/2 z-[76] w-[calc(100%-1.5rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+                                    <header class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                                        <div class="min-w-0">
+                                            <h3 class="truncate text-base font-semibold text-slate-900">
+                                                {{ isServicesMode ? 'Detalhes do agendamento' : 'Detalhes do pedido' }}
+                                            </h3>
+                                            <p class="truncate text-xs text-slate-500">{{ selectedOrderDetails.code || `#${selectedOrderDetails.id}` }} • {{ selectedOrderDetails.date }}</p>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <a
+                                                v-if="selectedOrderWhatsappUrl"
+                                                :href="selectedOrderWhatsappUrl"
+                                                target="_blank"
+                                                rel="noopener"
+                                                class="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                                            >
+                                                Chamar no WhatsApp
+                                            </a>
+                                            <button
+                                                type="button"
+                                                class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                                @click="closeOrderDetailsModal"
+                                            >
+                                                Fechar
+                                            </button>
+                                        </div>
+                                    </header>
+
+                                    <div class="max-h-[78vh] space-y-3 overflow-y-auto p-4">
+                                        <div class="grid gap-2 text-sm text-slate-700 md:grid-cols-3">
+                                            <p>
+                                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</span>
+                                                <span class="mt-1 inline-flex w-fit rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700">
+                                                    {{ selectedOrderDetails.status }}
+                                                </span>
+                                            </p>
+                                            <p>
+                                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Resumo</span>
+                                                <span class="mt-1 block">{{ selectedOrderDetails.details }}</span>
+                                            </p>
+                                            <p>
+                                                <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Total</span>
+                                                <span class="mt-1 block font-semibold">{{ formatMoney(selectedOrderDetails.total) }}</span>
+                                            </p>
+                                        </div>
+
+                                        <div v-if="!isServicesMode && selectedOrderDetails.payment_is_pix" class="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2.5 text-orange-900">
+                                            <p class="text-sm font-semibold">Cobrança Pix</p>
+                                            <p v-if="selectedOrderDetails.payment_pix_code" class="mt-1 break-all text-xs">
+                                                Código Pix: <span class="font-semibold">{{ selectedOrderDetails.payment_pix_code }}</span>
+                                            </p>
+                                            <div v-if="orderPaymentQrById[selectedOrderDetails.id]" class="mt-2 inline-flex rounded-lg border border-orange-200 bg-white p-2">
+                                                <img :src="orderPaymentQrById[selectedOrderDetails.id]" alt="QR Code Pix" class="h-28 w-28 rounded-md">
+                                            </div>
+                                            <p v-if="selectedOrderDetails.payment?.transaction_reference" class="mt-1 text-xs">
+                                                Referência: <span class="font-semibold">{{ selectedOrderDetails.payment.transaction_reference }}</span>
+                                            </p>
+                                            <div class="mt-2 flex flex-wrap items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    class="inline-flex items-center gap-1 rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-100 disabled:opacity-60"
+                                                    :disabled="!selectedOrderDetails.payment_pix_code"
+                                                    @click="copyOrderPixCode(selectedOrderDetails.id, selectedOrderDetails.payment_pix_code)"
+                                                >
+                                                    <Copy :size="12" />
+                                                    {{ orderPixCodeCopiedById[selectedOrderDetails.id] ? 'Código copiado' : 'Copiar código Pix' }}
+                                                </button>
+                                                <a
+                                                    v-if="selectedOrderDetails.payment_action_url"
+                                                    :href="selectedOrderDetails.payment_action_url"
+                                                    target="_blank"
+                                                    rel="noopener"
+                                                    class="inline-flex items-center rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-100"
+                                                >
+                                                    Abrir cobrança Pix
+                                                </a>
+                                                <button
+                                                    type="button"
+                                                    class="inline-flex items-center rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-100 disabled:opacity-60"
+                                                    :disabled="orderPaymentRefreshLoadingById[selectedOrderDetails.id]"
+                                                    @click="refreshOrderPayment(selectedOrderDetails.id)"
+                                                >
+                                                    {{ orderPaymentRefreshLoadingById[selectedOrderDetails.id] ? 'Atualizando...' : 'Atualizar cobrança Pix' }}
+                                                </button>
+                                            </div>
+                                            <p v-if="orderPaymentRefreshErrorById[selectedOrderDetails.id]" class="mt-1 text-xs text-orange-700">
+                                                {{ orderPaymentRefreshErrorById[selectedOrderDetails.id] }}
+                                            </p>
+                                        </div>
+
+                                        <div v-else-if="!isServicesMode && selectedOrderDetails.payment_is_integrated" class="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-indigo-900">
+                                            <p class="text-sm font-semibold">Pagamento {{ selectedOrderDetails.payment_method_label }} pendente</p>
+                                            <p class="mt-1 text-xs">Finalize no ambiente seguro do Mercado Pago.</p>
+                                            <p v-if="selectedOrderDetails.payment?.transaction_reference" class="mt-1 text-xs break-all">
+                                                Referência: <span class="font-semibold">{{ selectedOrderDetails.payment.transaction_reference }}</span>
+                                            </p>
+                                            <div class="mt-2 flex flex-wrap items-center gap-2">
+                                                <a
+                                                    v-if="selectedOrderDetails.payment_action_url"
+                                                    :href="selectedOrderDetails.payment_action_url"
+                                                    target="_blank"
+                                                    rel="noopener"
+                                                    class="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
+                                                >
+                                                    Finalizar pagamento
+                                                </a>
+                                                <button
+                                                    type="button"
+                                                    class="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 disabled:opacity-60"
+                                                    :disabled="orderPaymentRefreshLoadingById[selectedOrderDetails.id]"
+                                                    @click="refreshOrderPayment(selectedOrderDetails.id)"
+                                                >
+                                                    {{ orderPaymentRefreshLoadingById[selectedOrderDetails.id] ? 'Atualizando...' : 'Atualizar status' }}
+                                                </button>
+                                            </div>
+                                            <p v-if="orderPaymentRefreshErrorById[selectedOrderDetails.id]" class="mt-1 text-xs text-indigo-700">
+                                                {{ orderPaymentRefreshErrorById[selectedOrderDetails.id] }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </section>
+                            </div>
+                        </transition>
+
+                        <template v-if="activeTab === 'account'">
                             <h3 class="text-lg font-bold mb-4">Minha conta</h3>
                             <div v-if="!isAuthenticated" class="bg-white rounded-2xl border border-gray-200 p-5 text-sm text-gray-600 space-y-3">
                                 <p>Faça login para gerenciar seus dados e finalizar pedidos.</p>
@@ -3277,4 +3487,3 @@ onBeforeUnmount(() => {
     }
 }
 </style>
-

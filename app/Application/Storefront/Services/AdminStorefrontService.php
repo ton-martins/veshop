@@ -188,6 +188,7 @@ class AdminStorefrontService
             ],
             'template' => ['nullable', Rule::in(StorefrontSettings::templates())],
             'store_online' => ['nullable', 'boolean'],
+            'customer_whatsapp_contact_enabled' => ['required', 'boolean'],
             'offline_message' => ['nullable', 'string', 'max:240'],
             'business_hours' => ['nullable', 'array'],
             'business_hours.*.enabled' => ['nullable', 'boolean'],
@@ -296,6 +297,8 @@ class AdminStorefrontService
             'template' => $validated['template']
                 ?? ($previousStorefront['template'] ?? StorefrontSettings::defaultTemplate($contractor)),
             'store_online' => $storeOnline,
+            'customer_whatsapp_contact_enabled' => (bool) ($validated['customer_whatsapp_contact_enabled']
+                ?? ($previousStorefront['customer_whatsapp_contact_enabled'] ?? false)),
             'offline_message' => $offlineMessage,
             'business_hours' => $normalizedBusinessHours,
             'blocks' => [

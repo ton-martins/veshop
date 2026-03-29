@@ -181,6 +181,7 @@ const setActiveTab = (tab) => {
 const storefrontForm = useForm({
     slug: '',
     store_online: true,
+    customer_whatsapp_contact_enabled: false,
     offline_message: '',
     business_hours: emptyBusinessHours(),
     hero_enabled: true,
@@ -225,6 +226,7 @@ const hydrateStorefront = () => {
     storefrontForm.slug = String(props.contractor?.slug ?? '').trim();
 
     storefrontForm.store_online = storefront.store_online ?? true;
+    storefrontForm.customer_whatsapp_contact_enabled = storefront.customer_whatsapp_contact_enabled ?? false;
     storefrontForm.offline_message = storefront.offline_message ?? '';
     storefrontForm.business_hours = normalizeBusinessHours(storefront.business_hours ?? {});
     storefrontForm.hero_enabled = blocks.hero ?? true;
@@ -1201,6 +1203,7 @@ const submitStorefront = () => {
             .replace(/-{2,}/g, '-')
             .replace(/^-+|-+$/g, ''),
         hero_cta_label: String(data.hero_cta_label || '').trim(),
+        customer_whatsapp_contact_enabled: Boolean(data.customer_whatsapp_contact_enabled),
         banners_enabled: Boolean(data.banners_enabled),
         banners: (data.banners ?? [])
             .map((banner) => ({
@@ -1375,6 +1378,10 @@ onBeforeUnmount(() => {
                         <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                             <span>Loja online ativa</span>
                             <input v-model="storefrontForm.store_online" type="checkbox" class="rounded border-slate-300">
+                        </label>
+                        <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                            <span>Contato no WhatsApp em pedidos/agendamentos</span>
+                            <input v-model="storefrontForm.customer_whatsapp_contact_enabled" type="checkbox" class="rounded border-slate-300">
                         </label>
                         <label class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                             <span>Hero principal</span>

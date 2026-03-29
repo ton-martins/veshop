@@ -50,6 +50,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    paymentStatusOptions: {
+        type: Array,
+        default: () => [],
+    },
     timezone: {
         type: String,
         default: 'America/Sao_Paulo',
@@ -484,6 +488,7 @@ const formDefaults = () => ({
     starts_at: '',
     ends_at: '',
     status: props.statusOptions?.[0]?.value ?? 'scheduled',
+    payment_status: props.paymentStatusOptions?.[0]?.value ?? 'pending',
     location: '',
     notes: '',
 });
@@ -573,6 +578,7 @@ const openEdit = (appointment) => {
     form.starts_at = appointment.starts_at ?? '';
     form.ends_at = appointment.ends_at ?? '';
     form.status = appointment.status ?? (props.statusOptions?.[0]?.value ?? 'scheduled');
+    form.payment_status = appointment.payment_status ?? (props.paymentStatusOptions?.[0]?.value ?? 'pending');
     form.location = appointment.location ?? '';
     form.notes = appointment.notes ?? '';
     form.clearErrors();
@@ -898,6 +904,12 @@ const statusLabel = (value) => {
                                     <span class="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
                                         {{ statusLabel(appointment.status) }}
                                     </span>
+                                    <span
+                                        class="rounded-full px-2 py-1 text-[11px] font-semibold"
+                                        :class="appointment.payment_status_tone || 'bg-amber-100 text-amber-700'"
+                                    >
+                                        Pgto: {{ appointment.payment_status_label || 'Pendente' }}
+                                    </span>
                                     <button type="button" class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="openEdit(appointment)">
                                         <Pencil class="h-3.5 w-3.5" />
                                         Editar
@@ -1022,6 +1034,11 @@ const statusLabel = (value) => {
                         <UiSelect v-model="form.status" :options="props.statusOptions" button-class="mt-1 w-full text-sm" />
                         <p v-if="form.errors.status" class="mt-1 text-xs text-rose-600">{{ form.errors.status }}</p>
                     </div>
+                    <div>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status do pagamento</label>
+                        <UiSelect v-model="form.payment_status" :options="props.paymentStatusOptions" button-class="mt-1 w-full text-sm" />
+                        <p v-if="form.errors.payment_status" class="mt-1 text-xs text-rose-600">{{ form.errors.payment_status }}</p>
+                    </div>
 
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Início</label>
@@ -1081,3 +1098,4 @@ const statusLabel = (value) => {
         />
     </AuthenticatedLayout>
 </template>
+

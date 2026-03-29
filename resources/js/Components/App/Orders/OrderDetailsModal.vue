@@ -55,6 +55,11 @@ const shippingAddressText = computed(() => String(props.order?.shipping_address_
 const shippingModeLabel = computed(() => String(props.order?.shipping_mode_label ?? 'Retirada na loja').trim());
 const shippingModeTone = computed(() => String(props.order?.shipping_mode_tone ?? 'bg-blue-100 text-blue-700').trim());
 const isDelivery = computed(() => String(props.order?.shipping_mode ?? 'pickup') === 'delivery');
+const deliveryStatus = computed(() => (
+    props.order?.delivery_status && typeof props.order.delivery_status === 'object'
+        ? props.order.delivery_status
+        : null
+));
 
 const itemsSubtotal = computed(() => (
     orderItems.value.reduce(
@@ -72,9 +77,9 @@ const itemsDiscount = computed(() => (
 
 const closeModal = () => emit('close');
 
-const requestAction = (type) => {
+const requestAction = (type, payload = {}) => {
     if (!props.order?.id) return;
-    emit('action', { type, order: props.order });
+    emit('action', { type, order: props.order, ...payload });
 };
 
 const escapeHtml = (value) => String(value ?? '')
@@ -269,6 +274,13 @@ watch(printPreviewOpen, (opened) => {
                     <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="shippingModeTone">
                         {{ shippingModeLabel }}
                     </span>
+                    <span
+                        v-if="isDelivery && deliveryStatus"
+                        class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                        :class="deliveryStatus.tone || 'bg-slate-100 text-slate-700'"
+                    >
+                        {{ deliveryStatus.label || 'Em preparo' }}
+                    </span>
                     <button
                         type="button"
                         class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
@@ -434,6 +446,15 @@ watch(printPreviewOpen, (opened) => {
                         Marcar pago
                     </button>
                     <button
+                        v-if="showActions && order?.can_set_awaiting_payment"
+                        type="button"
+                        class="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                        @click="requestAction('awaiting_payment')"
+                    >
+                        <Wallet class="h-4 w-4" />
+                        Aguardar pagamento
+                    </button>
+                    <button
                         v-if="showActions && order?.can_reject"
                         type="button"
                         class="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100"
@@ -450,6 +471,30 @@ watch(printPreviewOpen, (opened) => {
                     >
                         <Ban class="h-4 w-4" />
                         Cancelar
+                    </button>
+                    <button
+                        v-if="showActions && order?.can_update_delivery_status"
+                        type="button"
+                        class="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                        @click="requestAction('delivery_status', { delivery_status: 'preparing' })"
+                    >
+                        Em preparo
+                    </button>
+                    <button
+                        v-if="showActions && order?.can_update_delivery_status"
+                        type="button"
+                        class="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                        @click="requestAction('delivery_status', { delivery_status: 'out_for_delivery' })"
+                    >
+                        Em entrega
+                    </button>
+                    <button
+                        v-if="showActions && order?.can_update_delivery_status"
+                        type="button"
+                        class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                        @click="requestAction('delivery_status', { delivery_status: 'delivered' })"
+                    >
+                        Entregue
                     </button>
                     <button
                         type="button"

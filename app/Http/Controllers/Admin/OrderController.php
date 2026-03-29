@@ -30,6 +30,11 @@ class OrderController extends Controller
         return $this->service->confirm($request, $sale);
     }
 
+    public function markAsAwaitingPayment(Request $request, Sale $sale): RedirectResponse
+    {
+        return $this->service->markAsAwaitingPayment($request, $sale);
+    }
+
     public function reject(Request $request, Sale $sale): RedirectResponse
     {
         return $this->service->reject($request, $sale);
@@ -43,5 +48,10 @@ class OrderController extends Controller
     public function cancel(Request $request, Sale $sale): RedirectResponse
     {
         return $this->service->cancel($request, $sale);
+    }
+
+    public function updateDeliveryStatus(Request $request, Sale $sale): RedirectResponse
+    {
+        return $this->service->updateDeliveryStatus($request, $sale);
     }
 }

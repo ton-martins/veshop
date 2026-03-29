@@ -86,6 +86,9 @@ class AdminServiceScheduleService
                     optional($appointment->ends_at)?->format('H:i')
                 ),
                 'status' => (string) $appointment->status,
+                'payment_status' => (string) ($appointment->payment_status ?: ServiceAppointment::PAYMENT_STATUS_PENDING),
+                'payment_status_label' => $this->resolvePaymentStatusLabel((string) ($appointment->payment_status ?: ServiceAppointment::PAYMENT_STATUS_PENDING)),
+                'payment_status_tone' => $this->resolvePaymentStatusTone((string) ($appointment->payment_status ?: ServiceAppointment::PAYMENT_STATUS_PENDING)),
                 'location' => $appointment->location ? (string) $appointment->location : '',
                 'notes' => $appointment->notes ? (string) $appointment->notes : '',
                 'technician' => $appointment->serviceOrder?->assigned_to_name ? (string) $appointment->serviceOrder->assigned_to_name : '-',
@@ -171,6 +174,7 @@ class AdminServiceScheduleService
             'services' => $services,
             'orders' => $orders,
             'statusOptions' => $this->statusOptions(),
+            'paymentStatusOptions' => $this->paymentStatusOptions(),
         ]);
     }
 
@@ -239,6 +243,7 @@ class AdminServiceScheduleService
             'starts_at' => ['required', 'date'],
             'ends_at' => ['required', 'date', 'after:starts_at'],
             'status' => ['required', Rule::in(array_column($this->statusOptions(), 'value'))],
+            'payment_status' => ['required', Rule::in(array_column($this->paymentStatusOptions(), 'value'))],
             'location' => ['nullable', 'string', 'max:180'],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
@@ -260,6 +265,14 @@ class AdminServiceScheduleService
             throw ValidationException::withMessages([
                 'starts_at' => 'Informe uma data e hora atual ou futura para o agendamento.',
             ]);
+        }
+
+        $paymentStatus = (string) ($data['payment_status'] ?? ServiceAppointment::PAYMENT_STATUS_PENDING);
+        $wasPaid = $currentAppointment && (string) $currentAppointment->payment_status === ServiceAppointment::PAYMENT_STATUS_PAID;
+        if ($paymentStatus === ServiceAppointment::PAYMENT_STATUS_PAID) {
+            $data['paid_at'] = $wasPaid ? $currentAppointment?->paid_at : now();
+        } else {
+            $data['paid_at'] = null;
         }
 
         return $data;
@@ -329,4 +342,34 @@ class AdminServiceScheduleService
             ['value' => ServiceAppointment::STATUS_NO_SHOW, 'label' => 'Não compareceu'],
         ];
     }
+    /**
+     * @return array<int, array{value: string, label: string}>
+     */
+    private function paymentStatusOptions(): array
+    {
+        return [
+            ['value' => ServiceAppointment::PAYMENT_STATUS_PENDING, 'label' => 'Pendente'],
+            ['value' => ServiceAppointment::PAYMENT_STATUS_PAID, 'label' => 'Pago'],
+            ['value' => ServiceAppointment::PAYMENT_STATUS_CANCELLED, 'label' => 'Cancelado'],
+        ];
+    }
+
+    private function resolvePaymentStatusLabel(string $status): string
+    {
+        return match (strtolower(trim($status))) {
+            ServiceAppointment::PAYMENT_STATUS_PAID => 'Pago',
+            ServiceAppointment::PAYMENT_STATUS_CANCELLED => 'Cancelado',
+            default => 'Pendente',
+        };
+    }
+
+    private function resolvePaymentStatusTone(string $status): string
+    {
+        return match (strtolower(trim($status))) {
+            ServiceAppointment::PAYMENT_STATUS_PAID => 'bg-emerald-100 text-emerald-700',
+            ServiceAppointment::PAYMENT_STATUS_CANCELLED => 'bg-rose-100 text-rose-700',
+            default => 'bg-amber-100 text-amber-700',
+        };
+    }
 }
+

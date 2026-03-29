@@ -23,6 +23,12 @@ class ServiceAppointment extends Model
 
     public const STATUS_NO_SHOW = 'no_show';
 
+    public const PAYMENT_STATUS_PENDING = 'pending';
+
+    public const PAYMENT_STATUS_PAID = 'paid';
+
+    public const PAYMENT_STATUS_CANCELLED = 'cancelled';
+
     /**
      * @var list<string>
      */
@@ -35,8 +41,10 @@ class ServiceAppointment extends Model
         'starts_at',
         'ends_at',
         'status',
+        'payment_status',
         'location',
         'notes',
+        'paid_at',
     ];
 
     /**
@@ -47,6 +55,7 @@ class ServiceAppointment extends Model
         return [
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'paid_at' => 'datetime',
         ];
     }
 
