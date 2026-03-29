@@ -235,7 +235,7 @@ class AdminDashboardService
             ->where('source', Sale::SOURCE_PDV)
             ->whereIn('status', [Sale::STATUS_COMPLETED, Sale::STATUS_PAID])
             ->with([
-                'client:id,name,email,phone',
+                'client:id,name,email,phone,document',
                 'items:id,sale_id,product_id,description,sku,quantity,unit_price,discount_amount,total_amount',
                 'items.product:id,image_url',
                 'payments:id,sale_id,payment_method_id,status,amount',
@@ -302,7 +302,8 @@ class AdminDashboardService
      *   clients: int,
      *   pending_quotes: int,
      *   deliveries_today: int,
-     *   recent_orders: array<int, array<string, mixed>>
+     *   recent_orders: array<int, array<string, mixed>>,
+     *   recent_deliveries: array<int, array<string, mixed>>
      * }
      */
     private function resolveOperationsStats(Contractor $contractor): array
@@ -359,7 +360,7 @@ class AdminDashboardService
 
         $recentOrders = (clone $baseQuery)
             ->with([
-                'client:id,name,email,phone',
+                'client:id,name,email,phone,document',
                 'items:id,sale_id,product_id,description,sku,quantity,unit_price,discount_amount,total_amount',
                 'items.product:id,image_url',
                 'payments:id,sale_id,payment_method_id,status,amount',
@@ -367,7 +368,24 @@ class AdminDashboardService
             ])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
-            ->limit(6)
+            ->limit(15)
+            ->get()
+            ->map(fn (Sale $sale): array => $this->toDashboardOrderPayload($sale, 'Loja virtual', true))
+            ->values()
+            ->all();
+
+        $recentDeliveries = (clone $baseQuery)
+            ->where('shipping_mode', Sale::SHIPPING_MODE_DELIVERY)
+            ->with([
+                'client:id,name,email,phone,document',
+                'items:id,sale_id,product_id,description,sku,quantity,unit_price,discount_amount,total_amount',
+                'items.product:id,image_url',
+                'payments:id,sale_id,payment_method_id,status,amount',
+                'payments.paymentMethod:id,name',
+            ])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->limit(15)
             ->get()
             ->map(fn (Sale $sale): array => $this->toDashboardOrderPayload($sale, 'Loja virtual', true))
             ->values()
@@ -381,6 +399,7 @@ class AdminDashboardService
             'pending_quotes' => $pendingQuotes,
             'deliveries_today' => $deliveriesToday,
             'recent_orders' => $recentOrders,
+            'recent_deliveries' => $recentDeliveries,
         ];
     }
 
@@ -391,6 +410,22 @@ class AdminDashboardService
     {
         $metadata = is_array($sale->metadata) ? $sale->metadata : [];
         $status = $this->resolveDashboardStatusMeta((string) $sale->status);
+        $shippingMode = strtolower(trim((string) (
+            $sale->shipping_mode
+            ?? ($metadata['delivery_mode'] ?? '')
+        )));
+        $shippingModeMeta = $this->resolveDashboardShippingModeMeta($shippingMode);
+
+        $shippingAddress = is_array($sale->shipping_address) ? $sale->shipping_address : [];
+        $shippingAddressPayload = [
+            'postal_code' => trim((string) ($shippingAddress['postal_code'] ?? '')),
+            'street' => trim((string) ($shippingAddress['street'] ?? '')),
+            'number' => trim((string) ($shippingAddress['number'] ?? '')),
+            'complement' => trim((string) ($shippingAddress['complement'] ?? '')),
+            'district' => trim((string) ($shippingAddress['district'] ?? '')),
+            'city' => trim((string) ($shippingAddress['city'] ?? '')),
+            'state' => strtoupper(trim((string) ($shippingAddress['state'] ?? ''))),
+        ];
 
         $paymentLabel = $sale->payments
             ->map(static fn (SalePayment $payment): ?string => $payment->paymentMethod?->name)
@@ -399,14 +434,30 @@ class AdminDashboardService
             ->values()
             ->implode(' + ');
 
+        $paymentMethods = $sale->payments
+            ->map(fn (SalePayment $payment): array => [
+                'id' => (int) $payment->id,
+                'name' => trim((string) ($payment->paymentMethod?->name ?? 'Não informado')),
+                'status' => (string) $payment->status,
+                'status_label' => $this->resolveDashboardPaymentStatusLabel((string) $payment->status),
+                'amount' => round((float) $payment->amount, 2),
+                'amount_label' => 'R$ '.number_format((float) $payment->amount, 2, ',', '.'),
+            ])
+            ->values()
+            ->all();
+
         $customerName = trim((string) ($sale->client?->name ?? ($metadata['customer_name'] ?? '')));
         if ($customerName === '') {
             $customerName = 'Consumidor final';
         }
 
-        $customerContact = trim((string) ($sale->client?->phone ?? ($metadata['customer_phone'] ?? '')));
+        $customerPhone = trim((string) ($sale->client?->phone ?? ($metadata['customer_phone'] ?? '')));
+        $customerEmail = trim((string) ($sale->client?->email ?? ($metadata['customer_email'] ?? '')));
+        $customerDocument = trim((string) ($sale->client?->document ?? ($metadata['customer_document'] ?? '')));
+
+        $customerContact = $customerPhone;
         if ($customerContact === '') {
-            $customerContact = trim((string) ($sale->client?->email ?? ($metadata['customer_email'] ?? '')));
+            $customerContact = $customerEmail;
         }
 
         $items = $sale->items
@@ -428,6 +479,24 @@ class AdminDashboardService
             $description .= ' +'.($totalItems - 1).' item(ns)';
         }
 
+        $shippingAddressLines = array_filter([
+            trim(implode(', ', array_filter([
+                $shippingAddressPayload['street'],
+                $shippingAddressPayload['number'],
+            ], static fn (string $value): bool => $value !== ''))),
+            $shippingAddressPayload['district'],
+            trim(implode(' - ', array_filter([
+                $shippingAddressPayload['city'],
+                $shippingAddressPayload['state'],
+            ], static fn (string $value): bool => $value !== ''))),
+            $shippingAddressPayload['postal_code'] !== '' ? 'CEP '.$shippingAddressPayload['postal_code'] : '',
+            $shippingAddressPayload['complement'],
+        ], static fn (string $value): bool => $value !== '');
+
+        $shippingAddressText = $shippingAddressLines !== []
+            ? implode(' • ', $shippingAddressLines)
+            : null;
+
         $paymentText = $paymentLabel !== '' ? $paymentLabel : 'Não informado';
         $formattedAmount = 'R$ '.number_format((float) $sale->total_amount, 2, ',', '.');
         $createdAt = optional($sale->created_at)->format('d/m/Y H:i');
@@ -438,17 +507,27 @@ class AdminDashboardService
             'code' => (string) $sale->code,
             'customer' => $customerName,
             'customer_contact' => $customerContact,
+            'customer_phone' => $customerPhone !== '' ? $customerPhone : null,
+            'customer_email' => $customerEmail !== '' ? $customerEmail : null,
+            'customer_document' => $customerDocument !== '' ? $customerDocument : null,
             'channel' => $channel,
             'total_amount' => (float) $sale->total_amount,
             'total_items' => $totalItems,
             'items' => $items->all(),
             'status' => $status,
             'payment_label' => $paymentText,
+            'payment_methods' => $paymentMethods,
             'created_at' => $createdAt,
             'description' => $description,
             'amount' => $formattedAmount,
             'payment' => $paymentText,
             'time' => $completedAt?->format('H:i') ?? '--:--',
+            'shipping_mode' => $shippingModeMeta['value'],
+            'shipping_mode_label' => $shippingModeMeta['label'],
+            'shipping_mode_tone' => $shippingModeMeta['tone'],
+            'shipping_address' => $shippingAddressPayload,
+            'shipping_address_text' => $shippingAddressText,
+            'notes' => trim((string) ($sale->notes ?? '')) !== '' ? trim((string) $sale->notes) : null,
             'can_confirm' => $allowActions
                 && in_array($sale->status, [Sale::STATUS_NEW, Sale::STATUS_PENDING_CONFIRMATION], true),
             'can_reject' => $allowActions
@@ -458,6 +537,38 @@ class AdminDashboardService
             'can_cancel' => $allowActions
                 && ! in_array($sale->status, [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED], true),
         ];
+    }
+
+    /**
+     * @return array{value: string, label: string, tone: string}
+     */
+    private function resolveDashboardShippingModeMeta(string $shippingMode): array
+    {
+        return match ($shippingMode) {
+            Sale::SHIPPING_MODE_DELIVERY => [
+                'value' => Sale::SHIPPING_MODE_DELIVERY,
+                'label' => 'Entrega',
+                'tone' => 'bg-emerald-100 text-emerald-700',
+            ],
+            default => [
+                'value' => Sale::SHIPPING_MODE_PICKUP,
+                'label' => 'Retirada na loja',
+                'tone' => 'bg-blue-100 text-blue-700',
+            ],
+        };
+    }
+
+    private function resolveDashboardPaymentStatusLabel(string $status): string
+    {
+        return match (strtolower(trim($status))) {
+            SalePayment::STATUS_PAID => 'Pago',
+            SalePayment::STATUS_AUTHORIZED => 'Autorizado',
+            SalePayment::STATUS_PENDING => 'Aguardando pagamento',
+            SalePayment::STATUS_CANCELLED => 'Cancelado',
+            SalePayment::STATUS_REFUNDED => 'Reembolsado',
+            SalePayment::STATUS_FAILED => 'Falhou',
+            default => ucfirst(strtolower(trim($status))),
+        };
     }
 
     private function resolveServiceOrderStatusLabel(string $status): string

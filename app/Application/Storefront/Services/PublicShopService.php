@@ -385,6 +385,15 @@ class PublicShopService
                     'payment_method_id' => 'Forma de pagamento inválida para esta loja.',
                 ]);
             }
+
+            $paymentMethod->loadMissing('paymentGateway:id,provider,is_active');
+            $hasActiveMercadoPagoGateway = $this->hasActiveMercadoPagoGateway($contractor);
+            $checkoutMode = $this->resolveCheckoutModeForMethod($paymentMethod, $hasActiveMercadoPagoGateway);
+            if ($checkoutMode === 'manual' && ! $this->isManualPaymentMethodVisibleOnStorefront($paymentMethod)) {
+                throw ValidationException::withMessages([
+                    'payment_method_id' => 'Forma de pagamento indisponível no checkout da loja.',
+                ]);
+            }
         }
 
         $paymentGateway = $this->resolveCheckoutPaymentGateway($contractor, $paymentMethod);
@@ -1109,11 +1118,7 @@ class PublicShopService
      */
     private function resolveCheckoutPaymentMethods(Contractor $contractor): array
     {
-        $hasActiveMercadoPagoGateway = PaymentGateway::query()
-            ->where('contractor_id', $contractor->id)
-            ->where('provider', PaymentGateway::PROVIDER_MERCADO_PAGO)
-            ->where('is_active', true)
-            ->exists();
+        $hasActiveMercadoPagoGateway = $this->hasActiveMercadoPagoGateway($contractor);
 
         return PaymentMethod::query()
             ->where('contractor_id', $contractor->id)
@@ -1123,16 +1128,11 @@ class PublicShopService
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get(['id', 'name', 'code', 'fee_fixed', 'fee_percent', 'payment_gateway_id', 'settings'])
-            ->map(static function (PaymentMethod $method) use ($hasActiveMercadoPagoGateway): array {
-                $gateway = $method->paymentGateway;
-                $settings = is_array($method->settings) ? $method->settings : [];
-                $integrationProvider = strtolower(trim((string) data_get($settings, 'gateway_integration.provider', '')));
-                $isIntegratedBySettings = $integrationProvider !== ''
-                    && $integrationProvider !== PaymentGateway::PROVIDER_MANUAL
-                    && $hasActiveMercadoPagoGateway;
-                $isIntegrated = $gateway
-                    && (bool) $gateway->is_active
-                    && (string) $gateway->provider !== PaymentGateway::PROVIDER_MANUAL;
+            ->map(function (PaymentMethod $method) use ($hasActiveMercadoPagoGateway): ?array {
+                $checkoutMode = $this->resolveCheckoutModeForMethod($method, $hasActiveMercadoPagoGateway);
+                if ($checkoutMode === 'manual' && ! $this->isManualPaymentMethodVisibleOnStorefront($method)) {
+                    return null;
+                }
 
                 return [
                     'id' => (int) $method->id,
@@ -1140,11 +1140,43 @@ class PublicShopService
                     'code' => (string) $method->code,
                     'fee_fixed' => round((float) ($method->fee_fixed ?? 0), 2),
                     'fee_percent' => round((float) ($method->fee_percent ?? 0), 2),
-                    'checkout_mode' => ($isIntegrated || $isIntegratedBySettings) ? 'integrated' : 'manual',
+                    'checkout_mode' => $checkoutMode,
                 ];
             })
+            ->filter(static fn (?array $method): bool => $method !== null)
             ->values()
             ->all();
+    }
+
+    private function hasActiveMercadoPagoGateway(Contractor $contractor): bool
+    {
+        return PaymentGateway::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('provider', PaymentGateway::PROVIDER_MERCADO_PAGO)
+            ->where('is_active', true)
+            ->exists();
+    }
+
+    private function resolveCheckoutModeForMethod(PaymentMethod $paymentMethod, bool $hasActiveMercadoPagoGateway): string
+    {
+        $gateway = $paymentMethod->paymentGateway;
+        $settings = is_array($paymentMethod->settings) ? $paymentMethod->settings : [];
+        $integrationProvider = strtolower(trim((string) data_get($settings, 'gateway_integration.provider', '')));
+        $isIntegratedBySettings = $integrationProvider !== ''
+            && $integrationProvider !== PaymentGateway::PROVIDER_MANUAL
+            && $hasActiveMercadoPagoGateway;
+        $isIntegratedByGateway = $gateway
+            && (bool) $gateway->is_active
+            && (string) $gateway->provider !== PaymentGateway::PROVIDER_MANUAL;
+
+        return ($isIntegratedByGateway || $isIntegratedBySettings) ? 'integrated' : 'manual';
+    }
+
+    private function isManualPaymentMethodVisibleOnStorefront(PaymentMethod $paymentMethod): bool
+    {
+        $settings = is_array($paymentMethod->settings) ? $paymentMethod->settings : [];
+
+        return (bool) data_get($settings, 'storefront.visible', true);
     }
 
     private function resolveCheckoutPaymentGateway(Contractor $contractor, ?PaymentMethod $paymentMethod): ?PaymentGateway
@@ -3472,21 +3504,19 @@ class PublicShopService
     {
         $rawMessage = trim((string) $exception->getMessage());
         $normalized = strtolower($rawMessage);
-        $default = 'Não foi possível iniciar o pagamento automático agora. Tente novamente em instantes.';
+        $default = 'Não foi possível iniciar o pagamento automático agora. Tente novamente em instantes ou escolha outra forma de pagamento.';
 
         if ($normalized === '') {
             return $default;
         }
 
         if (str_contains($normalized, 'unauthorized use of live credentials')) {
-            return 'Mercado Pago recusou as credenciais informadas para este ambiente. '
-                .'Revise as credenciais de teste/produção no gateway.';
+            return 'Não foi possível validar o pagamento automático no momento. Tente novamente em instantes ou escolha outra forma de pagamento.';
         }
 
         if (str_contains($normalized, 'não está disponível na conta conectada do mercado pago')
             || str_contains($normalized, 'nao esta disponivel na conta conectada do mercado pago')) {
-            return 'A conta Mercado Pago conectada nesta loja não possui Pix habilitado. '
-                .'Conecte uma conta com Pix ativo e tente novamente.';
+            return 'A forma de pagamento selecionada está indisponível no momento. Escolha outra forma para finalizar o pedido.';
         }
 
         if (
@@ -3495,13 +3525,11 @@ class PublicShopService
             || str_contains($normalized, 'not authorized to access this resource')
             || str_contains($normalized, 'forbidden')
         ) {
-            return 'A aplicação Mercado Pago conectada não tem permissão para criar a cobrança Pix. '
-                .'Revise o tipo da aplicação no Mercado Pago (Checkout Transparente com API de Pagamentos) e reconecte no painel.';
+            return 'O pagamento automático está temporariamente indisponível. Tente novamente em instantes ou escolha outra forma de pagamento.';
         }
 
         if (str_contains($normalized, 'notification_url') || str_contains($normalized, 'notificaction_url')) {
-            return 'Mercado Pago rejeitou a URL de notificação da loja. '
-                .'Use uma URL pública HTTPS ou finalize sem webhook em ambiente local.';
+            return 'Não foi possível processar esta forma de pagamento agora. Tente novamente em instantes ou escolha outra forma.';
         }
 
         if (
@@ -3509,8 +3537,7 @@ class PublicShopService
             || str_contains($normalized, 'collector and payer')
             || str_contains($normalized, 'payer and collector')
         ) {
-            return 'O e-mail do comprador não pode ser igual ao e-mail da conta Mercado Pago conectada. '
-                .'Teste com outro cliente/e-mail na loja.';
+            return 'Não foi possível validar os dados de pagamento. Revise os dados da conta e tente novamente.';
         }
 
         if (str_contains($normalized, 'payer.email') || str_contains($normalized, 'payer email')) {
@@ -3519,11 +3546,7 @@ class PublicShopService
 
         $providerSummary = $this->resolveCheckoutIntegratedProviderSummary($rawMessage);
         if ($providerSummary !== '') {
-            return 'Mercado Pago rejeitou a cobrança: '.$providerSummary;
-        }
-
-        if ((bool) config('app.debug')) {
-            return $rawMessage;
+            return 'Não foi possível processar o pagamento automático no momento. Tente novamente em instantes ou escolha outra forma de pagamento.';
         }
 
         return $default;
@@ -3659,3 +3682,4 @@ class PublicShopService
             ->all();
     }
 }
+

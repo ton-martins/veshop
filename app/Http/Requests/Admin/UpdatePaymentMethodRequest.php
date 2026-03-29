@@ -26,6 +26,7 @@ class UpdatePaymentMethodRequest extends FormRequest
             'name' => trim((string) $this->input('name', '')),
             'is_active' => $this->boolean('is_active', true),
             'is_default' => $this->boolean('is_default', false),
+            'show_on_storefront' => $this->boolean('show_on_storefront', true),
             'allows_installments' => $this->boolean('allows_installments', false),
             'max_installments' => $this->filled('max_installments')
                 ? (int) $this->input('max_installments')
@@ -56,6 +57,7 @@ class UpdatePaymentMethodRequest extends FormRequest
             'name' => ['required', 'string', 'max:120'],
             'is_active' => ['required', 'boolean'],
             'is_default' => ['required', 'boolean'],
+            'show_on_storefront' => ['required', 'boolean'],
             'allows_installments' => ['required', 'boolean'],
             'max_installments' => ['nullable', 'integer', 'min:2', 'max:24'],
             'fee_fixed' => ['nullable', 'numeric', 'min:0'],

@@ -431,6 +431,7 @@ const methodForm = useForm({
     name: '',
     is_active: true,
     is_default: false,
+    show_on_storefront: true,
     allows_installments: false,
     max_installments: '',
     fee_fixed: '',
@@ -449,6 +450,7 @@ const resetMethodForm = (sortOrder = 0) => {
     methodForm.name = '';
     methodForm.is_active = true;
     methodForm.is_default = false;
+    methodForm.show_on_storefront = true;
     methodForm.allows_installments = false;
     methodForm.max_installments = '';
     methodForm.fee_fixed = '';
@@ -477,6 +479,9 @@ const openEditMethod = (method) => {
     methodForm.name = String(method.name ?? '');
     methodForm.is_active = Boolean(method.is_active);
     methodForm.is_default = Boolean(method.is_default);
+    methodForm.show_on_storefront = method.show_on_storefront === undefined
+        ? true
+        : Boolean(method.show_on_storefront);
     methodForm.allows_installments = Boolean(method.allows_installments);
     methodForm.max_installments = method.max_installments ?? '';
     methodForm.fee_fixed = method.fee_fixed ?? '';
@@ -498,6 +503,7 @@ const submitMethod = () => {
         name: methodForm.name,
         is_active: Boolean(methodForm.is_active),
         is_default: Boolean(methodForm.is_default),
+        show_on_storefront: Boolean(methodForm.show_on_storefront),
         allows_installments: String(methodForm.code || '').trim().toLowerCase() === 'credit_card' && Boolean(methodForm.allows_installments),
         max_installments: String(methodForm.code || '').trim().toLowerCase() === 'credit_card' && methodForm.allows_installments && methodForm.max_installments !== ''
             ? Number(methodForm.max_installments)
@@ -895,15 +901,24 @@ hydrateAutomaticConfig();
                                 <p class="truncate text-sm font-semibold text-slate-900">{{ method.name }}</p>
                                 <p class="text-xs text-slate-500">{{ methodCodeLabel(method.code) }}</p>
                             </div>
-                            <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="method.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'">
-                                {{ method.is_active ? 'Ativa' : 'Inativa' }}
-                            </span>
+                            <div class="flex flex-col items-end gap-1">
+                                <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="method.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'">
+                                    {{ method.is_active ? 'Ativa' : 'Inativa' }}
+                                </span>
+                                <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="method.show_on_storefront !== false ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-700'">
+                                    {{ method.show_on_storefront !== false ? 'Visível na loja' : 'Oculta na loja' }}
+                                </span>
+                            </div>
                         </div>
 
                         <div class="mt-3 space-y-2 text-xs text-slate-700">
                             <div class="rounded-xl border border-slate-200 bg-white px-3 py-2">
                                 <strong>Operação:</strong>
                                 Manual
+                            </div>
+                            <div class="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                <strong>Exibição na loja:</strong>
+                                {{ method.show_on_storefront !== false ? 'Ativa' : 'Oculta' }}
                             </div>
                             <div class="rounded-xl border border-slate-200 bg-white px-3 py-2">
                                 <strong>Taxas:</strong>
@@ -971,7 +986,7 @@ hydrateAutomaticConfig();
                     </div>
                 </div>
 
-                <div class="mt-3 grid gap-2 sm:grid-cols-3">
+                <div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                     <label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
                         <input v-model="methodForm.is_active" type="checkbox" class="rounded border-slate-300">
                         Ativa
@@ -979,6 +994,10 @@ hydrateAutomaticConfig();
                     <label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
                         <input v-model="methodForm.is_default" type="checkbox" class="rounded border-slate-300">
                         Padrão
+                    </label>
+                    <label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
+                        <input v-model="methodForm.show_on_storefront" type="checkbox" class="rounded border-slate-300">
+                        Exibir na loja virtual
                     </label>
                     <label class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
                         <input
@@ -990,6 +1009,7 @@ hydrateAutomaticConfig();
                         Permite parcelamento
                     </label>
                 </div>
+                <p v-if="methodForm.errors.show_on_storefront" class="mt-1 text-xs text-rose-600">{{ methodForm.errors.show_on_storefront }}</p>
 
                 <div v-if="methodForm.allows_installments && String(methodForm.code || '').trim().toLowerCase() === 'credit_card'" class="mt-3">
                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Máximo de parcelas</label>
@@ -1076,4 +1096,3 @@ hydrateAutomaticConfig();
     color: #ffffff;
 }
 </style>
-

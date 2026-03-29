@@ -390,6 +390,7 @@ class AdminPaymentMethodService
         if ((bool) ($data['is_default'] ?? false)) {
             $data['is_active'] = true;
         }
+        $data['show_on_storefront'] = (bool) ($data['show_on_storefront'] ?? true);
 
         $checkoutMode = strtolower(trim((string) ($data['checkout_mode'] ?? 'manual')));
         $code = strtolower(trim((string) ($data['code'] ?? '')));
@@ -409,7 +410,10 @@ class AdminPaymentMethodService
                 $data['max_installments'] = null;
             }
         } else {
-            $data['settings'] = $this->resolveManualSettings($currentSettings);
+            $data['settings'] = $this->resolveManualSettings(
+                $currentSettings,
+                (bool) ($data['show_on_storefront'] ?? true),
+            );
         }
 
         return $data;
@@ -427,6 +431,7 @@ class AdminPaymentMethodService
             $data['gateway_is_sandbox'],
             $data['mercado_pago_access_token'],
             $data['mercado_pago_webhook_secret'],
+            $data['show_on_storefront'],
         );
 
         return $data;
@@ -556,9 +561,12 @@ class AdminPaymentMethodService
      * @param  array<string, mixed>  $current
      * @return array<string, mixed>|null
      */
-    private function resolveManualSettings(array $current): ?array
+    private function resolveManualSettings(array $current, bool $showOnStorefront = true): ?array
     {
         unset($current['gateway_integration']);
+        $storefront = is_array($current['storefront'] ?? null) ? $current['storefront'] : [];
+        $storefront['visible'] = $showOnStorefront;
+        $current['storefront'] = $storefront;
 
         return $current === [] ? null : $current;
     }

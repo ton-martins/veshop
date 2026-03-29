@@ -174,6 +174,9 @@ class AdminFinanceService
                     : false;
                 $isIntegrated = (int) ($method->payment_gateway_id ?? 0) > 0
                     || $integrationProvider === PaymentGateway::PROVIDER_MERCADO_PAGO;
+                $showOnStorefront = $isIntegrated
+                    ? true
+                    : (bool) data_get($methodSettings, 'storefront.visible', true);
 
                 return [
                     'id' => $method->id,
@@ -202,6 +205,7 @@ class AdminFinanceService
                     'checkout_mode' => $isIntegrated ? 'integrated' : 'manual',
                     'is_active' => (bool) $method->is_active,
                     'is_default' => (bool) $method->is_default,
+                    'show_on_storefront' => $showOnStorefront,
                     'allows_installments' => (bool) $method->allows_installments,
                     'max_installments' => $method->max_installments,
                     'fee_fixed' => $method->fee_fixed !== null ? (float) $method->fee_fixed : null,
