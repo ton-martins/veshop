@@ -101,10 +101,11 @@ const setActiveTab = (tab) => {
     if (typeof window !== 'undefined') {
         const url = new URL(window.location.href);
         url.searchParams.set('tab', tab);
+        url.searchParams.delete('page');
         window.history.replaceState(window.history.state, '', url.toString());
     }
 
-    syncFinanceWithServer();
+    syncFinanceWithServer({ preferCache: true });
 };
 
 const TABLE_VIEW_STORAGE_KEY = 'veshop:table-view-mode';
@@ -160,18 +161,97 @@ const tabs = [
 
 const searchQuery = ref(String(props.filters?.search ?? ''));
 const selectedStatus = ref(String(props.filters?.status ?? ''));
+const localFinanceEntries = ref(normalizeFinanceEntries(props.financeEntries));
+const localFinanceStats = ref(normalizeFinanceStats(props.financeStats));
+const localStatusOptions = ref(Array.isArray(props.statusOptions) ? props.statusOptions : []);
+const financeCache = new Map();
+const suppressFinanceFiltersWatch = ref(false);
+
+function normalizeFinanceEntries(value) {
+    const safe = value && typeof value === 'object' ? value : {};
+    return {
+        ...safe,
+        data: Array.isArray(safe?.data) ? safe.data : [],
+        links: Array.isArray(safe?.links) ? safe.links : [],
+    };
+}
+
+function normalizeFinanceStats(value) {
+    const safe = value && typeof value === 'object' ? value : {};
+    return {
+        payables: safe?.payables && typeof safe.payables === 'object' ? safe.payables : {},
+        receivables: safe?.receivables && typeof safe.receivables === 'object' ? safe.receivables : {},
+    };
+}
+
+function cloneValue(value) {
+    if (typeof structuredClone === 'function') {
+        try {
+            return structuredClone(value);
+        } catch {
+            // fallback below
+        }
+    }
+
+    return JSON.parse(JSON.stringify(value ?? null));
+}
+
+const buildFinanceCacheKey = (
+    tab = activeTab.value,
+    search = searchQuery.value,
+    status = selectedStatus.value,
+) => {
+    const safeTab = allowedTabs.has(String(tab)) ? String(tab) : 'payables';
+    const safeSearch = String(search ?? '').trim().toLowerCase();
+    const safeStatus = String(status ?? '').trim().toLowerCase();
+
+    return `${safeTab}|${safeSearch}|${safeStatus}`;
+};
+
+const cacheFinanceState = ({
+    tab = activeTab.value,
+    search = searchQuery.value,
+    status = selectedStatus.value,
+    entries = localFinanceEntries.value,
+    stats = localFinanceStats.value,
+    statusOptions = localStatusOptions.value,
+} = {}) => {
+    financeCache.set(buildFinanceCacheKey(tab, search, status), {
+        entries: cloneValue(normalizeFinanceEntries(entries)),
+        stats: cloneValue(normalizeFinanceStats(stats)),
+        statusOptions: cloneValue(Array.isArray(statusOptions) ? statusOptions : []),
+    });
+};
+
+const applyCachedFinanceState = (key) => {
+    const snapshot = financeCache.get(key);
+    if (!snapshot) return false;
+
+    localFinanceEntries.value = normalizeFinanceEntries(cloneValue(snapshot.entries));
+    localFinanceStats.value = normalizeFinanceStats(cloneValue(snapshot.stats));
+    localStatusOptions.value = Array.isArray(snapshot.statusOptions)
+        ? cloneValue(snapshot.statusOptions)
+        : [];
+
+    return true;
+};
+
+const clearFinanceCache = () => {
+    financeCache.clear();
+};
+
 const activeRows = computed(() => (
-    Array.isArray(props.financeEntries?.data)
-        ? props.financeEntries.data
+    Array.isArray(localFinanceEntries.value?.data)
+        ? localFinanceEntries.value.data
         : []
 ));
 const paginationLinks = computed(() => (
-    Array.isArray(props.financeEntries?.links)
-        ? props.financeEntries.links
+    Array.isArray(localFinanceEntries.value?.links)
+        ? localFinanceEntries.value.links
         : []
 ));
-const payablesStats = computed(() => props.financeStats?.payables ?? {});
-const receivablesStats = computed(() => props.financeStats?.receivables ?? {});
+const payablesStats = computed(() => localFinanceStats.value?.payables ?? {});
+const receivablesStats = computed(() => localFinanceStats.value?.receivables ?? {});
 
 const activeStats = computed(() => {
     if (activeTab.value === 'receivables') {
@@ -199,7 +279,7 @@ const searchPlaceholder = computed(() =>
 
 const statusFilterOptions = computed(() => [
     { value: '', label: 'Todos os status' },
-    ...(props.statusOptions ?? []),
+    ...(localStatusOptions.value ?? []),
 ]);
 
 const actionLabel = computed(() =>
@@ -240,15 +320,24 @@ const clearSearch = () => {
 
 let financeFilterDebounceTimer = null;
 
-const syncFinanceWithServer = () => {
+const syncFinanceWithServer = ({ preferCache = false, force = false } = {}) => {
+    if (activeTab.value === 'payments') return;
+
     const tab = activeTab.value;
+    const search = String(searchQuery.value ?? '').trim();
+    const status = String(selectedStatus.value ?? '').trim();
+    const cacheKey = buildFinanceCacheKey(tab, search, status);
+
+    if (preferCache && !force && applyCachedFinanceState(cacheKey)) {
+        return;
+    }
 
     router.get(
         route('admin.finance.index'),
         {
             tab,
-            search: String(searchQuery.value ?? '').trim() || undefined,
-            status: String(selectedStatus.value ?? '').trim() || undefined,
+            search: search || undefined,
+            status: status || undefined,
         },
         {
             preserveState: true,
@@ -267,11 +356,12 @@ const scheduleSyncFinanceWithServer = () => {
     }
 
     financeFilterDebounceTimer = setTimeout(() => {
-        syncFinanceWithServer();
+        syncFinanceWithServer({ preferCache: true });
     }, 280);
 };
 
 watch([searchQuery, selectedStatus], () => {
+    if (suppressFinanceFiltersWatch.value) return;
     scheduleSyncFinanceWithServer();
 });
 
@@ -281,14 +371,78 @@ watch(
         const nextSearch = String(filters?.search ?? '');
         const nextStatus = String(filters?.status ?? '');
 
-        if (searchQuery.value !== nextSearch) {
-            searchQuery.value = nextSearch;
+        suppressFinanceFiltersWatch.value = true;
+
+        try {
+            if (searchQuery.value !== nextSearch) {
+                searchQuery.value = nextSearch;
+            }
+
+            if (selectedStatus.value !== nextStatus) {
+                selectedStatus.value = nextStatus;
+            }
+        } finally {
+            suppressFinanceFiltersWatch.value = false;
         }
 
-        if (selectedStatus.value !== nextStatus) {
-            selectedStatus.value = nextStatus;
-        }
+        cacheFinanceState({
+            tab: props.initialTab,
+            search: nextSearch,
+            status: nextStatus,
+            entries: props.financeEntries,
+            stats: props.financeStats,
+            statusOptions: props.statusOptions,
+        });
     },
+    { deep: true, immediate: true },
+);
+
+watch(
+    () => props.financeEntries,
+    (entries) => {
+        localFinanceEntries.value = normalizeFinanceEntries(entries);
+        cacheFinanceState({
+            tab: props.initialTab,
+            search: props.filters?.search ?? searchQuery.value,
+            status: props.filters?.status ?? selectedStatus.value,
+            entries,
+            stats: localFinanceStats.value,
+            statusOptions: localStatusOptions.value,
+        });
+    },
+    { deep: true, immediate: true },
+);
+
+watch(
+    () => props.financeStats,
+    (stats) => {
+        localFinanceStats.value = normalizeFinanceStats(stats);
+        cacheFinanceState({
+            tab: props.initialTab,
+            search: props.filters?.search ?? searchQuery.value,
+            status: props.filters?.status ?? selectedStatus.value,
+            entries: localFinanceEntries.value,
+            stats,
+            statusOptions: localStatusOptions.value,
+        });
+    },
+    { deep: true, immediate: true },
+);
+
+watch(
+    () => props.statusOptions,
+    (options) => {
+        localStatusOptions.value = Array.isArray(options) ? options : [];
+        cacheFinanceState({
+            tab: props.initialTab,
+            search: props.filters?.search ?? searchQuery.value,
+            status: props.filters?.status ?? selectedStatus.value,
+            entries: localFinanceEntries.value,
+            stats: localFinanceStats.value,
+            statusOptions: localStatusOptions.value,
+        });
+    },
+    { deep: true, immediate: true },
 );
 
 onBeforeUnmount(() => {
@@ -839,7 +993,10 @@ const submitEntry = () => {
         entryForm.transform(() => payload).post(route('admin.finance.entries.update', editingEntry.value.id), {
             preserveScroll: true,
             forceFormData: true,
-            onSuccess: closeEntryModal,
+            onSuccess: () => {
+                clearFinanceCache();
+                closeEntryModal();
+            },
         });
         return;
     }
@@ -847,7 +1004,10 @@ const submitEntry = () => {
     entryForm.transform(() => payload).post(route('admin.finance.entries.store'), {
         preserveScroll: true,
         forceFormData: true,
-        onSuccess: closeEntryModal,
+        onSuccess: () => {
+            clearFinanceCache();
+            closeEntryModal();
+        },
     });
 };
 
@@ -866,7 +1026,10 @@ const removeEntry = () => {
 
     entryDeleteForm.delete(route('admin.finance.entries.destroy', entryToDelete.value.id), {
         preserveScroll: true,
-        onSuccess: closeDeleteEntry,
+        onSuccess: () => {
+            clearFinanceCache();
+            closeDeleteEntry();
+        },
     });
 };
 
