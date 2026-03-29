@@ -2241,6 +2241,12 @@ class PublicShopService
             throw ValidationException::withMessages([
                 'order' => $this->resolveCheckoutIntegratedProviderErrorMessage($exception),
             ]);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            throw ValidationException::withMessages([
+                'order' => 'Falha interna ao iniciar o pagamento automático. Tente novamente em instantes.',
+            ]);
         }
 
         $this->applyCheckoutPaymentIntentResult($sale, $salePayment, $intent);
