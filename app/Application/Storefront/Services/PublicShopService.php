@@ -34,6 +34,7 @@ use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -2236,12 +2237,36 @@ class PublicShopService
                 ]
             );
         } catch (PaymentProviderException $exception) {
+            Log::warning('storefront.checkout.integrated_payment_failed', [
+                'contractor_id' => (int) $contractor->id,
+                'sale_id' => (int) $sale->id,
+                'sale_code' => (string) $sale->code,
+                'sale_payment_id' => (int) $salePayment->id,
+                'payment_method_id' => (int) $paymentMethod->id,
+                'payment_method_code' => (string) $paymentMethod->code,
+                'provider' => (string) $paymentGateway->provider,
+                'gateway_id' => (int) $paymentGateway->id,
+                'exception_class' => $exception::class,
+                'message' => trim((string) $exception->getMessage()),
+            ]);
             report($exception);
 
             throw ValidationException::withMessages([
                 'order' => $this->resolveCheckoutIntegratedProviderErrorMessage($exception),
             ]);
         } catch (\Throwable $exception) {
+            Log::error('storefront.checkout.integrated_payment_unexpected_error', [
+                'contractor_id' => (int) $contractor->id,
+                'sale_id' => (int) $sale->id,
+                'sale_code' => (string) $sale->code,
+                'sale_payment_id' => (int) $salePayment->id,
+                'payment_method_id' => (int) $paymentMethod->id,
+                'payment_method_code' => (string) $paymentMethod->code,
+                'provider' => (string) $paymentGateway->provider,
+                'gateway_id' => (int) $paymentGateway->id,
+                'exception_class' => $exception::class,
+                'message' => trim((string) $exception->getMessage()),
+            ]);
             report($exception);
 
             throw ValidationException::withMessages([
@@ -2713,9 +2738,37 @@ class PublicShopService
                 .'Conecte uma conta com Pix ativo e tente novamente.';
         }
 
+        if (
+            str_contains($normalized, 'policy returned unauthorized')
+            || str_contains($normalized, 'at least one policy returned unauthorized')
+            || str_contains($normalized, 'not authorized to access this resource')
+            || str_contains($normalized, 'forbidden')
+        ) {
+            return 'A aplicação Mercado Pago conectada não tem permissão para criar a cobrança Pix. '
+                .'Revise o tipo da aplicação no Mercado Pago (Checkout Transparente com API de Pagamentos) e reconecte no painel.';
+        }
+
         if (str_contains($normalized, 'notification_url') || str_contains($normalized, 'notificaction_url')) {
             return 'Mercado Pago rejeitou a URL de notificação da loja. '
                 .'Use uma URL pública HTTPS ou finalize sem webhook em ambiente local.';
+        }
+
+        if (
+            str_contains($normalized, 'invalid users involved')
+            || str_contains($normalized, 'collector and payer')
+            || str_contains($normalized, 'payer and collector')
+        ) {
+            return 'O e-mail do comprador não pode ser igual ao e-mail da conta Mercado Pago conectada. '
+                .'Teste com outro cliente/e-mail na loja.';
+        }
+
+        if (str_contains($normalized, 'payer.email') || str_contains($normalized, 'payer email')) {
+            return 'Mercado Pago exige um e-mail válido do comprador para gerar o pagamento.';
+        }
+
+        $providerSummary = $this->resolveCheckoutIntegratedProviderSummary($rawMessage);
+        if ($providerSummary !== '') {
+            return 'Mercado Pago rejeitou a cobrança: '.$providerSummary;
         }
 
         if ((bool) config('app.debug')) {
@@ -2723,6 +2776,27 @@ class PublicShopService
         }
 
         return $default;
+    }
+
+    private function resolveCheckoutIntegratedProviderSummary(string $rawMessage): string
+    {
+        $summary = trim($rawMessage);
+        if ($summary === '') {
+            return '';
+        }
+
+        $summary = preg_replace('/^Falha ao criar (cobrança|cobranca) Pix no Mercado Pago:\s*/iu', '', $summary) ?: $summary;
+        $summary = preg_replace('/^Falha ao criar prefer[eê]ncia de checkout no Mercado Pago:\s*/iu', '', $summary) ?: $summary;
+        $summary = preg_replace('/^Falha ao consultar [^:]+:\s*/iu', '', $summary) ?: $summary;
+        $summary = preg_replace('/^HTTP \d+\s*-\s*/i', '', $summary) ?: $summary;
+        $summary = preg_replace('/\s+/', ' ', $summary) ?: $summary;
+        $summary = trim($summary);
+
+        if ($summary === '') {
+            return '';
+        }
+
+        return mb_substr($summary, 0, 220);
     }
 
     private function resolveSalePaymentStatusLabel(string $status): string

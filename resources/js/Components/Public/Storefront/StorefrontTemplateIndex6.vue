@@ -964,7 +964,12 @@ const submitQuickCheckout = () => {
             } else if (paymentError !== '') {
                 uiMessage.value = paymentError;
             } else {
-                uiMessage.value = 'Não foi possível finalizar o pedido. Revise os dados e tente novamente.';
+                const firstBackendError = Object.values(errors ?? {})
+                    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+                    .map((value) => String(value ?? '').trim())
+                    .find((value) => value !== '');
+
+                uiMessage.value = firstBackendError || 'Não foi possível finalizar o pedido. Revise os dados e tente novamente.';
             }
             isCartOpen.value = true;
         },
