@@ -137,6 +137,20 @@
         ],
     },
     {
+        key: 'auditoria',
+        label: 'Auditoria',
+        icon: 'History',
+        links: [
+            {
+                key: 'admin-audit-accesses',
+                label: 'Acessos',
+                route: 'admin.audit.accesses',
+                match: ['admin.audit.accesses'],
+                icon: 'Clock3',
+            },
+        ],
+    },
+    {
         key: 'services-cadastros',
         label: 'Cadastros',
         icon: 'Package',

@@ -51,8 +51,9 @@ export const formatPhoneBR = (value) => {
     const ddd = digits.slice(0, 2);
     const number = digits.slice(2);
 
-    if (number.length <= 5) return `(${ddd}) ${number}`;
-    return `(${ddd}) ${number.slice(0, 5)}-${number.slice(5)}`;
+    if (number.length <= 4) return `(${ddd}) ${number}`;
+    if (number.length <= 8) return `(${ddd}) ${number.slice(0, 4)}-${number.slice(4)}`;
+    return `(${ddd}) ${number.slice(0, 5)}-${number.slice(5, 9)}`;
 };
 
 export const formatCpfCnpjBR = (value) => {
@@ -95,7 +96,7 @@ export const formatDocumentByTypeBR = (value, type = DOCUMENT_TYPE_CPF) => {
 
 export const detectDocumentTypeBR = (value) => (onlyDigits(value).length > 11 ? DOCUMENT_TYPE_CNPJ : DOCUMENT_TYPE_CPF);
 
-export const isValidPhoneMaskBR = (value) => /^\(\d{2}\)\s\d{5}-\d{4}$/.test(String(value ?? '').trim());
+export const isValidPhoneMaskBR = (value) => /^\(\d{2}\)\s\d{4,5}-\d{4}$/.test(String(value ?? '').trim());
 export const isValidCepMaskBR = (value) => /^\d{5}-\d{3}$/.test(String(value ?? '').trim());
 export const isValidDocumentByTypeBR = (value, type = DOCUMENT_TYPE_CPF) => {
     const safe = String(value ?? '').trim();

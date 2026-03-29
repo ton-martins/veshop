@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Application\Identity\Services\AdminAccessAuditService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use Illuminate\Http\RedirectResponse;
@@ -14,6 +15,10 @@ use Inertia\Response;
 
 class AuthenticatedSessionController extends Controller
 {
+    public function __construct(
+        private readonly AdminAccessAuditService $accessAuditService,
+    ) {}
+
     /**
      * Display the login view.
      */
@@ -45,6 +50,7 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerate();
 
         $request->session()->put('two_factor_passed', false);
+        $this->accessAuditService->registerSuccessfulLogin($request);
 
         if (! $request->user()?->hasTwoFactorEnabled()) {
             return redirect()->route('two-factor.setup');
@@ -58,6 +64,8 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
+        $this->accessAuditService->registerManualLogout($request);
+
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();

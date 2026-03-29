@@ -38,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             '2fa' => \App\Http\Middleware\EnsureTwoFactorAuthenticated::class,
+            'single.admin.session' => \App\Http\Middleware\EnsureSingleAdminSession::class,
             'role' => \App\Http\Middleware\EnsureUserRole::class,
             'contractor.module' => \App\Http\Middleware\EnsureContractorModuleEnabled::class,
             'shop.auth' => \App\Http\Middleware\EnsureShopAuthenticated::class,

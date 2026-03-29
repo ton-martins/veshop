@@ -50,4 +50,9 @@ return [
         'timeout' => (int) env('IBGE_TIMEOUT', 10),
     ],
 
+    'brasilapi' => [
+        'base_url' => env('BRASILAPI_BASE_URL', 'https://brasilapi.com.br/api'),
+        'timeout' => (int) env('BRASILAPI_TIMEOUT', 10),
+    ],
+
 ];

@@ -103,6 +103,8 @@ const setActiveTab = (tab) => {
         url.searchParams.set('tab', tab);
         window.history.replaceState(window.history.state, '', url.toString());
     }
+
+    syncFinanceWithServer();
 };
 
 const TABLE_VIEW_STORAGE_KEY = 'veshop:table-view-mode';
@@ -240,14 +242,13 @@ let financeFilterDebounceTimer = null;
 
 const syncFinanceWithServer = () => {
     const tab = activeTab.value;
-    const isPaymentTab = tab === 'payments';
 
     router.get(
         route('admin.finance.index'),
         {
             tab,
-            search: !isPaymentTab ? (String(searchQuery.value ?? '').trim() || undefined) : undefined,
-            status: !isPaymentTab ? (String(selectedStatus.value ?? '').trim() || undefined) : undefined,
+            search: String(searchQuery.value ?? '').trim() || undefined,
+            status: String(selectedStatus.value ?? '').trim() || undefined,
         },
         {
             preserveState: true,
@@ -718,12 +719,46 @@ const entryForm = useForm({
 
 const entryDeleteForm = useForm({});
 const isEditingEntry = computed(() => Boolean(editingEntry.value?.id));
+const entryTypeByActiveTab = computed(() => (
+    activeTab.value === 'receivables' ? 'receivable' : 'payable'
+));
+const entryModalTitle = computed(() => {
+    if (isEditingEntry.value) {
+        return activeTab.value === 'receivables'
+            ? 'Editar conta a receber'
+            : 'Editar conta a pagar';
+    }
+
+    return activeTab.value === 'receivables'
+        ? 'Nova conta a receber'
+        : 'Nova conta a pagar';
+});
+const entryModalDescription = computed(() => (
+    activeTab.value === 'receivables'
+        ? 'Cadastre o recebimento com vencimento, status e documento.'
+        : 'Cadastre o pagamento com vencimento, status e documento.'
+));
+const entryCounterpartyLabel = computed(() => (
+    activeTab.value === 'receivables'
+        ? 'Cliente'
+        : 'Fornecedor / Descrição'
+));
+const entryCounterpartyPlaceholder = computed(() => (
+    activeTab.value === 'receivables'
+        ? 'Ex.: Cliente Silva'
+        : 'Ex.: Aluguel da sede'
+));
+const entryReferenceLabel = computed(() => (
+    activeTab.value === 'receivables'
+        ? 'Referência'
+        : 'Referência / Documento'
+));
 
 const resetEntryForm = () => {
     entryForm.transform((data) => data);
     entryForm.reset();
     entryForm.clearErrors();
-    entryForm.type = activeTab.value === 'receivables' ? 'receivable' : 'payable';
+    entryForm.type = entryTypeByActiveTab.value;
     entryForm.counterparty_name = '';
     entryForm.reference = '';
     entryForm.amount = '';
@@ -745,7 +780,7 @@ const openCreateEntry = () => {
 
 const openEditEntry = (entry) => {
     editingEntry.value = entry;
-    entryForm.type = String(entry.type ?? (activeTab.value === 'receivables' ? 'receivable' : 'payable'));
+    entryForm.type = entryTypeByActiveTab.value;
     entryForm.counterparty_name = String(entry.counterparty_name ?? entry.primary ?? '');
     entryForm.reference = String(entry.reference ?? '');
     entryForm.amount = Number(entry.amount_raw ?? 0).toFixed(2);
@@ -782,7 +817,7 @@ const removeEntryDocument = () => {
 
 const submitEntry = () => {
     const payload = {
-        type: entryForm.type,
+        type: entryTypeByActiveTab.value,
         counterparty_name: entryForm.counterparty_name,
         reference: String(entryForm.reference ?? '').trim() || null,
         amount: entryForm.amount === '' ? null : Number(entryForm.amount),
@@ -1348,24 +1383,22 @@ const pdfIframeKey = (file) => `${String(file?.public_url ?? '')}-${pdfZoom.valu
 
         <Modal :show="entryModalOpen" max-width="5xl" @close="closeEntryModal">
             <WizardModalFrame
-                :title="isEditingEntry ? 'Editar lançamento financeiro' : 'Novo lançamento financeiro'"
-                description="Cadastre contas a pagar e receber com vencimento, status e documento."
+                :title="entryModalTitle"
+                :description="entryModalDescription"
                 :steps="['Dados do lançamento']"
                 :current-step="1"
                 @close="closeEntryModal"
             >
                 <div class="grid gap-3 md:grid-cols-2">
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo</label>
-                        <UiSelect
-                            v-model="entryForm.type"
-                            :options="[
-                                { value: 'payable', label: 'Conta a pagar' },
-                                { value: 'receivable', label: 'Conta a receber' },
-                            ]"
-                            button-class="mt-1"
-                        />
-                        <p v-if="entryForm.errors.type" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.type }}</p>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ entryCounterpartyLabel }}</label>
+                        <input
+                            v-model="entryForm.counterparty_name"
+                            type="text"
+                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            :placeholder="entryCounterpartyPlaceholder"
+                        >
+                        <p v-if="entryForm.errors.counterparty_name" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.counterparty_name }}</p>
                     </div>
 
                     <div>
@@ -1379,18 +1412,7 @@ const pdfIframeKey = (file) => `${String(file?.public_url ?? '')}-${pdfZoom.valu
                     </div>
 
                     <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Fornecedor, cliente ou descrição</label>
-                        <input
-                            v-model="entryForm.counterparty_name"
-                            type="text"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="Ex.: Aluguel da sede"
-                        >
-                        <p v-if="entryForm.errors.counterparty_name" class="mt-1 text-xs text-rose-600">{{ entryForm.errors.counterparty_name }}</p>
-                    </div>
-
-                    <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Referência / Documento</label>
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ entryReferenceLabel }}</label>
                         <input
                             v-model="entryForm.reference"
                             type="text"

@@ -128,6 +128,8 @@ const contractorToDelete = ref(null);
 const contractorWizardSteps = ['Dados do contratante', 'Plano de assinatura'];
 const contractorWizardStep = ref(1);
 const contractorWizardValidationRequested = ref(false);
+const cnpjLookupLoading = ref(false);
+const cnpjLookupError = ref('');
 
 const contractorForm = useForm({
     name: '',
@@ -177,9 +179,10 @@ const formatPhone = (value) => {
     const digits = digitsOnly(value, 11);
     if (!digits) return '';
     if (digits.length <= 2) return `(${digits}`;
-    if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
 
-    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
 };
 
 const formatCnpj = (value) => {
@@ -199,6 +202,53 @@ const onPhoneInput = (event) => {
 
 const onCnpjInput = (event) => {
     contractorForm.cnpj = formatCnpj(event?.target?.value ?? contractorForm.cnpj);
+    cnpjLookupError.value = '';
+};
+
+const lookupCnpj = async () => {
+    cnpjLookupError.value = '';
+
+    const cnpjDigits = digitsOnly(contractorForm.cnpj, 14);
+    if (cnpjDigits.length !== 14) {
+        cnpjLookupError.value = 'Informe um CNPJ válido para consultar.';
+        return;
+    }
+
+    cnpjLookupLoading.value = true;
+
+    try {
+        const response = await fetch(route('master.utils.cnpj.lookup', { cnpj: cnpjDigits }), {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || payload?.ok !== true) {
+            cnpjLookupError.value = String(payload?.message ?? 'Não foi possível consultar este CNPJ.');
+            return;
+        }
+
+        const data = payload?.data ?? {};
+        const razaoSocial = String(data.razao_social || '').trim();
+        const nomeFantasia = String(data.nome_fantasia || '').trim();
+        const email = String(data.email || '').trim();
+        const phone = formatPhone(String(data.phone || ''));
+
+        if (!String(contractorForm.name ?? '').trim() && razaoSocial) contractorForm.name = razaoSocial;
+        if (!String(contractorForm.brand_name ?? '').trim() && (nomeFantasia || razaoSocial)) {
+            contractorForm.brand_name = nomeFantasia || razaoSocial;
+        }
+        if (email) contractorForm.email = email;
+        if (phone) contractorForm.phone = phone;
+    } catch {
+        cnpjLookupError.value = 'Não foi possível consultar este CNPJ agora. Tente novamente.';
+    } finally {
+        cnpjLookupLoading.value = false;
+    }
 };
 const deleteForm = useForm({});
 const formPlans = computed(() => {
@@ -382,6 +432,7 @@ const resetContractorForm = () => {
     contractorForm.override_storage_limit_gb = '';
     contractorForm.override_audit_log_retention_days = '';
     contractorForm.is_active = true;
+    cnpjLookupError.value = '';
 };
 
 const openCreate = () => {
@@ -414,6 +465,7 @@ const openEdit = (contractor) => {
     contractorForm.override_audit_log_retention_days = contractor.override_audit_log_retention_days ?? '';
     contractorForm.is_active = Boolean(contractor.is_active);
     contractorForm.clearErrors();
+    cnpjLookupError.value = '';
     showModal.value = true;
 };
 
@@ -448,11 +500,11 @@ const submitContractor = () => {
 
     contractorForm.clearErrors('phone', 'cnpj', 'brand_primary_color');
 
-    const phoneRegex = /^\(\d{2}\)\s\d{5}-\d{4}$/;
+    const phoneRegex = /^\(\d{2}\)\s\d{4,5}-\d{4}$/;
     const cnpjRegex = /^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/;
 
     if (contractorForm.phone && !phoneRegex.test(contractorForm.phone)) {
-        contractorForm.setError('phone', 'Informe no formato (00) 00000-0000.');
+        contractorForm.setError('phone', 'Informe no formato (00) 0000-0000 ou (00) 00000-0000.');
         return;
     }
 
@@ -704,9 +756,9 @@ const formatMoney = (value) => {
                             type="text"
                             inputmode="tel"
                             maxlength="15"
-                            pattern="^\(\d{2}\)\s\d{5}-\d{4}$"
+                            pattern="^\(\d{2}\)\s\d{4,5}-\d{4}$"
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            placeholder="(00) 00000-0000"
+                            placeholder="(00) 0000-0000"
                             @input="onPhoneInput"
                         >
                         <p v-if="contractorForm.errors.phone" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.phone }}</p>
@@ -722,8 +774,20 @@ const formatMoney = (value) => {
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                             placeholder="00.000.000/0000-00"
                             @input="onCnpjInput"
+                            @blur="lookupCnpj"
                         >
                         <p v-if="contractorForm.errors.cnpj" class="mt-1 text-xs text-rose-600">{{ contractorForm.errors.cnpj }}</p>
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                class="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="cnpjLookupLoading"
+                                @click="lookupCnpj"
+                            >
+                                {{ cnpjLookupLoading ? 'Consultando...' : 'Consultar CNPJ' }}
+                            </button>
+                            <p v-if="cnpjLookupError" class="text-xs font-semibold text-amber-700">{{ cnpjLookupError }}</p>
+                        </div>
                     </div>
                     <div>
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Slug (opcional)</label>

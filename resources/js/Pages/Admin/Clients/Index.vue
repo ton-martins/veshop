@@ -65,6 +65,8 @@ const wizardSteps = ['Dados do cliente', 'Endereço'];
 const currentStep = ref(1);
 const cepLookupLoading = ref(false);
 const cepLookupError = ref('');
+const cnpjLookupLoading = ref(false);
+const cnpjLookupError = ref('');
 const wizardValidationRequested = ref(false);
 
 watch(
@@ -207,6 +209,7 @@ const wizardStepErrors = computed(() =>
 const resetWizard = () => {
     currentStep.value = 1;
     cepLookupError.value = '';
+    cnpjLookupError.value = '';
 };
 
 const openCreate = () => {
@@ -259,11 +262,13 @@ const onPhoneInput = (event) => {
 const onDocumentInput = (event) => {
     clientForm.document = formatDocumentByTypeBR(event?.target?.value ?? clientForm.document, clientForm.document_type);
     clientForm.clearErrors('document');
+    cnpjLookupError.value = '';
 };
 
 const onDocumentTypeChange = () => {
     clientForm.document = formatDocumentByTypeBR(clientForm.document, clientForm.document_type);
     clientForm.clearErrors('document');
+    cnpjLookupError.value = '';
 };
 
 const onCepInput = (event) => {
@@ -311,6 +316,64 @@ const lookupCep = async () => {
     }
 };
 
+const lookupCnpj = async () => {
+    cnpjLookupError.value = '';
+
+    if (clientForm.document_type !== 'cnpj') return;
+
+    const cnpjDigits = String(clientForm.document ?? '').replace(/\D+/g, '');
+    if (cnpjDigits.length !== 14) {
+        cnpjLookupError.value = 'Informe um CNPJ válido para consultar.';
+        return;
+    }
+
+    cnpjLookupLoading.value = true;
+
+    try {
+        const response = await fetch(route('admin.utils.cnpj.lookup', { cnpj: cnpjDigits }), {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || payload?.ok !== true) {
+            cnpjLookupError.value = String(payload?.message ?? 'Não foi possível consultar este CNPJ.');
+            return;
+        }
+
+        const data = payload?.data ?? {};
+        const companyName = String(data.nome_fantasia || data.razao_social || '').trim();
+        const email = String(data.email || '').trim();
+        const phone = formatPhoneBR(String(data.phone || ''));
+        const cep = formatCepBR(String(data.cep || ''));
+        const street = String(data.street || '').trim();
+        const number = String(data.number || '').trim();
+        const complement = String(data.complement || '').trim();
+        const neighborhood = String(data.neighborhood || '').trim();
+        const city = String(data.city || '').trim();
+        const state = normalizeStateCode(String(data.uf || ''));
+
+        if (!String(clientForm.name ?? '').trim() && companyName) clientForm.name = companyName;
+        if (email) clientForm.email = email;
+        if (phone) clientForm.phone = phone;
+        if (!String(clientForm.cep ?? '').trim() && cep) clientForm.cep = cep;
+        if (!String(clientForm.street ?? '').trim() && street) clientForm.street = street;
+        if (!String(clientForm.number ?? '').trim() && number) clientForm.number = number;
+        if (!String(clientForm.complement ?? '').trim() && complement) clientForm.complement = complement;
+        if (!String(clientForm.neighborhood ?? '').trim() && neighborhood) clientForm.neighborhood = neighborhood;
+        if (!String(clientForm.city ?? '').trim() && city) clientForm.city = city;
+        if (!String(clientForm.state ?? '').trim() && state) clientForm.state = state;
+    } catch {
+        cnpjLookupError.value = 'Não foi possível consultar este CNPJ agora. Tente novamente.';
+    } finally {
+        cnpjLookupLoading.value = false;
+    }
+};
+
 const goNextStep = () => {
     if (!validateCurrentStepForCreate()) return;
     currentStep.value = Math.min(wizardSteps.length, currentStep.value + 1);
@@ -337,7 +400,7 @@ const submitClient = () => {
     clientForm.state = normalizeStateCode(clientForm.state);
 
     if (clientForm.phone && !isValidPhoneMaskBR(clientForm.phone)) {
-        clientForm.setError('phone', 'Informe o telefone no formato (11) 99999-9999.');
+        clientForm.setError('phone', 'Informe o telefone no formato (11) 9999-9999 ou (11) 99999-9999.');
         return;
     }
 
@@ -591,8 +654,20 @@ const removeClient = () => {
                                 class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
                                 :placeholder="clientForm.document_type === 'cnpj' ? '00.000.000/0000-00' : '000.000.000.00'"
                                 @input="onDocumentInput"
+                                @blur="lookupCnpj"
                             >
                             <p v-if="clientForm.errors.document" class="mt-1 text-xs text-rose-600">{{ clientForm.errors.document }}</p>
+                            <div v-if="clientForm.document_type === 'cnpj'" class="mt-2 flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    class="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="cnpjLookupLoading"
+                                    @click="lookupCnpj"
+                                >
+                                    {{ cnpjLookupLoading ? 'Consultando...' : 'Consultar CNPJ' }}
+                                </button>
+                                <p v-if="cnpjLookupError" class="text-xs font-semibold text-amber-700">{{ cnpjLookupError }}</p>
+                            </div>
                         </div>
                     </div>
 

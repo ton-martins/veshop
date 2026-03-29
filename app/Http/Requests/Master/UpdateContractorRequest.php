@@ -71,7 +71,7 @@ class UpdateContractorRequest extends FormRequest
                 'max:255',
                 Rule::unique('contractors', 'email')->ignore($contractorId),
             ],
-            'phone' => ['nullable', 'string', 'max:32', 'regex:/^\(\d{2}\)\s\d{5}-\d{4}$/'],
+            'phone' => ['nullable', 'string', 'max:32', 'regex:/^\(\d{2}\)\s\d{4,5}-\d{4}$/'],
             'cnpj' => [
                 'nullable',
                 'string',

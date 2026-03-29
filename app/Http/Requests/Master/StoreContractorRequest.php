@@ -61,7 +61,7 @@ class StoreContractorRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:180'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:contractors,email'],
-            'phone' => ['nullable', 'string', 'max:32', 'regex:/^\(\d{2}\)\s\d{5}-\d{4}$/'],
+            'phone' => ['nullable', 'string', 'max:32', 'regex:/^\(\d{2}\)\s\d{4,5}-\d{4}$/'],
             'cnpj' => ['nullable', 'string', 'size:14', 'regex:/^\d{14}$/', 'unique:contractors,cnpj'],
             'slug' => ['nullable', 'string', 'max:180', 'unique:contractors,slug'],
             'timezone' => ['required', 'timezone'],

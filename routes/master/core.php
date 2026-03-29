@@ -4,6 +4,7 @@ use App\Http\Controllers\Master\ContractorController;
 use App\Http\Controllers\Master\DashboardController;
 use App\Http\Controllers\Master\PaymentGatewayCatalogController;
 use App\Http\Controllers\Master\PlanController;
+use App\Http\Controllers\CnpjLookupController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -31,3 +32,6 @@ Route::put('payment-gateways/{gatewayId}', [PaymentGatewayCatalogController::cla
     ->name('payment-gateways.update');
 Route::delete('payment-gateways/{gatewayId}', [PaymentGatewayCatalogController::class, 'destroy'])
     ->name('payment-gateways.destroy');
+
+Route::get('/utils/cnpj/{cnpj}', CnpjLookupController::class)
+    ->name('utils.cnpj.lookup');

@@ -33,10 +33,22 @@ final class BrazilData
     public static function normalizePhone(mixed $value): string
     {
         $digits = preg_replace('/\D+/', '', (string) ($value ?? ''));
-        $digits = is_string($digits) ? substr($digits, 0, 11) : '';
+        $digits = is_string($digits) ? $digits : '';
 
-        if (strlen($digits) !== 11) {
+        while (strlen($digits) > 11 && str_starts_with($digits, '55')) {
+            $digits = substr($digits, 2);
+        }
+
+        if (strlen($digits) > 11) {
+            $digits = substr($digits, 0, 11);
+        }
+
+        if (! in_array(strlen($digits), [10, 11], true)) {
             return trim((string) ($value ?? ''));
+        }
+
+        if (strlen($digits) === 10) {
+            return sprintf('(%s) %s-%s', substr($digits, 0, 2), substr($digits, 2, 4), substr($digits, 6, 4));
         }
 
         return sprintf('(%s) %s-%s', substr($digits, 0, 2), substr($digits, 2, 5), substr($digits, 7, 4));
