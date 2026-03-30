@@ -31,6 +31,11 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    menuPlacement: {
+        type: String,
+        default: 'bottom',
+        validator: (value) => ['top', 'bottom'].includes(String(value ?? '').toLowerCase()),
+    },
 });
 
 const emit = defineEmits(['update:modelValue', 'change', 'blur']);
@@ -65,6 +70,21 @@ const selectedOption = computed(
 );
 
 const triggerLabel = computed(() => selectedOption.value?.label ?? props.placeholder);
+const panelPositionClass = computed(() =>
+    String(props.menuPlacement ?? 'bottom').toLowerCase() === 'top'
+        ? 'bottom-[calc(100%+0.35rem)]'
+        : 'top-[calc(100%+0.35rem)]',
+);
+const panelEnterFromClass = computed(() =>
+    String(props.menuPlacement ?? 'bottom').toLowerCase() === 'top'
+        ? 'opacity-0 translate-y-1'
+        : 'opacity-0 -translate-y-1',
+);
+const panelLeaveToClass = computed(() =>
+    String(props.menuPlacement ?? 'bottom').toLowerCase() === 'top'
+        ? 'opacity-0 translate-y-1'
+        : 'opacity-0 -translate-y-1',
+);
 
 const close = () => {
     open.value = false;
@@ -130,16 +150,16 @@ onUnmounted(() => {
 
         <Transition
             enter-active-class="transition ease-out duration-150"
-            enter-from-class="opacity-0 -translate-y-1"
+            :enter-from-class="panelEnterFromClass"
             enter-to-class="opacity-100 translate-y-0"
             leave-active-class="transition ease-in duration-100"
             leave-from-class="opacity-100 translate-y-0"
-            leave-to-class="opacity-0 -translate-y-1"
+            :leave-to-class="panelLeaveToClass"
         >
             <div
                 v-if="open"
-                class="absolute left-0 top-[calc(100%+0.35rem)] z-[80] max-h-64 w-full min-w-[12rem] overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-[0_22px_50px_-32px_rgba(15,23,42,0.95)]"
-                :class="panelClass"
+                class="absolute left-0 z-[80] max-h-64 w-full min-w-[12rem] overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-[0_22px_50px_-32px_rgba(15,23,42,0.95)]"
+                :class="[panelPositionClass, panelClass]"
                 role="listbox"
             >
                 <button

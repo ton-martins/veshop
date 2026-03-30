@@ -1990,6 +1990,7 @@ onBeforeUnmount(() => {
                                                 v-model="entry.rate.state"
                                                 :options="[{ value: '', label: shippingStatesLoading ? 'Carregando estados...' : 'Selecione a UF' }, ...shippingStateOptions]"
                                                 button-class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
+                                                menu-placement="top"
                                                 :disabled="shippingStatesLoading"
                                                 @change="onShippingCityRateStateChange(entry.index, $event)"
                                             />
@@ -2019,7 +2020,7 @@ onBeforeUnmount(() => {
 
                                                     <div
                                                         v-if="openCityPickerIndex === entry.index && entry.rate.state"
-                                                        class="absolute left-0 right-0 z-20 mt-1 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-[0_16px_30px_-20px_rgba(15,23,42,0.55)]"
+                                                        class="absolute bottom-full left-0 right-0 z-30 mb-1 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-[0_16px_30px_-20px_rgba(15,23,42,0.55)]"
                                                         @mousedown.prevent
                                                     >
                                                         <p v-if="isCityLoadingForRate(entry.rate)" class="px-2.5 py-2 text-[11px] font-medium text-slate-500">
