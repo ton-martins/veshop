@@ -172,7 +172,7 @@ class AdminServiceCatalogService
                 Rule::exists('service_categories', 'id')
                     ->where(static fn ($query) => $query->where('contractor_id', $contractor->id)),
             ],
-            'duration_minutes' => ['required', 'integer', 'min:5', 'max:1440'],
+            'duration_minutes' => ['required', 'integer', 'min:15', 'max:1440'],
             'base_price' => ['required', 'numeric', 'min:0'],
             'is_active' => ['required', 'boolean'],
         ]);

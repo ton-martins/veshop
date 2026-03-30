@@ -213,7 +213,7 @@
                 match: ['admin.services.schedule'],
                 icon: 'CalendarClock',
                 module: 'schedule',
-                params: { layout: 'month' },
+                params: { layout: 'day' },
             },
         ],
     },

@@ -117,9 +117,11 @@ class AdminClientService
         $data = $request->validated();
         $data['contractor_id'] = $contractor->id;
 
-        Client::query()->create($data);
+        $client = Client::query()->create($data);
 
-        return back()->with('status', 'Cliente criado com sucesso.');
+        return back()
+            ->with('status', 'Cliente criado com sucesso.')
+            ->with('new_client_id', $client->id);
     }
 
     /**

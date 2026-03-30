@@ -188,7 +188,7 @@ const resetTemporaryPreview = () => {
     temporaryImagePreview.value = '';
 };
 
-const MIN_DURATION_MINUTES = 5;
+const MIN_DURATION_MINUTES = 15;
 const MAX_DURATION_MINUTES = 1440;
 
 const normalizeDurationTotal = (value, { enforceMinimum = true } = {}) => {
@@ -577,6 +577,7 @@ const resolveInitials = (value) => {
                             </div>
                         </div>
                         <p class="mt-1 text-xs text-slate-500">Total: {{ formatDuration(form.duration_minutes) }}</p>
+                        <p class="mt-1 text-xs text-slate-500">Mínimo de 15 minutos.</p>
                         <p v-if="form.errors.duration_minutes" class="mt-1 text-xs text-rose-600">{{ form.errors.duration_minutes }}</p>
                     </div>
 

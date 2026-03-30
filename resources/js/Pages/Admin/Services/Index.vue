@@ -119,7 +119,7 @@ const todayAppointments = computed(() => (Array.isArray(props.todayAppointments)
                             Ordens de serviço
                             <ChevronRight class="h-4 w-4" />
                         </Link>
-                        <Link :href="route('admin.services.schedule', { layout: 'month' })" class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                        <Link :href="route('admin.services.schedule', { layout: 'day' })" class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
                             Agenda de serviços
                             <ChevronRight class="h-4 w-4" />
                         </Link>

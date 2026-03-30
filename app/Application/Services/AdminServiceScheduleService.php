@@ -20,6 +20,8 @@ class AdminServiceScheduleService
 {
     use ResolvesCurrentContractor;
 
+    private const MIN_APPOINTMENT_DURATION_MINUTES = 15;
+
     public function index(Request $request): Response
     {
         $contractor = $this->resolveCurrentContractor($request);
@@ -69,7 +71,7 @@ class AdminServiceScheduleService
             ->orderBy('starts_at')
             ->paginate(500)
             ->withQueryString()
-            ->through(static fn (ServiceAppointment $appointment): array => [
+            ->through(fn (ServiceAppointment $appointment): array => [
                 'id' => (int) $appointment->id,
                 'title' => (string) $appointment->title,
                 'service_order_id' => $appointment->service_order_id ? (int) $appointment->service_order_id : null,
@@ -131,10 +133,11 @@ class AdminServiceScheduleService
             ->where('contractor_id', $contractor->id)
             ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'name'])
+            ->get(['id', 'name', 'duration_minutes'])
             ->map(static fn (ServiceCatalog $service): array => [
                 'id' => (int) $service->id,
                 'name' => (string) $service->name,
+                'duration_minutes' => max(self::MIN_APPOINTMENT_DURATION_MINUTES, (int) ($service->duration_minutes ?? 60)),
             ])
             ->values()
             ->all();
@@ -223,8 +226,15 @@ class AdminServiceScheduleService
         bool $enforceFutureStart = false,
     ): array
     {
+        $request->merge([
+            'title' => trim((string) $request->input('title', '')),
+            'service_order_id' => $request->filled('service_order_id') ? $request->input('service_order_id') : null,
+            'client_id' => $request->filled('client_id') ? $request->input('client_id') : null,
+            'service_catalog_id' => $request->filled('service_catalog_id') ? $request->input('service_catalog_id') : null,
+        ]);
+
         $data = $request->validate([
-            'title' => ['required', 'string', 'max:180'],
+            'title' => ['nullable', 'string', 'max:180'],
             'service_order_id' => [
                 'nullable',
                 'integer',
@@ -236,7 +246,7 @@ class AdminServiceScheduleService
                 Rule::exists('clients', 'id')->where(static fn ($query) => $query->where('contractor_id', $contractor->id)),
             ],
             'service_catalog_id' => [
-                'required',
+                'nullable',
                 'integer',
                 Rule::exists('service_catalogs', 'id')->where(static fn ($query) => $query->where('contractor_id', $contractor->id)),
             ],
@@ -248,13 +258,35 @@ class AdminServiceScheduleService
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
 
+        $title = trim((string) ($data['title'] ?? ''));
+        $serviceCatalogId = $data['service_catalog_id'] ?? null;
+
+        if ($title === '' && $serviceCatalogId === null) {
+            throw ValidationException::withMessages([
+                'title' => 'Informe um título ou selecione um serviço.',
+                'service_catalog_id' => 'Selecione um serviço ou informe um título.',
+            ]);
+        }
+
+        if ($title === '' && $serviceCatalogId !== null) {
+            $serviceTitle = ServiceCatalog::query()
+                ->where('contractor_id', $contractor->id)
+                ->whereKey($serviceCatalogId)
+                ->value('name');
+
+            $title = trim((string) $serviceTitle);
+        }
+
+        $data['title'] = $title !== '' ? $title : 'Compromisso';
+
         $timezone = trim((string) ($contractor->timezone ?: config('app.timezone', 'America/Sao_Paulo')));
         if ($timezone === '') {
             $timezone = (string) config('app.timezone', 'America/Sao_Paulo');
         }
 
         $startsAt = Carbon::parse((string) $data['starts_at'], $timezone);
-        $now = now($timezone);
+        $endsAt = Carbon::parse((string) $data['ends_at'], $timezone);
+        $now = now($timezone)->startOfMinute();
 
         $currentStartsAt = $currentAppointment?->starts_at
             ? Carbon::parse((string) $currentAppointment->starts_at, $timezone)
@@ -264,6 +296,12 @@ class AdminServiceScheduleService
         if ($startsAt->lessThan($now) && ($enforceFutureStart || ! $isSameAsCurrent)) {
             throw ValidationException::withMessages([
                 'starts_at' => 'Informe uma data e hora atual ou futura para o agendamento.',
+            ]);
+        }
+
+        if ($endsAt->lessThan($startsAt->copy()->addMinutes(self::MIN_APPOINTMENT_DURATION_MINUTES))) {
+            throw ValidationException::withMessages([
+                'ends_at' => 'O horário de término deve ter pelo menos 15 min após o início.',
             ]);
         }
 
@@ -287,7 +325,7 @@ class AdminServiceScheduleService
 
     private function normalizeLayout(string $layout): string
     {
-        return in_array($layout, ['day', 'week', 'month'], true) ? $layout : 'month';
+        return in_array($layout, ['day', 'week', 'month'], true) ? $layout : 'day';
     }
 
     private function resolveReferenceDate(string $referenceDate, string $timezone): Carbon
@@ -358,8 +396,8 @@ class AdminServiceScheduleService
     {
         return match (strtolower(trim($status))) {
             ServiceAppointment::PAYMENT_STATUS_PAID => 'Pago',
-            ServiceAppointment::PAYMENT_STATUS_CANCELLED => 'Cancelado',
-            default => 'Pendente',
+            ServiceAppointment::PAYMENT_STATUS_CANCELLED => 'Pagamento cancelado',
+            default => 'Pagamento pendente',
         };
     }
 
@@ -372,4 +410,3 @@ class AdminServiceScheduleService
         };
     }
 }
-
