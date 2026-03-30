@@ -322,17 +322,24 @@ const hydrateShipping = () => {
     });
 
     shippingForm.shipping_city_rates = Array.isArray(props.shopShipping?.city_rates) && props.shopShipping.city_rates.length
-        ? props.shopShipping.city_rates.map((row) => ({
-            city: String(row?.city ?? ''),
-            city_search: '',
-            state: String(row?.state ?? '').toUpperCase(),
-            fee: row?.fee ?? '',
-            free_over: row?.free_over ?? '',
-            estimated_days: row?.estimated_days ?? '',
-            is_free: row?.is_free !== undefined ? Boolean(row.is_free) : false,
-            active: row?.active !== undefined ? Boolean(row.active) : true,
-            is_editing: false,
-        }))
+        ? props.shopShipping.city_rates.map((row) => {
+            const state = String(row?.state ?? '').toUpperCase();
+            const city = String(row?.city ?? '');
+            const hasLocation = normalizeStateCode(state) !== '' && city.trim() !== '';
+
+            return {
+                city,
+                city_search: '',
+                state,
+                fee: row?.fee ?? '',
+                free_over: row?.free_over ?? '',
+                estimated_days: row?.estimated_days ?? '',
+                is_free: row?.is_free !== undefined ? Boolean(row.is_free) : false,
+                active: row?.active !== undefined ? Boolean(row.active) : true,
+                // Linhas incompletas devem abrir editáveis para permitir concluir cadastro.
+                is_editing: !hasLocation,
+            };
+        })
         : [createEmptyShippingCityRate()];
     syncShippingStateRates();
 };
@@ -1019,6 +1026,7 @@ const addShippingCityRate = () => {
         ...(Array.isArray(shippingForm.shipping_city_rates) ? shippingForm.shipping_city_rates : []),
         createEmptyShippingCityRate(),
     ];
+    clearShippingCityFilters();
 };
 
 const removeShippingCityRate = (index) => {
@@ -1102,7 +1110,14 @@ watch(
 
         rows.forEach((row) => {
             row.state = normalizeStateCode(row?.state ?? '');
-            row.is_editing = row?.is_editing === true;
+            const hasLocation = row.state !== '' && String(row?.city ?? '').trim() !== '';
+            if (row?.is_editing === true) {
+                row.is_editing = true;
+            } else if (row?.is_editing === false) {
+                row.is_editing = false;
+            } else {
+                row.is_editing = !hasLocation;
+            }
             if (!row.city_search && row.city) {
                 row.city_search = row.city;
             }
