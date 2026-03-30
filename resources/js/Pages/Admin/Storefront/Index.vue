@@ -103,7 +103,6 @@ const createEmptyShippingCityRate = () => ({
     estimated_days: '',
     is_free: false,
     active: true,
-    is_editing: true,
 });
 
 const createEmptyShippingStateRate = (state = '') => ({
@@ -323,21 +322,15 @@ const hydrateShipping = () => {
 
     shippingForm.shipping_city_rates = Array.isArray(props.shopShipping?.city_rates) && props.shopShipping.city_rates.length
         ? props.shopShipping.city_rates.map((row) => {
-            const state = String(row?.state ?? '').toUpperCase();
-            const city = String(row?.city ?? '');
-            const hasLocation = normalizeStateCode(state) !== '' && city.trim() !== '';
-
             return {
-                city,
+                city: String(row?.city ?? ''),
                 city_search: '',
-                state,
+                state: String(row?.state ?? '').toUpperCase(),
                 fee: row?.fee ?? '',
                 free_over: row?.free_over ?? '',
                 estimated_days: row?.estimated_days ?? '',
                 is_free: row?.is_free !== undefined ? Boolean(row.is_free) : false,
                 active: row?.active !== undefined ? Boolean(row.active) : true,
-                // Linhas incompletas devem abrir editáveis para permitir concluir cadastro.
-                is_editing: !hasLocation,
             };
         })
         : [createEmptyShippingCityRate()];
@@ -1037,26 +1030,6 @@ const removeShippingCityRate = (index) => {
     shippingForm.shipping_city_rates = next.length ? next : [createEmptyShippingCityRate()];
 };
 
-const toggleShippingCityRateEdit = async (index) => {
-    const current = Array.isArray(shippingForm.shipping_city_rates)
-        ? shippingForm.shipping_city_rates[index]
-        : null;
-    if (!current) return;
-
-    const nextEditing = current.is_editing !== true;
-    current.is_editing = nextEditing;
-
-    if (!nextEditing) {
-        openCityPickerIndex.value = null;
-        return;
-    }
-
-    current.city_search = String(current.city ?? current.city_search ?? '').trim();
-    if (current.state) {
-        await loadCitiesByState(current.state);
-    }
-};
-
 function syncShippingStateRates() {
     const currentRows = Array.isArray(shippingForm.shipping_state_rates)
         ? shippingForm.shipping_state_rates
@@ -1110,14 +1083,6 @@ watch(
 
         rows.forEach((row) => {
             row.state = normalizeStateCode(row?.state ?? '');
-            const hasLocation = row.state !== '' && String(row?.city ?? '').trim() !== '';
-            if (row?.is_editing === true) {
-                row.is_editing = true;
-            } else if (row?.is_editing === false) {
-                row.is_editing = false;
-            } else {
-                row.is_editing = !hasLocation;
-            }
             if (!row.city_search && row.city) {
                 row.city_search = row.city;
             }
@@ -2022,19 +1987,15 @@ onBeforeUnmount(() => {
                                     >
                                         <td class="px-3 py-2">
                                             <UiSelect
-                                                v-if="entry.rate.is_editing"
                                                 v-model="entry.rate.state"
                                                 :options="[{ value: '', label: shippingStatesLoading ? 'Carregando estados...' : 'Selecione a UF' }, ...shippingStateOptions]"
                                                 button-class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
                                                 :disabled="shippingStatesLoading"
                                                 @change="onShippingCityRateStateChange(entry.index, $event)"
                                             />
-                                            <p v-else class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-semibold text-slate-700">
-                                                {{ entry.rate.state || '-' }}
-                                            </p>
                                         </td>
                                         <td class="px-3 py-2">
-                                            <div v-if="entry.rate.is_editing" class="space-y-1.5">
+                                            <div class="space-y-1.5">
                                                 <div class="relative">
                                                     <input
                                                         v-model="entry.rate.city_search"
@@ -2087,16 +2048,13 @@ onBeforeUnmount(() => {
                                                     {{ cityErrorForRate(entry.rate) }}
                                                 </p>
                                             </div>
-                                            <p v-else class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-semibold text-slate-700">
-                                                {{ entry.rate.city || '-' }}
-                                            </p>
                                         </td>
                                         <td class="px-3 py-2">
                                             <BrlMoneyInput
                                                 v-model="entry.rate.fee"
                                                 class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
                                                 placeholder="Taxa (R$)"
-                                                :disabled="entry.rate.is_free || !entry.rate.is_editing"
+                                                :disabled="entry.rate.is_free"
                                             />
                                         </td>
                                         <td class="px-3 py-2">
@@ -2104,7 +2062,7 @@ onBeforeUnmount(() => {
                                                 v-model="entry.rate.free_over"
                                                 class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
                                                 placeholder="Grátis acima"
-                                                :disabled="entry.rate.is_free || !entry.rate.is_editing"
+                                                :disabled="entry.rate.is_free"
                                             />
                                         </td>
                                         <td class="px-3 py-2">
@@ -2115,23 +2073,15 @@ onBeforeUnmount(() => {
                                                 max="60"
                                                 class="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
                                                 placeholder="Dias"
-                                                :disabled="!entry.rate.is_editing"
                                             >
                                         </td>
                                         <td class="px-3 py-2 text-center">
-                                            <input v-model="entry.rate.is_free" type="checkbox" class="rounded border-slate-300" :disabled="!entry.rate.is_editing">
+                                            <input v-model="entry.rate.is_free" type="checkbox" class="rounded border-slate-300">
                                         </td>
                                         <td class="px-3 py-2 text-center">
-                                            <input v-model="entry.rate.active" type="checkbox" class="rounded border-slate-300" :disabled="!entry.rate.is_editing">
+                                            <input v-model="entry.rate.active" type="checkbox" class="rounded border-slate-300">
                                         </td>
                                         <td class="px-3 py-2 text-right">
-                                            <button
-                                                type="button"
-                                                class="mr-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                                                @click="toggleShippingCityRateEdit(entry.index)"
-                                            >
-                                                {{ entry.rate.is_editing ? 'Concluir' : 'Editar' }}
-                                            </button>
                                             <button
                                                 type="button"
                                                 class="rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-rose-700 hover:bg-rose-50"
