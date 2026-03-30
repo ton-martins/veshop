@@ -364,6 +364,24 @@ const normalizeStateOptionRows = (rows) => {
         .filter(Boolean);
 };
 
+const defaultShippingStateOptions = BRAZIL_STATES.map((state) => ({
+    value: state.code,
+    label: `${state.code} - ${state.name}`,
+}));
+
+const mergeShippingStateOptions = (rows) => {
+    const map = new Map(defaultShippingStateOptions.map((option) => [option.value, option]));
+    normalizeStateOptionRows(rows).forEach((option) => {
+        if (!option?.value) return;
+        map.set(option.value, {
+            value: option.value,
+            label: option.label || map.get(option.value)?.label || option.value,
+        });
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+};
+
 const locationRoutes = computed(() => ({
     states: String(props.addressDirectory?.routes?.states ?? '').trim(),
     cities: String(props.addressDirectory?.routes?.cities ?? '').trim(),
@@ -371,21 +389,11 @@ const locationRoutes = computed(() => ({
 
 const shippingStatesLoading = ref(false);
 const shippingStatesError = ref('');
-const shippingStateOptions = ref(
-    normalizeStateOptionRows(props.addressDirectory?.states).length
-        ? normalizeStateOptionRows(props.addressDirectory?.states)
-        : BRAZIL_STATES.map((state) => ({
-            value: state.code,
-            label: `${state.code} - ${state.name}`,
-        })),
-);
+const shippingStateOptions = ref(mergeShippingStateOptions(props.addressDirectory?.states));
 watch(
     () => props.addressDirectory?.states,
     (rows) => {
-        const normalized = normalizeStateOptionRows(rows);
-        if (normalized.length > 0) {
-            shippingStateOptions.value = normalized;
-        }
+        shippingStateOptions.value = mergeShippingStateOptions(rows);
     },
     { deep: true },
 );
@@ -669,11 +677,11 @@ const loadShippingStatesFromDirectory = async () => {
 
         const payload = await response.json();
         const sourceRows = Array.isArray(payload?.states) ? payload.states : payload;
-        const options = normalizeStateOptionRows(sourceRows)
-            .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+        const normalized = normalizeStateOptionRows(sourceRows);
+        shippingStateOptions.value = mergeShippingStateOptions(sourceRows);
 
-        if (options.length > 0) {
-            shippingStateOptions.value = options;
+        if (normalized.length > 0) {
+            shippingStatesError.value = '';
         } else {
             shippingStatesError.value = 'Não foi possível carregar a lista de estados.';
         }
@@ -1857,7 +1865,7 @@ onBeforeUnmount(() => {
                     </div>
 
                     <div class="mt-2 rounded-xl border border-slate-200 bg-white">
-                        <div class="overflow-x-auto">
+                        <div class="overflow-visible">
                             <table class="min-w-[860px] w-full divide-y divide-slate-200 text-sm">
                                 <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     <tr>
@@ -1965,7 +1973,7 @@ onBeforeUnmount(() => {
                     </div>
 
                     <div class="mt-2 rounded-xl border border-slate-200 bg-white">
-                        <div class="overflow-x-auto">
+                        <div class="overflow-visible">
                             <table class="min-w-[1180px] w-full divide-y divide-slate-200 text-sm">
                                 <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     <tr>
@@ -1990,6 +1998,8 @@ onBeforeUnmount(() => {
                                                 v-model="entry.rate.state"
                                                 :options="[{ value: '', label: shippingStatesLoading ? 'Carregando estados...' : 'Selecione a UF' }, ...shippingStateOptions]"
                                                 button-class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
+                                                use-modal
+                                                modal-title="Selecione a UF"
                                                 menu-placement="top"
                                                 :disabled="shippingStatesLoading"
                                                 @change="onShippingCityRateStateChange(entry.index, $event)"
