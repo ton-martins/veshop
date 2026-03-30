@@ -4,6 +4,7 @@ namespace App\Application\Branding\Services;
 
 use App\Http\Controllers\Concerns\ResolvesCurrentContractor;
 use App\Models\Contractor;
+use App\Support\BrazilData;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -32,6 +33,7 @@ class AdminContractorBrandingService
                 'id' => $contractor->id,
                 'name' => $contractor->name,
                 'email' => $contractor->email,
+                'phone' => $contractor->phone,
                 'timezone' => $contractor->timezone,
                 'brand_name' => $contractor->brand_name,
                 'brand_primary_color' => $contractor->brand_primary_color,
@@ -85,6 +87,11 @@ class AdminContractorBrandingService
         $contractor = $this->resolveCurrentContractor($request);
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
 
+        $phone = BrazilData::normalizePhone($request->input('phone'));
+        $request->merge([
+            'phone' => $phone !== '' ? $phone : null,
+        ]);
+
         $validated = $request->validate([
             'brand_name' => ['required', 'string', 'max:255'],
             'brand_primary_color' => ['required', 'string', 'regex:/^#([A-Fa-f0-9]{3}|[A-Fa-f0-9]{6})$/'],
@@ -95,6 +102,7 @@ class AdminContractorBrandingService
                 'max:255',
                 Rule::unique('contractors', 'email')->ignore($contractor->id),
             ],
+            'phone' => ['nullable', 'string', 'max:32', 'regex:/^\(\d{2}\)\s\d{4,5}-\d{4}$/'],
             'timezone' => ['required', 'string', Rule::in(DateTimeZone::listIdentifiers(DateTimeZone::ALL))],
             'brand_logo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'brand_avatar' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:1024'],
@@ -135,6 +143,7 @@ class AdminContractorBrandingService
             'brand_name' => $validated['brand_name'],
             'brand_primary_color' => $validated['brand_primary_color'],
             'email' => $validated['email'],
+            'phone' => $validated['phone'] ?? null,
             'timezone' => $validated['timezone'],
             'settings' => $settings,
         ]);

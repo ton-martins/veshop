@@ -6,7 +6,7 @@ import TableViewToggle from '@/Components/App/TableViewToggle.vue';
 import { BRAZIL_STATES, normalizeStateCode } from '@/utils/br';
 import { Head, useForm } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { ChevronDown, Clock3, Plus, Search, Store, Truck } from 'lucide-vue-next';
+import { Clock3, Plus, Search, Store, Truck } from 'lucide-vue-next';
 
 const props = defineProps({
     initialTab: { type: String, default: 'vitrine' },
@@ -571,32 +571,36 @@ const citySearchOptionsForRate = (rate) => {
     const allCities = Array.isArray(shippingCitiesByState.value?.[state])
         ? shippingCitiesByState.value[state]
         : [];
-
-    const query = normalizeCitySearchKey(rate?.city_search ?? '');
-    const filtered = query === ''
-        ? allCities
-        : allCities.filter((city) => normalizeCitySearchKey(city).includes(query));
-
-    const ranked = query === ''
-        ? filtered
-        : [...filtered].sort((a, b) => {
-            const aKey = normalizeCitySearchKey(a);
-            const bKey = normalizeCitySearchKey(b);
-
-            const aRank = aKey === query ? 0 : (aKey.startsWith(query) ? 1 : 2);
-            const bRank = bKey === query ? 0 : (bKey.startsWith(query) ? 1 : 2);
-            if (aRank !== bRank) return aRank - bRank;
-            return a.localeCompare(b, 'pt-BR');
-        });
-
-    const limited = query === '' ? ranked.slice(0, 120) : ranked.slice(0, 300);
     const selectedCity = String(rate?.city ?? '').trim();
 
-    const withSelected = selectedCity !== '' && !limited.includes(selectedCity)
-        ? [selectedCity, ...limited]
-        : limited;
+    const withSelected = selectedCity !== '' && !allCities.includes(selectedCity)
+        ? [selectedCity, ...allCities]
+        : allCities;
 
     return withSelected.map((city) => ({ value: city, label: city }));
+};
+
+const citySelectOptionsForRate = (rate) => {
+    const state = normalizeStateCode(rate?.state ?? '');
+    if (!state) {
+        return [{ value: '', label: 'Selecione a UF primeiro', disabled: true }];
+    }
+
+    if (isCityLoadingForRate(rate)) {
+        return [{ value: '', label: 'Carregando cidades...', disabled: true }];
+    }
+
+    const options = citySearchOptionsForRate(rate);
+    if (!options.length) {
+        const errorMessage = cityErrorForRate(rate);
+        return [{
+            value: '',
+            label: errorMessage !== '' ? errorMessage : 'Nenhuma cidade disponível para esta UF.',
+            disabled: true,
+        }];
+    }
+
+    return [{ value: '', label: 'Selecione a cidade' }, ...options];
 };
 
 const isCityLoadingForRate = (rate) => {
@@ -609,52 +613,6 @@ const cityErrorForRate = (rate) => {
     const state = normalizeStateCode(rate?.state ?? '');
     if (!state) return '';
     return String(shippingCitiesErrorByState.value?.[state] ?? '');
-};
-
-const openCityPickerIndex = ref(null);
-let closeCityPickerTimeout = null;
-
-const clearCloseCityPickerTimeout = () => {
-    if (closeCityPickerTimeout === null || typeof window === 'undefined') return;
-    window.clearTimeout(closeCityPickerTimeout);
-    closeCityPickerTimeout = null;
-};
-
-const scheduleCloseCityPicker = () => {
-    clearCloseCityPickerTimeout();
-    if (typeof window === 'undefined') {
-        openCityPickerIndex.value = null;
-        return;
-    }
-
-    closeCityPickerTimeout = window.setTimeout(() => {
-        openCityPickerIndex.value = null;
-        closeCityPickerTimeout = null;
-    }, 120);
-};
-
-const openCityPicker = async (index, rate) => {
-    clearCloseCityPickerTimeout();
-    const state = normalizeStateCode(rate?.state ?? '');
-    if (!state) return;
-
-    await loadCitiesByState(state);
-    openCityPickerIndex.value = index;
-};
-
-const toggleCityPicker = async (index, rate) => {
-    clearCloseCityPickerTimeout();
-    if (openCityPickerIndex.value === index) {
-        openCityPickerIndex.value = null;
-        return;
-    }
-
-    await openCityPicker(index, rate);
-};
-
-const selectCityFromPicker = (index, city) => {
-    onShippingCityRateSelectCity(index, city);
-    openCityPickerIndex.value = null;
 };
 
 const loadShippingStatesFromDirectory = async () => {
@@ -770,16 +728,6 @@ const loadCitiesByState = async (stateCode) => {
     return await requestPromise;
 };
 
-const resolveCityFromQuery = (cities, queryRaw) => {
-    if (!Array.isArray(cities) || cities.length === 0) return null;
-
-    const query = normalizeCitySearchKey(queryRaw);
-    if (query === '') return null;
-
-    const exact = cities.find((city) => normalizeCitySearchKey(city) === query);
-    return exact ?? null;
-};
-
 const onShippingCityRateStateChange = async (index, value) => {
     const nextState = normalizeStateCode(value);
     const current = Array.isArray(shippingForm.shipping_city_rates)
@@ -790,7 +738,6 @@ const onShippingCityRateStateChange = async (index, value) => {
     current.state = nextState;
     current.city = '';
     current.city_search = '';
-    openCityPickerIndex.value = null;
 
     if (nextState) {
         await loadCitiesByState(nextState);
@@ -813,35 +760,11 @@ const onShippingCityRateSearchInput = async (index, value) => {
         : null;
     if (!current) return;
 
-    const queryRaw = String(value ?? '');
-    current.city_search = queryRaw;
-    openCityPickerIndex.value = index;
+    current.city_search = String(value ?? '').trim();
 
     const state = normalizeStateCode(current.state ?? '');
-    if (!state) {
-        current.city = '';
-        return;
-    }
-
-    const cities = await loadCitiesByState(state);
-    if (!Array.isArray(cities) || cities.length === 0) {
-        current.city = '';
-        return;
-    }
-
-    const query = normalizeCitySearchKey(queryRaw);
-    if (query === '') {
-        current.city = '';
-        return;
-    }
-
-    const resolvedCity = resolveCityFromQuery(cities, queryRaw);
-    if (resolvedCity) {
-        current.city = resolvedCity;
-        return;
-    }
-
-    current.city = '';
+    if (!state) return;
+    await loadCitiesByState(state);
 };
 
 if (props.supportsShipping) {
@@ -1268,7 +1191,6 @@ const submitShipping = () => {
 };
 
 onBeforeUnmount(() => {
-    clearCloseCityPickerTimeout();
     storefrontForm.banners.forEach((banner) => revokePreview(banner?.preview_url));
 });
 </script>
@@ -1825,7 +1747,7 @@ onBeforeUnmount(() => {
                     <TableViewToggle />
                 </div>
 
-                <section v-if="shippingCityTableEnabled" class="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                <section v-if="shippingCityTableEnabled" class="min-h-[36rem] rounded-xl border border-slate-200 bg-slate-50 p-2.5 pb-24">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <div>
                             <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Todo o estado</p>
@@ -1864,7 +1786,7 @@ onBeforeUnmount(() => {
                         <span>Ativos: {{ shippingStateStats.activeCount }}</span>
                     </div>
 
-                    <div class="mt-2 rounded-xl border border-slate-200 bg-white">
+                    <div class="relative mt-2 rounded-xl border border-slate-200 bg-white">
                         <div class="overflow-visible">
                             <table class="min-w-[860px] w-full divide-y divide-slate-200 text-sm">
                                 <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1915,7 +1837,7 @@ onBeforeUnmount(() => {
                     </div>
                 </section>
 
-                <section v-if="shippingCityTableEnabled" class="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                <section v-if="shippingCityTableEnabled" class="min-h-[31rem] rounded-xl border border-slate-200 bg-slate-50 p-2.5">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <div>
                             <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Tabela de frete por cidade</p>
@@ -1972,7 +1894,7 @@ onBeforeUnmount(() => {
                         <span>Ativas: {{ shippingCityStats.activeCount }} • Grátis: {{ shippingCityStats.freeCount }}</span>
                     </div>
 
-                    <div class="mt-2 rounded-xl border border-slate-200 bg-white">
+                    <div class="mt-2 min-h-[19rem] rounded-xl border border-slate-200 bg-white">
                         <div class="overflow-visible">
                             <table class="min-w-[1180px] w-full divide-y divide-slate-200 text-sm">
                                 <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1997,68 +1919,26 @@ onBeforeUnmount(() => {
                                             <UiSelect
                                                 v-model="entry.rate.state"
                                                 :options="[{ value: '', label: shippingStatesLoading ? 'Carregando estados...' : 'Selecione a UF' }, ...shippingStateOptions]"
-                                                button-class="rounded-lg border border-slate-200 px-2.5 py-2 text-xs"
-                                                use-modal
-                                                modal-title="Selecione a UF"
-                                                menu-placement="top"
+                                                button-class="h-9 rounded-lg border border-slate-200 px-2.5 text-xs"
+                                                menu-placement="bottom"
+                                                teleport-panel
                                                 :disabled="shippingStatesLoading"
                                                 @change="onShippingCityRateStateChange(entry.index, $event)"
                                             />
                                         </td>
                                         <td class="px-3 py-2">
-                                            <div class="space-y-1.5">
-                                                <div class="relative">
-                                                    <input
-                                                        v-model="entry.rate.city_search"
-                                                        type="text"
-                                                        class="w-full rounded-lg border border-slate-200 px-2.5 py-2 pr-9 text-xs"
-                                                        placeholder="Digite para buscar cidade"
-                                                        :disabled="!entry.rate.state"
-                                                        @focus="openCityPicker(entry.index, entry.rate)"
-                                                        @blur="scheduleCloseCityPicker()"
-                                                        @input="onShippingCityRateSearchInput(entry.index, $event?.target?.value)"
-                                                    >
-                                                    <button
-                                                        type="button"
-                                                        class="absolute inset-y-0 right-1 my-auto inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                                        :disabled="!entry.rate.state || isCityLoadingForRate(entry.rate)"
-                                                        @mousedown.prevent
-                                                        @click="toggleCityPicker(entry.index, entry.rate)"
-                                                    >
-                                                        <ChevronDown class="h-3.5 w-3.5" />
-                                                    </button>
-
-                                                    <div
-                                                        v-if="openCityPickerIndex === entry.index && entry.rate.state"
-                                                        class="absolute bottom-full left-0 right-0 z-30 mb-1 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-[0_16px_30px_-20px_rgba(15,23,42,0.55)]"
-                                                        @mousedown.prevent
-                                                    >
-                                                        <p v-if="isCityLoadingForRate(entry.rate)" class="px-2.5 py-2 text-[11px] font-medium text-slate-500">
-                                                            Carregando cidades...
-                                                        </p>
-                                                        <template v-else>
-                                                            <button
-                                                                v-for="option in citySearchOptionsForRate(entry.rate)"
-                                                                :key="`city-option-${entry.index}-${option.value}`"
-                                                                type="button"
-                                                                class="flex w-full items-center justify-start rounded-lg px-2.5 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
-                                                                @click="selectCityFromPicker(entry.index, option.value)"
-                                                            >
-                                                                {{ option.label }}
-                                                            </button>
-                                                            <p
-                                                                v-if="!citySearchOptionsForRate(entry.rate).length"
-                                                                class="px-2.5 py-2 text-[11px] font-medium text-slate-500"
-                                                            >
-                                                                Nenhuma cidade encontrada.
-                                                            </p>
-                                                        </template>
-                                                    </div>
-                                                </div>
-                                                <p v-if="cityErrorForRate(entry.rate)" class="text-[11px] font-semibold text-amber-700">
-                                                    {{ cityErrorForRate(entry.rate) }}
-                                                </p>
-                                            </div>
+                                            <UiSelect
+                                                v-model="entry.rate.city"
+                                                :options="citySelectOptionsForRate(entry.rate)"
+                                                placeholder="Digite ou selecione a cidade"
+                                                button-class="h-9 rounded-lg border border-slate-200 px-2.5 text-xs"
+                                                searchable
+                                                menu-placement="bottom"
+                                                teleport-panel
+                                                :disabled="!entry.rate.state"
+                                                @search-change="onShippingCityRateSearchInput(entry.index, $event)"
+                                                @change="onShippingCityRateSelectCity(entry.index, $event)"
+                                            />
                                         </td>
                                         <td class="px-3 py-2">
                                             <BrlMoneyInput

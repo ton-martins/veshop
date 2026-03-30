@@ -25,6 +25,7 @@ const form = useForm({
     brand_name: '',
     brand_primary_color: '#557D97',
     email: '',
+    phone: '',
     timezone: 'America/Sao_Paulo',
     brand_logo: null,
     brand_avatar: null,
@@ -61,6 +62,7 @@ const hydrate = () => {
     form.brand_name = contractor.brand_name ?? contractor.name ?? props.defaults?.name ?? '';
     form.brand_primary_color = contractor.brand_primary_color ?? props.defaults?.primary_color ?? '#557D97';
     form.email = contractor.email ?? '';
+    form.phone = contractor.phone ?? '';
     form.timezone = contractor.timezone ?? props.timezones?.[0]?.value ?? 'America/Sao_Paulo';
     form.require_email_verification = props.security?.require_email_verification ?? true;
     form.email_notifications_enabled = props.security?.email_notifications_enabled ?? true;
@@ -251,13 +253,27 @@ const submitSupportConfirmation = () => {
 
                         <div class="space-y-2">
                             <label class="text-xs font-medium uppercase tracking-wide text-slate-500">Contato principal</label>
-                            <input
-                                v-model="form.email"
-                                type="email"
-                                class="w-full rounded-md border border-emerald-100 px-3 py-2 text-sm"
-                                placeholder="contato@empresa.com"
-                            >
-                            <p v-if="form.errors.email" class="text-[11px] text-rose-600">{{ form.errors.email }}</p>
+                            <div class="grid gap-3 md:grid-cols-2">
+                                <div class="space-y-1.5">
+                                    <input
+                                        v-model="form.email"
+                                        type="email"
+                                        class="w-full rounded-md border border-emerald-100 px-3 py-2 text-sm"
+                                        placeholder="contato@empresa.com"
+                                    >
+                                    <p v-if="form.errors.email" class="text-[11px] text-rose-600">{{ form.errors.email }}</p>
+                                </div>
+                                <div class="space-y-1.5">
+                                    <input
+                                        v-model="form.phone"
+                                        type="text"
+                                        inputmode="tel"
+                                        class="w-full rounded-md border border-emerald-100 px-3 py-2 text-sm"
+                                        placeholder="(11) 99999-9999"
+                                    >
+                                    <p v-if="form.errors.phone" class="text-[11px] text-rose-600">{{ form.errors.phone }}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
