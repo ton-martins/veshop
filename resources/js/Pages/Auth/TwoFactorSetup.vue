@@ -89,6 +89,12 @@ const submit = () => {
     });
 };
 
+const onCodeInput = (event) => {
+    form.code = String(event?.target?.value ?? form.code)
+        .replace(/\D+/g, '')
+        .slice(0, 6);
+};
+
 const disable = () => {
     router.delete(route('two-factor.disable'), {
         preserveScroll: true,
@@ -189,7 +195,7 @@ watch(
                                 <span class="veshop-twofa-brand-icon">
                                     <img
                                         :src="systemIconUrl"
-                                        :alt="`${brandName} icone`"
+                                        :alt="`${brandName} ícone`"
                                         class="veshop-twofa-brand-icon-img"
                                     />
                                 </span>
@@ -324,6 +330,7 @@ watch(
                                         maxlength="6"
                                         class="form-control veshop-login-input veshop-twofa-code-input mt-2"
                                         placeholder="000000"
+                                        @input="onCodeInput"
                                     />
                                     <InputError :message="form.errors.code" class="mt-1" />
                                     <InputError :message="form.errors.general" class="mt-1" />

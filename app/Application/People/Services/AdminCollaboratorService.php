@@ -25,21 +25,44 @@ class AdminCollaboratorService
         abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
 
         $isServices = $contractor->niche() === Contractor::NICHE_SERVICES;
+        $search = trim((string) $request->string('search')->toString());
+        $status = strtolower(trim((string) $request->string('status')->toString()));
 
-        $collaborators = Collaborator::query()
+        $query = Collaborator::query()
             ->where('contractor_id', $contractor->id)
             ->with([
                 'serviceCategories:id,name',
-                'serviceAppointments' => static fn ($query) => $query
+                'serviceAppointments' => static fn ($innerQuery) => $innerQuery
                     ->where('starts_at', '>=', now()->subDay())
                     ->orderBy('starts_at')
                     ->limit(3)
                     ->select(['id', 'collaborator_id', 'starts_at', 'ends_at', 'status', 'title']),
-            ])
+            ]);
+
+        if ($search !== '') {
+            $like = '%'.$search.'%';
+            $query->where(static function ($innerQuery) use ($like): void {
+                $innerQuery
+                    ->where('name', 'like', $like)
+                    ->orWhere('email', 'like', $like)
+                    ->orWhere('phone', 'like', $like)
+                    ->orWhere('job_title', 'like', $like);
+            });
+        }
+
+        if (in_array($status, ['active', 'inactive'], true)) {
+            $query->where('is_active', $status === 'active');
+        }
+
+        $statsBaseQuery = Collaborator::query()
+            ->where('contractor_id', $contractor->id);
+
+        $collaborators = $query
             ->orderByDesc('is_active')
             ->orderBy('name')
-            ->get()
-            ->map(static fn (Collaborator $collaborator): array => [
+            ->paginate(10)
+            ->withQueryString()
+            ->through(static fn (Collaborator $collaborator): array => [
                 'id' => (int) $collaborator->id,
                 'name' => (string) $collaborator->name,
                 'email' => trim((string) ($collaborator->email ?? '')),
@@ -48,6 +71,8 @@ class AdminCollaboratorService
                 'photo_url' => trim((string) ($collaborator->photo_url ?? '')),
                 'notes' => trim((string) ($collaborator->notes ?? '')),
                 'is_active' => (bool) $collaborator->is_active,
+                'status_label' => (bool) $collaborator->is_active ? 'Ativo' : 'Inativo',
+                'created_at' => optional($collaborator->created_at)?->format('d/m/Y H:i'),
                 'service_category_ids' => $collaborator->serviceCategories
                     ->pluck('id')
                     ->map(static fn (mixed $id): int => (int) $id)
@@ -69,9 +94,7 @@ class AdminCollaboratorService
                     ])
                     ->values()
                     ->all(),
-            ])
-            ->values()
-            ->all();
+            ]);
 
         $serviceCategories = $isServices
             ? ServiceCategory::query()
@@ -92,11 +115,20 @@ class AdminCollaboratorService
             'niche' => $contractor->niche(),
             'collaborators' => $collaborators,
             'serviceCategories' => $serviceCategories,
+            'filters' => [
+                'search' => $search,
+                'status' => $status,
+            ],
             'stats' => [
-                'total' => count($collaborators),
-                'active' => collect($collaborators)->where('is_active', true)->count(),
-                'with_photo' => collect($collaborators)->filter(static fn (array $row): bool => trim((string) ($row['photo_url'] ?? '')) !== '')->count(),
-                'with_categories' => collect($collaborators)->filter(static fn (array $row): bool => count($row['service_category_ids'] ?? []) > 0)->count(),
+                'total' => (clone $statsBaseQuery)->count(),
+                'active' => (clone $statsBaseQuery)->where('is_active', true)->count(),
+                'with_photo' => (clone $statsBaseQuery)
+                    ->whereNotNull('photo_url')
+                    ->where('photo_url', '!=', '')
+                    ->count(),
+                'with_categories' => $isServices
+                    ? (clone $statsBaseQuery)->whereHas('serviceCategories')->count()
+                    : 0,
             ],
         ]);
     }
@@ -116,7 +148,7 @@ class AdminCollaboratorService
     public function update(Request $request, Collaborator $collaborator): RedirectResponse
     {
         $contractor = $this->resolveCurrentContractor($request);
-        abort_unless($contractor, 404, 'Contratante ativo nao encontrado.');
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
 
         $collaborator = $this->resolveOwnedCollaborator($contractor, $collaborator);
         $data = $this->validatePayload($request, $contractor, $collaborator);

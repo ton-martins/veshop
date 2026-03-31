@@ -8,6 +8,12 @@ const form = useForm({
     code: '',
 });
 
+const onCodeInput = (event) => {
+    form.code = String(event?.target?.value ?? form.code)
+        .replace(/\D+/g, '')
+        .slice(0, 6);
+};
+
 const submit = () => {
     form.post(route('two-factor.verify'), {
         onFinish: () => form.reset('code'),
@@ -33,12 +39,14 @@ const submit = () => {
                     v-model="form.code"
                     type="text"
                     inputmode="numeric"
-                    maxlength="8"
+                    maxlength="6"
                     autocomplete="one-time-code"
+                    placeholder="000000"
                     required
                     autofocus
                     class="form-control veshop-login-input text-center"
                     style="letter-spacing: 0.34em; font-size: 1.02rem"
+                    @input="onCodeInput"
                 />
                 <InputError :message="form.errors.code" class="mt-1" />
             </div>

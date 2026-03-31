@@ -45,7 +45,7 @@ class TwoFactorSetupController extends Controller
     public function confirm(Request $request): RedirectResponse
     {
         $request->validate([
-            'code' => ['required', 'string', 'max:32'],
+            'code' => ['required', 'digits:6'],
         ]);
 
         $user = $request->user();
