@@ -628,6 +628,7 @@ const normalizedCatalog = computed(() => {
                 return {
                     id: toInt(service?.id, 0),
                     categoryId: toInt(service?.service_category_id, 0),
+                    rootCategoryId: toInt(service?.service_category_id, 0),
                     title: String(service?.name || 'Serviço'),
                     subtitle: String(service?.category_name || service?.code || 'Atendimento'),
                     description: String(service?.description || 'Sem descrição informada.'),
@@ -649,6 +650,8 @@ const normalizedCatalog = computed(() => {
     return safe
         .map((product) => {
             const id = toInt(product?.id, 0);
+            const categoryId = toInt(product?.category_id, 0);
+            const rootCategoryId = toInt(product?.category_parent_id, categoryId);
             const imageList = Array.isArray(product?.images)
                 ? product.images
                     .map((row) => String(row?.image_url || '').trim())
@@ -658,7 +661,8 @@ const normalizedCatalog = computed(() => {
 
             return {
                 id,
-                categoryId: toInt(product?.category_id, toInt(product?.category_parent_id, 0)),
+                categoryId,
+                rootCategoryId,
                 title: String(product?.name || 'Produto'),
                 subtitle: String(product?.category_name || product?.sku || 'Produto'),
                 description: String(product?.description || 'Sem descrição informada.'),
@@ -709,18 +713,36 @@ const normalizedCollaborators = computed(() =>
         .filter((collaborator) => collaborator.id > 0),
 );
 
-const categoryOptions = computed(() => {
+const normalizedCategories = computed(() => {
     const safe = Array.isArray(props.categories) ? props.categories : [];
-    const normalized = safe
-        .map((category) => ({ id: toInt(category?.id, 0), label: String(category?.name || 'Categoria') }))
+    return safe
+        .map((category) => ({
+            id: toInt(category?.id, 0),
+            label: String(category?.name || 'Categoria'),
+            parentId: category?.parent_id ? toInt(category.parent_id, 0) : null,
+        }))
         .filter((category) => category.id > 0);
-
-    return [{ id: 'all', label: 'Todas' }, ...normalized];
 });
+
+const macroCategoryOptions = computed(() => [
+    { id: 'all', label: 'Todas' },
+    ...normalizedCategories.value.filter((category) => !category.parentId),
+]);
 
 const activeTab = ref('home');
 const search = ref('');
-const activeCategory = ref('all');
+const activeParentCategory = ref('all');
+const activeSubcategory = ref('all');
+
+const availableSubcategoryOptions = computed(() => {
+    const parentId = toInt(activeParentCategory.value, 0);
+    if (parentId <= 0) return [];
+
+    return [
+        { id: 'all', label: 'Todas' },
+        ...normalizedCategories.value.filter((category) => toInt(category.parentId, 0) === parentId),
+    ];
+});
 const isCartOpen = ref(false);
 const selectedId = ref(null);
 const variationByProduct = ref({});
@@ -771,6 +793,10 @@ watch(normalizedCatalog, (items) => {
         selectedId.value = items[0].id;
     }
 }, { immediate: true });
+
+watch(activeParentCategory, () => {
+    activeSubcategory.value = 'all';
+});
 
 const selectedItem = computed(() => (
     normalizedCatalog.value.find((item) => item.id === selectedId.value) ?? null
@@ -830,12 +856,18 @@ const configuredBanners = computed(() => {
 
 const filteredCatalog = computed(() => {
     const term = String(search.value || '').trim().toLowerCase();
+    const parentId = toInt(activeParentCategory.value, 0);
+    const subcategoryId = toInt(activeSubcategory.value, 0);
 
     return normalizedCatalog.value.filter((item) => {
-        const categoryMatch = activeCategory.value === 'all' || toInt(activeCategory.value, 0) === item.categoryId;
+        const categoryMatch = activeParentCategory.value === 'all'
+            || item.rootCategoryId === parentId
+            || item.categoryId === parentId;
+        const subcategoryMatch = activeSubcategory.value === 'all'
+            || item.categoryId === subcategoryId;
         const searchPool = `${item.title} ${item.subtitle} ${item.description}`.toLowerCase();
         const searchMatch = term === '' || searchPool.includes(term);
-        return categoryMatch && searchMatch;
+        return categoryMatch && subcategoryMatch && searchMatch;
     });
 });
 
@@ -2353,7 +2385,8 @@ const submitDetailsPrimaryAction = () => {
 
 const applyHeroCta = () => {
     search.value = '';
-    activeCategory.value = 'all';
+    activeParentCategory.value = 'all';
+    activeSubcategory.value = 'all';
     const first = filteredCatalog.value[0] ?? null;
     if (first) selectedId.value = first.id;
 };
@@ -2797,19 +2830,41 @@ onBeforeUnmount(() => {
                                 </span>
                             </div>
 
-                            <div v-if="storefrontBlocks.categories" class="mb-4 flex items-center gap-2 overflow-x-auto">
-                                <button
-                                    v-for="category in categoryOptions"
-                                    :key="category.id"
-                                    type="button"
-                                    class="px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border"
-                                    :class="String(activeCategory) === String(category.id)
-                                        ? 'bg-[var(--idx-primary)] text-white border-[var(--idx-primary)]'
-                                        : 'bg-white text-gray-500 border-gray-200'"
-                                    @click="activeCategory = category.id"
-                                >
-                                    {{ category.label }}
-                                </button>
+                            <div v-if="storefrontBlocks.categories" class="mb-5">
+                                <div class="overflow-x-auto border-b border-slate-200">
+                                    <div class="flex min-w-max items-end gap-6">
+                                        <button
+                                            v-for="category in macroCategoryOptions"
+                                            :key="category.id"
+                                            type="button"
+                                            class="-mb-px border-b-2 border-transparent px-0 pb-3 pt-1 text-sm font-semibold whitespace-nowrap transition"
+                                            :class="String(activeParentCategory) === String(category.id)
+                                                ? 'text-[var(--idx-primary)]'
+                                                : 'text-slate-500 hover:text-slate-700'"
+                                            :style="String(activeParentCategory) === String(category.id)
+                                                ? { borderColor: 'var(--idx-primary)' }
+                                                : {}"
+                                            @click="activeParentCategory = category.id"
+                                        >
+                                            {{ category.label }}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div v-if="availableSubcategoryOptions.length > 1" class="mt-3 flex items-center gap-2 overflow-x-auto">
+                                    <button
+                                        v-for="subcategory in availableSubcategoryOptions"
+                                        :key="subcategory.id"
+                                        type="button"
+                                        class="rounded-full border px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+                                        :class="String(activeSubcategory) === String(subcategory.id)
+                                            ? 'bg-[var(--idx-primary)] text-white border-[var(--idx-primary)]'
+                                            : 'bg-white text-gray-500 border-gray-200'"
+                                        @click="activeSubcategory = subcategory.id"
+                                    >
+                                        {{ subcategory.label }}
+                                    </button>
+                                </div>
                             </div>
 
                             <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
