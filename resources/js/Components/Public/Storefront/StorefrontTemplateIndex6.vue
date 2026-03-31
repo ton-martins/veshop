@@ -3309,11 +3309,13 @@ onBeforeUnmount(() => {
 
                     <div class="grid max-h-[78vh] gap-4 overflow-y-auto p-4 md:grid-cols-[1.1fr_1fr]">
                         <div class="space-y-2">
-                            <img
-                                :src="selectedItemImages[detailsImageIndex] || selectedItemImages[0]"
-                                :alt="selectedItem.title"
-                                class="h-56 w-full rounded-2xl border border-slate-200 object-cover md:h-72"
-                            >
+                            <div class="flex h-64 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 md:h-80">
+                                <img
+                                    :src="selectedItemImages[detailsImageIndex] || selectedItemImages[0]"
+                                    :alt="selectedItem.title"
+                                    class="h-full w-full object-cover"
+                                >
+                            </div>
                             <div v-if="selectedItemImages.length > 1" class="grid grid-cols-4 gap-2">
                                 <button
                                     v-for="(image, imageIndex) in selectedItemImages"
@@ -3330,7 +3332,7 @@ onBeforeUnmount(() => {
 
                         <div class="space-y-3">
                             <p class="text-sm text-slate-600">{{ selectedItem.description }}</p>
-                            <p class="text-xl font-bold text-emerald-600">{{ formatMoney(detailsUnitPrice) }}</p>
+                            <p class="text-xl font-bold text-[var(--idx-primary)]">{{ formatMoney(detailsUnitPrice) }}</p>
 
                             <div v-if="!isServicesMode && detailsVariationOptions.length" class="space-y-1">
                                 <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Variação</label>
