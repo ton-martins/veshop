@@ -5,6 +5,7 @@ namespace App\Application\Storefront\Services;
 use App\Http\Requests\Shop\StoreShopCheckoutRequest;
 use App\Models\Category;
 use App\Models\Client;
+use App\Models\Collaborator;
 use App\Models\Contractor;
 use App\Models\InventoryMovement;
 use App\Models\PaymentGateway;
@@ -70,6 +71,7 @@ class PublicShopService
                 'store_availability' => $storeAvailability,
                 'categories' => $catalog['categories'],
                 'services' => $catalog['services'],
+                'collaborators' => $this->resolveBookingCollaboratorsPayload($contractor),
                 'shop_auth' => $this->resolveShopAuthPayload($contractor),
                 'shop_account' => $this->resolveShopAccountPayload($contractor),
                 'bookings' => $this->resolveServiceBookingsPayload($contractor),
@@ -213,6 +215,7 @@ class PublicShopService
                     static fn ($query) => $query->where('contractor_id', $contractor->id)->where('is_active', true)
                 ),
             ],
+            'collaborator_id' => ['nullable', 'integer'],
             'scheduled_for' => ['required', 'date', 'after:now'],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
@@ -243,6 +246,13 @@ class PublicShopService
             ]);
         }
         $endsAt = $scheduledFor->copy()->addMinutes($durationMinutes);
+        $selectedCollaborator = $this->resolveBookingCollaborator(
+            $contractor,
+            $service,
+            $validated['collaborator_id'] ?? null,
+            $scheduledFor,
+            $endsAt
+        );
 
         $client = $this->resolveOrCreateCheckoutClient($contractor, [
             'customer_name' => (string) $shopCustomer->name,
@@ -259,11 +269,12 @@ class PublicShopService
 
         $createdOrderId = null;
 
-        DB::transaction(function () use ($contractor, $shopCustomer, $validated, $service, $scheduledFor, $endsAt, $client, &$createdOrderId): void {
+        DB::transaction(function () use ($contractor, $shopCustomer, $validated, $service, $scheduledFor, $endsAt, $client, $selectedCollaborator, &$createdOrderId): void {
             $order = ServiceOrder::query()->create([
                 'contractor_id' => $contractor->id,
                 'client_id' => $client?->id,
                 'service_catalog_id' => $service->id,
+                'collaborator_id' => $selectedCollaborator?->id,
                 'code' => $this->generateServiceOrderCode($contractor),
                 'title' => 'Agendamento online - '.$service->name,
                 'description' => trim((string) ($validated['notes'] ?? '')) ?: null,
@@ -271,7 +282,7 @@ class PublicShopService
                 'due_at' => $endsAt,
                 'status' => ServiceOrder::STATUS_OPEN,
                 'priority' => 'normal',
-                'assigned_to_name' => null,
+                'assigned_to_name' => $selectedCollaborator?->name,
                 'estimated_amount' => (float) $service->base_price,
                 'final_amount' => (float) $service->base_price,
                 'metadata' => [
@@ -280,6 +291,8 @@ class PublicShopService
                     'customer_name' => (string) $shopCustomer->name,
                     'customer_email' => (string) $shopCustomer->email,
                     'customer_phone' => (string) ($shopCustomer->phone ?? ''),
+                    'collaborator_id' => $selectedCollaborator?->id,
+                    'collaborator_name' => $selectedCollaborator?->name,
                 ],
             ]);
             $createdOrderId = (int) $order->id;
@@ -289,6 +302,7 @@ class PublicShopService
                 'service_order_id' => $order->id,
                 'client_id' => $client?->id,
                 'service_catalog_id' => $service->id,
+                'collaborator_id' => $selectedCollaborator?->id,
                 'title' => 'Agendamento online - '.$service->name,
                 'starts_at' => $scheduledFor,
                 'ends_at' => $endsAt,
@@ -976,6 +990,115 @@ class PublicShopService
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function resolveBookingCollaboratorsPayload(Contractor $contractor): array
+    {
+        $timezone = $this->resolveContractorTimezone($contractor);
+        $windowStart = now($timezone)->startOfDay();
+        $windowEnd = $windowStart->copy()->addDays(14)->endOfDay();
+
+        return Collaborator::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->with([
+                'serviceCategories:id,name',
+                'serviceAppointments' => static fn ($query) => $query
+                    ->whereNotIn('status', [ServiceAppointment::STATUS_CANCELLED, ServiceAppointment::STATUS_NO_SHOW])
+                    ->where('starts_at', '<', $windowEnd)
+                    ->where('ends_at', '>', $windowStart)
+                    ->orderBy('starts_at')
+                    ->select(['id', 'collaborator_id', 'starts_at', 'ends_at', 'status']),
+            ])
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'phone', 'job_title', 'photo_url'])
+            ->map(static fn (Collaborator $collaborator): array => [
+                'id' => (int) $collaborator->id,
+                'name' => (string) $collaborator->name,
+                'email' => trim((string) ($collaborator->email ?? '')),
+                'phone' => trim((string) ($collaborator->phone ?? '')),
+                'job_title' => trim((string) ($collaborator->job_title ?? '')),
+                'photo_url' => trim((string) ($collaborator->photo_url ?? '')),
+                'service_category_ids' => $collaborator->serviceCategories
+                    ->pluck('id')
+                    ->map(static fn (mixed $id): int => (int) $id)
+                    ->values()
+                    ->all(),
+                'busy_ranges' => $collaborator->serviceAppointments
+                    ->map(static fn (ServiceAppointment $appointment): array => [
+                        'starts_at' => optional($appointment->starts_at)?->format('Y-m-d\\TH:i'),
+                        'ends_at' => optional($appointment->ends_at)?->format('Y-m-d\\TH:i'),
+                    ])
+                    ->filter(static fn (array $range): bool => ! empty($range['starts_at']) && ! empty($range['ends_at']))
+                    ->values()
+                    ->all(),
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function resolveBookingCollaborator(
+        Contractor $contractor,
+        ServiceCatalog $service,
+        mixed $collaboratorId,
+        Carbon $startsAt,
+        Carbon $endsAt
+    ): ?Collaborator {
+        $safeCollaboratorId = (int) $collaboratorId;
+        if ($safeCollaboratorId <= 0) {
+            return null;
+        }
+
+        /** @var Collaborator|null $collaborator */
+        $collaborator = Collaborator::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->where('id', $safeCollaboratorId)
+            ->with('serviceCategories:id')
+            ->first();
+
+        if (! $collaborator) {
+            throw ValidationException::withMessages([
+                'collaborator_id' => 'Colaborador inválido para este agendamento.',
+            ]);
+        }
+
+        $serviceCategoryId = (int) ($service->service_category_id ?? 0);
+        $collaboratorCategoryIds = $collaborator->serviceCategories
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->values()
+            ->all();
+
+        if (
+            $serviceCategoryId > 0
+            && $collaboratorCategoryIds !== []
+            && ! in_array($serviceCategoryId, $collaboratorCategoryIds, true)
+        ) {
+            throw ValidationException::withMessages([
+                'collaborator_id' => 'Este colaborador não atende a categoria selecionada.',
+            ]);
+        }
+
+        $hasConflict = ServiceAppointment::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('collaborator_id', $collaborator->id)
+            ->whereNotIn('status', [ServiceAppointment::STATUS_CANCELLED, ServiceAppointment::STATUS_NO_SHOW])
+            ->where('starts_at', '<', $endsAt)
+            ->where('ends_at', '>', $startsAt)
+            ->exists();
+
+        if ($hasConflict) {
+            throw ValidationException::withMessages([
+                'collaborator_id' => 'Este colaborador não está disponível no horário selecionado.',
+            ]);
+        }
+
+        return $collaborator;
+    }
+
+    /**
      * @param  Collection<int, array<string, mixed>>  $services
      * @return array<string, mixed>
      */
@@ -1033,7 +1156,8 @@ class PublicShopService
             })
             ->with([
                 'service:id,name,duration_minutes',
-                'appointments:id,service_order_id,starts_at,ends_at,status',
+                'collaborator:id,name',
+                'appointments:id,service_order_id,collaborator_id,starts_at,ends_at,status',
             ])
             ->orderByDesc('scheduled_for')
             ->orderByDesc('id')
@@ -1061,6 +1185,7 @@ class PublicShopService
             'code' => (string) $order->code,
             'title' => (string) $order->title,
             'service_name' => $order->service?->name ? (string) $order->service->name : 'Serviço',
+            'collaborator_name' => $order->collaborator?->name ? (string) $order->collaborator->name : '',
             'scheduled_for' => $scheduled ? $scheduled->format('Y-m-d\\TH:i') : null,
             'scheduled_label' => $scheduled ? $scheduled->format('d/m/Y H:i') : 'Horário a confirmar',
             'ends_at' => $endsAt ? $endsAt->format('Y-m-d\\TH:i') : null,
@@ -3682,4 +3807,3 @@ class PublicShopService
             ->all();
     }
 }
-

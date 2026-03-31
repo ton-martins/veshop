@@ -136,6 +136,11 @@ class Contractor extends Model
         return $this->hasMany(ServiceCategory::class);
     }
 
+    public function collaborators(): HasMany
+    {
+        return $this->hasMany(Collaborator::class);
+    }
+
     public function serviceCatalogs(): HasMany
     {
         return $this->hasMany(ServiceCatalog::class);

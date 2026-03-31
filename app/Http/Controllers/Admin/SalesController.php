@@ -24,4 +24,9 @@ class SalesController extends Controller
     {
         return $this->service->update($request, $sale);
     }
+
+    public function cancel(Request $request, Sale $sale): RedirectResponse
+    {
+        return $this->service->cancel($request, $sale);
+    }
 }

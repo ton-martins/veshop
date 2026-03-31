@@ -262,15 +262,15 @@ const topFeatures = (plan) => {
                                     <div class="card plan-card h-100 border-0 shadow-sm border-top border-3"
                                         :class="plan.is_featured ? 'border-success' : 'border-primary'">
                                         <div class="card-body">
-                                            <div class="d-flex justify-content-between align-items-start gap-2">
-                                                <h5 class="fw-bold mb-0"
-                                                    :class="plan.is_featured ? 'text-success' : 'text-primary'">
-                                                    {{ plan.name }}
-                                                </h5>
-                                                <span v-if="plan.badge" class="badge rounded-pill text-bg-light border">
+                                            <div v-if="plan.badge" class="d-flex justify-content-end mb-3">
+                                                <span class="badge rounded-pill text-bg-light border">
                                                     {{ plan.badge }}
                                                 </span>
                                             </div>
+                                            <h5 class="fw-bold mb-0"
+                                                :class="plan.is_featured ? 'text-success' : 'text-primary'">
+                                                {{ plan.name }}
+                                            </h5>
                                             <p class="mt-2 text-muted mb-1">{{ plan.subtitle || limitText(plan) }}</p>
                                             <p class="small text-muted">{{ plan.summary || 'Plano flexível para o nicho.' }}</p>
 

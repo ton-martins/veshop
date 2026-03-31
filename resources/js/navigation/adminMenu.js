@@ -45,6 +45,13 @@
                 module: ['crm', 'orders', 'pdv'],
             },
             {
+                key: 'admin-collaborators',
+                label: 'Colaboradores',
+                route: 'admin.collaborators.index',
+                match: ['admin.collaborators.*'],
+                icon: 'UserRound',
+            },
+            {
                 key: 'admin-suppliers',
                 label: 'Fornecedores',
                 route: 'admin.suppliers.index',
@@ -164,6 +171,13 @@
                 match: ['admin.clients.*'],
                 icon: 'Users2',
                 module: 'services',
+            },
+            {
+                key: 'admin-services-collaborators',
+                label: 'Colaboradores',
+                route: 'admin.collaborators.index',
+                match: ['admin.collaborators.*'],
+                icon: 'UserRound',
             },
             {
                 key: 'admin-services-categories',

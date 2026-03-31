@@ -2,13 +2,14 @@
 
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'single.admin.session', '2fa', 'verified', 'role:admin'])
+Route::middleware(['auth', 'single.admin.session', 'admin.activity.timeout', '2fa', 'verified', 'role:admin'])
     ->prefix('app')
     ->name('admin.')
     ->group(function (): void {
         require __DIR__.'/admin/core.php';
         require __DIR__.'/admin/audit.php';
         require __DIR__.'/admin/branding.php';
+        require __DIR__.'/admin/collaborators.php';
         require __DIR__.'/admin/storefront.php';
         require __DIR__.'/admin/catalog.php';
         require __DIR__.'/admin/crm.php';

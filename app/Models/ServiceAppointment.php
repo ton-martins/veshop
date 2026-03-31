@@ -37,6 +37,7 @@ class ServiceAppointment extends Model
         'service_order_id',
         'client_id',
         'service_catalog_id',
+        'collaborator_id',
         'title',
         'starts_at',
         'ends_at',
@@ -77,5 +78,10 @@ class ServiceAppointment extends Model
     public function service(): BelongsTo
     {
         return $this->belongsTo(ServiceCatalog::class, 'service_catalog_id');
+    }
+
+    public function collaborator(): BelongsTo
+    {
+        return $this->belongsTo(Collaborator::class);
     }
 }

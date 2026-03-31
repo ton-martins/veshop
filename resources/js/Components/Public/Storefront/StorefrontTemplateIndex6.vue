@@ -49,6 +49,7 @@ const props = defineProps({
     },
     shop_account: { type: Object, default: () => ({ orders: [], notifications: [], notifications_unread_count: 0 }) },
     bookings: { type: Array, default: () => [] },
+    collaborators: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -682,6 +683,31 @@ const normalizedCatalog = computed(() => {
         })
         .filter((item) => item.id > 0 && item.stock > 0);
 });
+
+const normalizedCollaborators = computed(() =>
+    (Array.isArray(props.collaborators) ? props.collaborators : [])
+        .map((collaborator) => ({
+            id: toInt(collaborator?.id, 0),
+            name: String(collaborator?.name || 'Colaborador').trim(),
+            jobTitle: String(collaborator?.job_title || '').trim(),
+            phone: String(collaborator?.phone || '').trim(),
+            photoUrl: String(collaborator?.photo_url || '').trim(),
+            serviceCategoryIds: Array.isArray(collaborator?.service_category_ids)
+                ? collaborator.service_category_ids
+                    .map((id) => toInt(id, 0))
+                    .filter((id) => id > 0)
+                : [],
+            busyRanges: Array.isArray(collaborator?.busy_ranges)
+                ? collaborator.busy_ranges
+                    .map((range) => ({
+                        startsAt: String(range?.starts_at || '').trim(),
+                        endsAt: String(range?.ends_at || '').trim(),
+                    }))
+                    .filter((range) => range.startsAt !== '' && range.endsAt !== '')
+                : [],
+        }))
+        .filter((collaborator) => collaborator.id > 0),
+);
 
 const categoryOptions = computed(() => {
     const safe = Array.isArray(props.categories) ? props.categories : [];
@@ -1618,6 +1644,7 @@ const submitQuickCheckout = () => {
 const bookingForm = useForm({
     service_catalog_id: null,
     scheduled_for: '',
+    collaborator_id: '',
     notes: '',
 });
 
@@ -1635,6 +1662,66 @@ const activeBookingService = computed(() => {
     return normalizedCatalog.value.find((item) => item.id === id) ?? activeBookingItem.value;
 });
 const activeBookingDurationMinutes = computed(() => Math.max(15, toInt(activeBookingService.value?.durationMinutes, 60)));
+const activeBookingCategoryId = computed(() => toInt(activeBookingService.value?.categoryId, 0));
+
+const collaboratorMatchesBookingCategory = (collaborator) => {
+    const categoryId = activeBookingCategoryId.value;
+    const collaboratorCategoryIds = Array.isArray(collaborator?.serviceCategoryIds)
+        ? collaborator.serviceCategoryIds
+        : [];
+
+    if (categoryId <= 0 || !collaboratorCategoryIds.length) {
+        return true;
+    }
+
+    return collaboratorCategoryIds.includes(categoryId);
+};
+
+const collaboratorIsAvailableForBooking = (collaborator) => {
+    const startsAt = parseDateTime(bookingForm.scheduled_for);
+    if (!startsAt) {
+        return true;
+    }
+
+    const endsAt = new Date(startsAt.getTime() + (activeBookingDurationMinutes.value * 60000));
+    const busyRanges = Array.isArray(collaborator?.busyRanges) ? collaborator.busyRanges : [];
+
+    return !busyRanges.some((range) => {
+        const busyStart = parseDateTime(range?.startsAt);
+        const busyEnd = parseDateTime(range?.endsAt);
+        if (!busyStart || !busyEnd) {
+            return false;
+        }
+
+        return busyStart < endsAt && busyEnd > startsAt;
+    });
+};
+
+const availableBookingCollaborators = computed(() =>
+    normalizedCollaborators.value.filter((collaborator) =>
+        collaboratorMatchesBookingCategory(collaborator)
+        && collaboratorIsAvailableForBooking(collaborator)
+    ),
+);
+
+const bookingCollaboratorOptions = computed(() => {
+    const baseOptions = [{
+        value: '',
+        label: 'Sem preferência',
+    }];
+
+    return baseOptions.concat(
+        availableBookingCollaborators.value.map((collaborator) => ({
+            value: String(collaborator.id),
+            label: collaborator.jobTitle
+                ? `${collaborator.name} • ${collaborator.jobTitle}`
+                : collaborator.name,
+        })),
+    );
+});
+
+const hasConfiguredCollaborators = computed(() => normalizedCollaborators.value.length > 0);
+const hasAvailableBookingCollaborators = computed(() => availableBookingCollaborators.value.length > 0);
 
 const bookingSlotGroups = computed(() => {
     const raw = Array.isArray(props.store_availability?.booking_slots) ? props.store_availability.booking_slots : [];
@@ -1793,6 +1880,23 @@ watch(() => bookingForm.scheduled_for, (value) => {
         bookingForm.clearErrors('scheduled_for');
     }
 });
+
+watch(() => bookingForm.collaborator_id, (value) => {
+    if (String(value ?? '').trim() !== '') {
+        bookingForm.clearErrors('collaborator_id');
+    }
+});
+
+watch(bookingCollaboratorOptions, (options) => {
+    const selected = String(bookingForm.collaborator_id ?? '').trim();
+    if (selected === '') {
+        return;
+    }
+
+    if (!options.some((option) => option.value === selected)) {
+        bookingForm.collaborator_id = '';
+    }
+}, { immediate: true });
 
 const submitQuickBooking = () => {
     if (!isAuthenticated.value) {
@@ -3394,6 +3498,28 @@ onBeforeUnmount(() => {
                                     />
                                 </label>
                                 <InputError :message="bookingForm.errors.scheduled_for" />
+                                <label
+                                    v-if="hasConfiguredCollaborators"
+                                    class="block text-xs font-semibold uppercase tracking-wide text-slate-500"
+                                >
+                                    Profissional
+                                    <UiSelect
+                                        v-model="bookingForm.collaborator_id"
+                                        :options="bookingCollaboratorOptions"
+                                        button-class="mt-1"
+                                        :disabled="bookingForm.processing"
+                                    />
+                                </label>
+                                <p v-if="hasConfiguredCollaborators" class="text-[11px] text-slate-500">
+                                    Lista filtrada pela categoria e pelo horário escolhido.
+                                </p>
+                                <p
+                                    v-if="hasConfiguredCollaborators && bookingForm.scheduled_for && !hasAvailableBookingCollaborators"
+                                    class="text-[11px] text-amber-700"
+                                >
+                                    Nenhum profissional disponível nesse horário. Você pode seguir sem preferência.
+                                </p>
+                                <InputError :message="bookingForm.errors.collaborator_id" />
                             </div>
 
                             <button
@@ -3605,6 +3731,28 @@ onBeforeUnmount(() => {
                             Não há horários disponíveis para agendamento.
                         </p>
                         <InputError :message="bookingForm.errors.scheduled_for" />
+                        <label
+                            v-if="hasConfiguredCollaborators"
+                            class="block text-xs font-semibold uppercase tracking-wide text-gray-500"
+                        >
+                            Profissional
+                            <UiSelect
+                                v-model="bookingForm.collaborator_id"
+                                :options="bookingCollaboratorOptions"
+                                button-class="mt-1"
+                                :disabled="bookingForm.processing"
+                            />
+                        </label>
+                        <p v-if="hasConfiguredCollaborators" class="text-[11px] text-gray-500">
+                            Lista filtrada pela categoria e pelo horário escolhido.
+                        </p>
+                        <p
+                            v-if="hasConfiguredCollaborators && bookingForm.scheduled_for && !hasAvailableBookingCollaborators"
+                            class="text-xs text-amber-700"
+                        >
+                            Nenhum profissional disponível nesse horário. Você pode seguir sem preferência.
+                        </p>
+                        <InputError :message="bookingForm.errors.collaborator_id" />
                     </div>
                     <button
                         type="button"

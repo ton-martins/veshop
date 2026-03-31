@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class ServiceCategory extends Model
+class Collaborator extends Model
 {
     use HasFactory, SoftDeletes;
 
@@ -19,10 +19,13 @@ class ServiceCategory extends Model
     protected $fillable = [
         'contractor_id',
         'name',
-        'slug',
-        'description',
+        'email',
+        'phone',
+        'job_title',
+        'photo_url',
+        'notes',
         'is_active',
-        'sort_order',
+        'settings',
     ];
 
     /**
@@ -32,7 +35,7 @@ class ServiceCategory extends Model
     {
         return [
             'is_active' => 'boolean',
-            'sort_order' => 'integer',
+            'settings' => 'array',
         ];
     }
 
@@ -41,14 +44,19 @@ class ServiceCategory extends Model
         return $this->belongsTo(Contractor::class);
     }
 
-    public function services(): HasMany
+    public function serviceCategories(): BelongsToMany
     {
-        return $this->hasMany(ServiceCatalog::class);
+        return $this->belongsToMany(ServiceCategory::class, 'collaborator_service_category')
+            ->withTimestamps();
     }
 
-    public function collaborators(): BelongsToMany
+    public function serviceOrders(): HasMany
     {
-        return $this->belongsToMany(Collaborator::class, 'collaborator_service_category')
-            ->withTimestamps();
+        return $this->hasMany(ServiceOrder::class);
+    }
+
+    public function serviceAppointments(): HasMany
+    {
+        return $this->hasMany(ServiceAppointment::class);
     }
 }

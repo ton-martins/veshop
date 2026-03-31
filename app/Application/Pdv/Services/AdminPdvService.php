@@ -10,6 +10,7 @@ use App\Http\Requests\Admin\StorePdvSaleRequest;
 use App\Http\Requests\Admin\UpdatePdvFeaturedProductsRequest;
 use App\Models\CashMovement;
 use App\Models\CashSession;
+use App\Models\Category;
 use App\Models\Client;
 use App\Models\Contractor;
 use App\Models\InventoryMovement;
@@ -80,6 +81,19 @@ class AdminPdvService
                 'expected_balance' => $cashIn - $cashOut,
             ];
         }
+
+        $categories = Category::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(static fn (Category $category): array => [
+                'id' => (int) $category->id,
+                'name' => (string) $category->name,
+            ])
+            ->values()
+            ->all();
 
         $products = Product::query()
             ->where('contractor_id', $contractor->id)
@@ -189,31 +203,18 @@ class AdminPdvService
         $recentSales = Sale::query()
             ->where('contractor_id', $contractor->id)
             ->where('source', Sale::SOURCE_PDV)
-            ->where('status', Sale::STATUS_COMPLETED)
             ->with([
                 'client:id,name',
+                'items:id,sale_id,product_id,product_variation_id,description,sku,quantity,unit_price,discount_amount,total_amount,metadata',
+                'items.product:id,image_url',
+                'items.productVariation:id,name',
                 'payments.paymentMethod:id,name',
             ])
-            ->orderByDesc('completed_at')
+            ->orderByRaw('COALESCE(completed_at, created_at) DESC')
             ->orderByDesc('id')
-            ->limit(8)
+            ->limit(5)
             ->get()
-            ->map(static function (Sale $sale): array {
-                $paymentNames = $sale->payments
-                    ->map(static fn (SalePayment $payment): ?string => $payment->paymentMethod?->name)
-                    ->filter()
-                    ->unique()
-                    ->values();
-
-                return [
-                    'id' => $sale->id,
-                    'code' => $sale->code,
-                    'customer' => $sale->client?->name ?? 'Consumidor final',
-                    'total_amount' => (float) $sale->total_amount,
-                    'payment_label' => $paymentNames->isNotEmpty() ? $paymentNames->implode(' + ') : 'Não informado',
-                    'completed_at' => optional($sale->completed_at)->format('d/m/Y H:i'),
-                ];
-            })
+            ->map(fn (Sale $sale): array => $this->toRecentSalePayload($sale))
             ->values()
             ->all();
 
@@ -240,6 +241,7 @@ class AdminPdvService
                 'opened_by' => $openCashSession->openedBy?->name,
             ] : null,
             'cashSummary' => $cashSummary,
+            'categories' => $categories,
             'products' => $products,
             'clients' => $clients,
             'paymentMethods' => $paymentMethods,
@@ -247,6 +249,97 @@ class AdminPdvService
             'initialAction' => $initialAction,
             'initialClientId' => $initialClientId > 0 ? $initialClientId : null,
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function toRecentSalePayload(Sale $sale): array
+    {
+        $metadata = is_array($sale->metadata) ? $sale->metadata : [];
+        $paymentLabel = $sale->payments
+            ->map(static fn (SalePayment $payment): ?string => $payment->paymentMethod?->name)
+            ->filter()
+            ->unique()
+            ->values()
+            ->implode(' + ');
+
+        $customerName = trim((string) (($metadata['customer_name'] ?? null) ?? ($sale->client?->name ?? '')));
+        if ($customerName === '') {
+            $customerName = 'Consumidor final';
+        }
+
+        $customerContact = trim((string) (($metadata['customer_contact'] ?? null) ?? ($sale->client?->phone ?? '')));
+        if ($customerContact === '') {
+            $customerContact = trim((string) ($sale->client?->email ?? ($metadata['customer_email'] ?? ($metadata['customer_phone'] ?? ''))));
+        }
+
+        return [
+            'id' => (int) $sale->id,
+            'code' => (string) $sale->code,
+            'client_id' => $sale->client_id ? (int) $sale->client_id : null,
+            'customer' => $customerName,
+            'customer_contact' => $customerContact,
+            'subtotal_amount' => (float) $sale->subtotal_amount,
+            'discount_amount' => (float) $sale->discount_amount,
+            'surcharge_amount' => (float) $sale->surcharge_amount,
+            'total_amount' => (float) $sale->total_amount,
+            'payment_label' => $paymentLabel !== '' ? $paymentLabel : 'Não informado',
+            'created_at' => optional($sale->completed_at ?? $sale->created_at)->format('d/m/Y H:i'),
+            'notes' => $sale->notes !== null ? (string) $sale->notes : '',
+            'status' => $this->resolveRecentSaleStatusMeta((string) $sale->status),
+            'can_edit' => $this->canEditRecentSale($sale),
+            'can_cancel' => ! in_array($sale->status, [
+                Sale::STATUS_CANCELLED,
+                Sale::STATUS_REJECTED,
+                Sale::STATUS_REFUNDED,
+            ], true),
+            'items' => $sale->items
+                ->map(static fn (SaleItem $item): array => [
+                    'product_id' => $item->product_id ? (int) $item->product_id : null,
+                    'variation_id' => $item->product_variation_id ? (int) $item->product_variation_id : null,
+                    'description' => (string) $item->description,
+                    'sku' => $item->sku !== null ? (string) $item->sku : null,
+                    'image_url' => $item->product?->image_url !== null ? (string) $item->product->image_url : null,
+                    'variation_name' => (string) (data_get($item->metadata, 'variation_name')
+                        ?: ($item->productVariation?->name ?? '')),
+                    'quantity' => (int) $item->quantity,
+                    'unit_price' => (float) $item->unit_price,
+                    'discount_amount' => (float) $item->discount_amount,
+                    'total_amount' => (float) $item->total_amount,
+                ])
+                ->values()
+                ->all(),
+        ];
+    }
+
+    private function canEditRecentSale(Sale $sale): bool
+    {
+        return ! in_array($sale->status, [
+            Sale::STATUS_CANCELLED,
+            Sale::STATUS_REJECTED,
+            Sale::STATUS_REFUNDED,
+        ], true);
+    }
+
+    /**
+     * @return array{value: string, label: string, tone: string}
+     */
+    private function resolveRecentSaleStatusMeta(string $status): array
+    {
+        return match ($status) {
+            Sale::STATUS_DRAFT => ['value' => $status, 'label' => 'Orçamento', 'tone' => 'bg-slate-100 text-slate-700'],
+            Sale::STATUS_NEW => ['value' => $status, 'label' => 'Novo', 'tone' => 'bg-blue-100 text-blue-700'],
+            Sale::STATUS_PENDING_CONFIRMATION => ['value' => $status, 'label' => 'Aguardando confirmação', 'tone' => 'bg-blue-100 text-blue-700'],
+            Sale::STATUS_CONFIRMED => ['value' => $status, 'label' => 'Confirmado', 'tone' => 'bg-amber-100 text-amber-700'],
+            Sale::STATUS_AWAITING_PAYMENT => ['value' => $status, 'label' => 'Aguardando pagamento', 'tone' => 'bg-amber-100 text-amber-700'],
+            Sale::STATUS_PAID => ['value' => $status, 'label' => 'Pago', 'tone' => 'bg-emerald-100 text-emerald-700'],
+            Sale::STATUS_COMPLETED => ['value' => $status, 'label' => 'Concluído', 'tone' => 'bg-emerald-100 text-emerald-700'],
+            Sale::STATUS_REJECTED => ['value' => $status, 'label' => 'Rejeitado', 'tone' => 'bg-rose-100 text-rose-700'],
+            Sale::STATUS_CANCELLED => ['value' => $status, 'label' => 'Cancelado', 'tone' => 'bg-rose-100 text-rose-700'],
+            Sale::STATUS_REFUNDED => ['value' => $status, 'label' => 'Estornado', 'tone' => 'bg-rose-100 text-rose-700'],
+            default => ['value' => $status, 'label' => ucfirst($status), 'tone' => 'bg-slate-100 text-slate-700'],
+        };
     }
 
     public function openCashSession(OpenCashSessionRequest $request): RedirectResponse

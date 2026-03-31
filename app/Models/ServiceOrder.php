@@ -29,6 +29,7 @@ class ServiceOrder extends Model
         'contractor_id',
         'client_id',
         'service_catalog_id',
+        'collaborator_id',
         'code',
         'title',
         'description',
@@ -73,6 +74,11 @@ class ServiceOrder extends Model
     public function service(): BelongsTo
     {
         return $this->belongsTo(ServiceCatalog::class, 'service_catalog_id');
+    }
+
+    public function collaborator(): BelongsTo
+    {
+        return $this->belongsTo(Collaborator::class);
     }
 
     public function appointments(): HasMany

@@ -722,6 +722,181 @@ class AdminSalesService
         );
     }
 
+    public function cancel(Request $request, Sale $sale): RedirectResponse
+    {
+        $contractor = $this->resolveCurrentContractor($request);
+        abort_unless($contractor, 404, 'Contratante ativo não encontrado.');
+
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $updatedSaleId = null;
+        $updatedSaleCode = null;
+
+        DB::transaction(function () use ($contractor, $sale, $validated, $request, &$updatedSaleId, &$updatedSaleCode): void {
+            $lockedSale = $this->lockSaleForContractor($contractor, $sale->id);
+
+            if (in_array($lockedSale->status, [Sale::STATUS_CANCELLED, Sale::STATUS_REJECTED, Sale::STATUS_REFUNDED], true)) {
+                throw ValidationException::withMessages([
+                    'sale' => 'Esta venda já está cancelada.',
+                ]);
+            }
+
+            $metadata = is_array($lockedSale->metadata) ? $lockedSale->metadata : [];
+            $stockReduced = (bool) ($metadata['stock_reduced'] ?? true);
+            $stockRestored = (bool) ($metadata['stock_restored'] ?? false);
+
+            if ($stockReduced && ! $stockRestored) {
+                $productIds = $lockedSale->items
+                    ->pluck('product_id')
+                    ->map(static fn (mixed $value): int => (int) $value)
+                    ->filter(static fn (int $value): bool => $value > 0)
+                    ->unique()
+                    ->values();
+                $variationIds = $lockedSale->items
+                    ->pluck('product_variation_id')
+                    ->map(static fn (mixed $value): int => (int) $value)
+                    ->filter(static fn (int $value): bool => $value > 0)
+                    ->unique()
+                    ->values();
+
+                $products = Product::query()
+                    ->where('contractor_id', $contractor->id)
+                    ->whereIn('id', $productIds->all())
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
+
+                $variationsById = collect();
+                if ($variationIds->isNotEmpty()) {
+                    $variationsById = ProductVariation::withTrashed()
+                        ->where('contractor_id', $contractor->id)
+                        ->whereIn('id', $variationIds->all())
+                        ->lockForUpdate()
+                        ->get()
+                        ->keyBy('id');
+                }
+
+                foreach ($lockedSale->items as $item) {
+                    /** @var Product|null $product */
+                    $product = $products->get((int) $item->product_id);
+                    if (! $product) {
+                        continue;
+                    }
+
+                    $variationId = $item->product_variation_id ? (int) $item->product_variation_id : null;
+                    /** @var ProductVariation|null $variation */
+                    $variation = $variationId !== null
+                        ? $variationsById->get($variationId)
+                        : null;
+
+                    $quantity = (int) $item->quantity;
+                    $movementBalanceBefore = (int) $product->stock_quantity;
+                    $movementBalanceAfter = $movementBalanceBefore + $quantity;
+                    $movementUnitCost = (float) $product->cost_price;
+
+                    if ($variation) {
+                        $variationBalanceBefore = (int) $variation->stock_quantity;
+                        $variationBalanceAfter = $variationBalanceBefore + $quantity;
+                        $variation->stock_quantity = $variationBalanceAfter;
+                        $variation->save();
+
+                        $movementBalanceBefore = $variationBalanceBefore;
+                        $movementBalanceAfter = $variationBalanceAfter;
+                        $movementUnitCost = (float) ($variation->cost_price ?? $product->cost_price);
+                    }
+
+                    $product->stock_quantity = (int) $product->stock_quantity + $quantity;
+                    $product->save();
+
+                    InventoryMovement::query()->create([
+                        'contractor_id' => $contractor->id,
+                        'product_id' => $product->id,
+                        'product_variation_id' => $variation?->id,
+                        'sale_item_id' => $item->id,
+                        'user_id' => $request->user()?->id,
+                        'type' => InventoryMovement::TYPE_RETURN,
+                        'quantity' => $quantity,
+                        'balance_before' => $movementBalanceBefore,
+                        'balance_after' => $movementBalanceAfter,
+                        'unit_cost' => $movementUnitCost,
+                        'reason' => $variation
+                            ? "Cancelamento da venda {$lockedSale->code} - variação {$variation->name}"
+                            : "Cancelamento da venda {$lockedSale->code}",
+                        'reference_type' => Sale::class,
+                        'reference_id' => $lockedSale->id,
+                        'occurred_at' => now(),
+                    ]);
+                }
+
+                $metadata['stock_restored'] = true;
+                $metadata['stock_restored_at'] = now()->toIso8601String();
+            }
+
+            $this->registerCashAdjustmentIfNeeded(
+                $contractor,
+                $lockedSale,
+                (float) $lockedSale->total_amount,
+                0.0,
+                $request
+            );
+
+            $metadata['cancelled_at'] = now()->toIso8601String();
+            if (! empty($validated['reason'])) {
+                $metadata['cancellation_reason'] = $validated['reason'];
+            }
+
+            $lockedSale->fill([
+                'status' => Sale::STATUS_CANCELLED,
+                'cancelled_at' => now(),
+                'notes' => $this->appendNote(
+                    $lockedSale->notes,
+                    ! empty($validated['reason']) ? "Motivo do cancelamento: {$validated['reason']}" : null
+                ),
+                'metadata' => $metadata,
+            ])->save();
+
+            $payments = SalePayment::query()
+                ->where('contractor_id', $contractor->id)
+                ->where('sale_id', $lockedSale->id)
+                ->get();
+
+            foreach ($payments as $payment) {
+                if ($payment->status === SalePayment::STATUS_PAID) {
+                    $payment->fill([
+                        'status' => SalePayment::STATUS_REFUNDED,
+                    ])->save();
+
+                    continue;
+                }
+
+                $payment->fill([
+                    'status' => SalePayment::STATUS_CANCELLED,
+                ])->save();
+            }
+
+            $updatedSaleId = (int) $lockedSale->id;
+            $updatedSaleCode = (string) $lockedSale->code;
+        });
+
+        if ($updatedSaleId) {
+            app(SecurityAuditLogger::class)->log(
+                $request,
+                'sale.cancelled.admin',
+                SecurityAuditLog::SEVERITY_WARNING,
+                $contractor->id,
+                [
+                    'sale_id' => $updatedSaleId,
+                    'sale_code' => $updatedSaleCode,
+                    'reason' => trim((string) ($validated['reason'] ?? '')),
+                ],
+            );
+        }
+
+        return back()->with('status', 'Venda cancelada com sucesso.');
+    }
+
     private function lockSaleForContractor(Contractor $contractor, int $saleId): Sale
     {
         $sale = Sale::query()
@@ -903,6 +1078,22 @@ class AdminSalesService
                 'new_total' => $newTotal,
             ],
         ]);
+    }
+
+    private function appendNote(?string $existing, ?string $addition): ?string
+    {
+        $safeExisting = trim((string) ($existing ?? ''));
+        $safeAddition = trim((string) ($addition ?? ''));
+
+        if ($safeAddition === '') {
+            return $safeExisting !== '' ? $safeExisting : null;
+        }
+
+        if ($safeExisting === '') {
+            return $safeAddition;
+        }
+
+        return $safeExisting."\n".$safeAddition;
     }
 
     /**

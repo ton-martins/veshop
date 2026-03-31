@@ -10,6 +10,7 @@ const props = defineProps({
     store_availability: { type: Object, default: () => ({}) },
     categories: { type: Array, default: () => [] },
     services: { type: Array, default: () => [] },
+    collaborators: { type: Array, default: () => [] },
     shop_auth: {
         type: Object,
         default: () => ({ authenticated: false, customer: null, email_verified: false, requires_email_verification: false }),
@@ -34,5 +35,6 @@ const storeName = computed(() => String(props.contractor?.brand_name || props.co
         :shop_auth="shop_auth"
         :shop_account="shop_account"
         :bookings="bookings"
+        :collaborators="collaborators"
     />
 </template>

@@ -33,6 +33,7 @@ const form = useForm({
     remove_brand_avatar: false,
     require_email_verification: true,
     email_notifications_enabled: true,
+    admin_inactivity_timeout: '60',
 });
 
 const logoPreview = ref('');
@@ -57,6 +58,13 @@ const timezoneOptions = computed(() =>
     })),
 );
 
+const inactivityTimeoutOptions = [
+    { value: '15', label: '15 minutos' },
+    { value: '30', label: '30 minutos' },
+    { value: '60', label: '1 hora' },
+    { value: 'keep_active', label: 'Manter ativo' },
+];
+
 const hydrate = () => {
     const contractor = props.profileContractor ?? {};
     form.brand_name = contractor.brand_name ?? contractor.name ?? props.defaults?.name ?? '';
@@ -66,6 +74,7 @@ const hydrate = () => {
     form.timezone = contractor.timezone ?? props.timezones?.[0]?.value ?? 'America/Sao_Paulo';
     form.require_email_verification = props.security?.require_email_verification ?? true;
     form.email_notifications_enabled = props.security?.email_notifications_enabled ?? true;
+    form.admin_inactivity_timeout = props.security?.admin_inactivity_timeout ?? '60';
     form.brand_logo = null;
     form.brand_avatar = null;
     form.remove_brand_logo = false;
@@ -336,6 +345,22 @@ const submitSupportConfirmation = () => {
                                 <span>Ativar notificações via email</span>
                                 <input v-model="form.email_notifications_enabled" type="checkbox" class="rounded border-slate-300">
                             </label>
+                            <div class="space-y-1">
+                                <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Tempo de inatividade do admin
+                                </label>
+                                <UiSelect
+                                    v-model="form.admin_inactivity_timeout"
+                                    :options="inactivityTimeoutOptions"
+                                    button-class="w-full text-sm"
+                                />
+                                <p class="text-[11px] text-slate-500">
+                                    Define em quanto tempo o painel deve pedir novo login por inatividade.
+                                </p>
+                                <p v-if="form.errors.admin_inactivity_timeout" class="text-[11px] text-rose-600">
+                                    {{ form.errors.admin_inactivity_timeout }}
+                                </p>
+                            </div>
                         </div>
                     </div>
 

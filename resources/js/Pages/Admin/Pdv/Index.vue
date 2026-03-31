@@ -28,6 +28,7 @@ import {
 const props = defineProps({
     cashSession: { type: Object, default: null },
     cashSummary: { type: Object, default: () => ({ expected_balance: 0 }) },
+    categories: { type: Array, default: () => [] },
     products: { type: Array, default: () => [] },
     clients: { type: Array, default: () => [] },
     paymentMethods: { type: Array, default: () => [] },
@@ -58,9 +59,14 @@ const featuredProductsModalOpen = ref(false);
 const featuredProductsSearch = ref('');
 const featuredProductIds = ref([]);
 const createClientModalOpen = ref(false);
+const createProductModalOpen = ref(false);
 const variationPickerModalOpen = ref(false);
 const variationPickerProduct = ref(null);
 const variationPickerVariationId = ref('');
+const historyDrawerOpen = ref(false);
+const historyEditingSaleId = ref(null);
+const historyCancelModalOpen = ref(false);
+const historyCancelTarget = ref(null);
 
 const openCashForm = useForm({ opening_balance: '0.00', notes: '' });
 const closeCashForm = useForm({ closing_balance: '', notes: '' });
@@ -73,6 +79,25 @@ const createClientForm = useForm({
     city: '',
     state: '',
 });
+const createProductForm = useForm({
+    name: '',
+    sku: '',
+    category_id: '',
+    sale_price: '0.00',
+    stock_quantity: '1',
+    unit: 'un',
+    is_active: true,
+});
+const historyEditForm = useForm({
+    client_id: '',
+    customer_name: '',
+    customer_contact: '',
+    discount_amount: '0.00',
+    surcharge_amount: '0.00',
+    notes: '',
+    items: [],
+});
+const historyCancelForm = useForm({ reason: '' });
 const saleForm = useForm({
     client_id: null,
     payment_method_id: null,
@@ -84,8 +109,10 @@ const saleForm = useForm({
 });
 
 const hasOpenCashSession = computed(() => Boolean(props.cashSession?.id));
+const categoriesSafe = computed(() => (Array.isArray(props.categories) ? props.categories : []));
 const productsSafe = computed(() => (Array.isArray(props.products) ? props.products : []));
 const clientsSafe = computed(() => (Array.isArray(props.clients) ? props.clients : []));
+const recentSalesSafe = computed(() => (Array.isArray(props.recentSales) ? props.recentSales : []));
 
 const paymentMethodsSafe = computed(() =>
     (Array.isArray(props.paymentMethods) ? props.paymentMethods : []).map((method) => ({
@@ -108,6 +135,28 @@ const paymentMethodOptions = computed(() =>
             : method.name,
     })),
 );
+
+const categoryOptions = computed(() => [
+    { value: '', label: 'Sem categoria' },
+    ...categoriesSafe.value.map((category) => ({
+        value: String(category.id),
+        label: String(category.name ?? 'Categoria'),
+    })),
+]);
+
+const productUnitOptions = [
+    { value: 'un', label: 'Unidade' },
+    { value: 'kg', label: 'Kg' },
+    { value: 'lts', label: 'Litros' },
+];
+
+const clientOptions = computed(() => [
+    { value: '', label: 'Consumidor final' },
+    ...clientsSafe.value.map((client) => ({
+        value: String(client.id),
+        label: String(client.name ?? 'Cliente'),
+    })),
+]);
 
 const selectedPaymentMethod = computed(() =>
     paymentMethodsSafe.value.find((method) => String(method.id) === String(selectedPaymentMethodId.value)) ?? null,
@@ -221,6 +270,9 @@ const selectedClient = computed(() =>
 );
 
 const clientPickerLabel = computed(() => selectedClient.value?.name ?? 'Consumidor final');
+const editingHistorySale = computed(() =>
+    recentSalesSafe.value.find((sale) => Number(sale?.id) === Number(historyEditingSaleId.value)) ?? null,
+);
 
 const subtotalAmount = computed(() =>
     cartItems.value.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.unit_price)), 0),
@@ -271,6 +323,23 @@ const canFinalizeSale = computed(() =>
     && totalAmount.value > 0,
 );
 
+const historyEditSubtotal = computed(() =>
+    (Array.isArray(historyEditForm.items) ? historyEditForm.items : []).reduce((sum, item) => {
+        const quantity = Math.max(1, Number(item?.quantity ?? 1));
+        const unitPrice = normalizeMoneyInput(item?.unit_price ?? 0);
+        return sum + (quantity * unitPrice);
+    }, 0),
+);
+
+const historyEditTotal = computed(() =>
+    Math.max(
+        0,
+        historyEditSubtotal.value
+            - normalizeMoneyInput(historyEditForm.discount_amount)
+            + normalizeMoneyInput(historyEditForm.surcharge_amount),
+    ),
+);
+
 const featuredProductsMap = computed(() => {
     const map = new Map();
     for (const product of productsSafe.value) {
@@ -297,6 +366,12 @@ const selectedFeaturedProducts = computed(() =>
 
 const featuredLimitReached = computed(() => featuredProductIds.value.length >= 12);
 const hasPendingCart = computed(() => cartItems.value.length > 0 && !saleForm.processing);
+const canSubmitHistoryEdit = computed(() =>
+    Boolean(historyEditingSaleId.value)
+    && Array.isArray(historyEditForm.items)
+    && historyEditForm.items.length > 0
+    && historyEditTotal.value > 0,
+);
 
 watch(
     () => props.paymentMethods,
@@ -390,6 +465,16 @@ const closeTopMostModal = () => {
         return true;
     }
 
+    if (historyCancelModalOpen.value) {
+        historyCancelModalOpen.value = false;
+        return true;
+    }
+
+    if (createProductModalOpen.value) {
+        createProductModalOpen.value = false;
+        return true;
+    }
+
     if (createClientModalOpen.value) {
         createClientModalOpen.value = false;
         return true;
@@ -397,6 +482,11 @@ const closeTopMostModal = () => {
 
     if (featuredProductsModalOpen.value) {
         featuredProductsModalOpen.value = false;
+        return true;
+    }
+
+    if (historyDrawerOpen.value) {
+        closeHistoryDrawer();
         return true;
     }
 
@@ -806,6 +896,137 @@ function submitCreateClient() {
         },
     });
 }
+
+function openCreateProductModal() {
+    createProductForm.reset();
+    createProductForm.clearErrors();
+    createProductForm.name = '';
+    createProductForm.sku = '';
+    createProductForm.category_id = '';
+    createProductForm.sale_price = '0.00';
+    createProductForm.stock_quantity = '1';
+    createProductForm.unit = 'un';
+    createProductForm.is_active = true;
+    createProductModalOpen.value = true;
+}
+
+function submitCreateProduct() {
+    createProductForm.transform((data) => ({
+        ...data,
+        category_id: data.category_id ? Number(data.category_id) : null,
+        sale_price: normalizeMoneyInput(data.sale_price),
+        stock_quantity: Math.max(0, toInt(data.stock_quantity, 0)),
+        is_active: true,
+    })).post(route('admin.products.store'), {
+        preserveScroll: true,
+        onSuccess: () => {
+            createProductModalOpen.value = false;
+            focusProductSearch();
+        },
+    });
+}
+
+function openHistoryDrawer() {
+    historyDrawerOpen.value = true;
+}
+
+function closeHistoryDrawer() {
+    historyDrawerOpen.value = false;
+    historyEditingSaleId.value = null;
+    historyEditForm.reset();
+    historyEditForm.clearErrors();
+}
+
+function startHistoryEdit(sale) {
+    if (!sale?.id) return;
+
+    historyDrawerOpen.value = true;
+    historyEditingSaleId.value = Number(sale.id);
+    historyEditForm.clearErrors();
+    historyEditForm.client_id = sale.client_id ? String(sale.client_id) : '';
+    historyEditForm.customer_name = String(sale.customer ?? '');
+    historyEditForm.customer_contact = String(sale.customer_contact ?? '');
+    historyEditForm.discount_amount = String(sale.discount_amount ?? '0.00');
+    historyEditForm.surcharge_amount = String(sale.surcharge_amount ?? '0.00');
+    historyEditForm.notes = String(sale.notes ?? '');
+    historyEditForm.items = (Array.isArray(sale.items) ? sale.items : []).map((item) => ({
+        product_id: Number(item?.product_id ?? 0),
+        variation_id: item?.variation_id ? Number(item.variation_id) : null,
+        description: String(item?.description ?? 'Item'),
+        sku: String(item?.sku ?? ''),
+        image_url: String(item?.image_url ?? ''),
+        variation_name: String(item?.variation_name ?? ''),
+        quantity: Math.max(1, toInt(item?.quantity, 1)),
+        unit_price: normalizeMoneyInput(item?.unit_price ?? 0),
+        discount_amount: normalizeMoneyInput(item?.discount_amount ?? 0),
+        total_amount: normalizeMoneyInput(item?.total_amount ?? 0),
+    }));
+}
+
+function cancelHistoryEdit() {
+    historyEditingSaleId.value = null;
+    historyEditForm.reset();
+    historyEditForm.clearErrors();
+}
+
+function updateHistoryItemQuantity(index, delta) {
+    if (!Array.isArray(historyEditForm.items) || !historyEditForm.items[index]) return;
+    const current = historyEditForm.items[index];
+    current.quantity = Math.max(1, toInt(current.quantity, 1) + delta);
+}
+
+function removeHistoryItem(index) {
+    if (!Array.isArray(historyEditForm.items)) return;
+    historyEditForm.items = historyEditForm.items.filter((_, itemIndex) => itemIndex !== index);
+}
+
+function submitHistoryEdit() {
+    if (!historyEditingSaleId.value) return;
+
+    historyEditForm.transform((data) => ({
+        client_id: data.client_id ? Number(data.client_id) : null,
+        customer_name: String(data.customer_name ?? '').trim() || null,
+        customer_contact: String(data.customer_contact ?? '').trim() || null,
+        discount_amount: normalizeMoneyInput(data.discount_amount),
+        surcharge_amount: normalizeMoneyInput(data.surcharge_amount),
+        notes: String(data.notes ?? '').trim() || null,
+        items: (Array.isArray(data.items) ? data.items : []).map((item) => ({
+            product_id: Number(item?.product_id ?? 0),
+            variation_id: item?.variation_id ? Number(item.variation_id) : null,
+            quantity: Math.max(1, toInt(item?.quantity, 1)),
+            discount_amount: normalizeMoneyInput(item?.discount_amount ?? 0),
+        })),
+    })).put(route('admin.sales.update', historyEditingSaleId.value), {
+        preserveScroll: true,
+        onSuccess: () => {
+            cancelHistoryEdit();
+        },
+    });
+}
+
+function openHistoryCancelModal(sale) {
+    if (!sale?.id) return;
+
+    historyCancelTarget.value = sale;
+    historyCancelForm.reset();
+    historyCancelForm.clearErrors();
+    historyCancelModalOpen.value = true;
+}
+
+function submitHistoryCancel() {
+    const saleId = Number(historyCancelTarget.value?.id ?? 0);
+    if (saleId <= 0) return;
+
+    historyCancelForm.post(route('admin.sales.cancel', saleId), {
+        preserveScroll: true,
+        onSuccess: () => {
+            historyCancelModalOpen.value = false;
+            if (Number(historyEditingSaleId.value ?? 0) === saleId) {
+                cancelHistoryEdit();
+            }
+        },
+    });
+}
 </script>
 
 <template>
@@ -834,6 +1055,14 @@ function submitCreateClient() {
 
         <template #actions>
             <button
+                type="button"
+                class="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                @click="openHistoryDrawer"
+            >
+                <ReceiptText class="h-4 w-4" />
+                <span class="hidden sm:inline">Histórico</span>
+            </button>
+            <button
                 v-if="!hasOpenCashSession"
                 type="button"
                 class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
@@ -861,14 +1090,24 @@ function submitCreateClient() {
                 <section class="min-w-0 rounded-2xl border border-slate-300 bg-white p-3 shadow-sm md:flex md:h-full md:min-h-0 md:flex-col md:p-4">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <h2 class="text-sm font-semibold text-slate-900">Produtos</h2>
-                        <button
-                            type="button"
-                            class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                            @click="openFeaturedProductsModal"
-                        >
-                            <Star class="h-4 w-4" />
-                            Top 12 do PDV
-                        </button>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                                @click="openCreateProductModal"
+                            >
+                                <Plus class="h-4 w-4" />
+                                Novo produto
+                            </button>
+                            <button
+                                type="button"
+                                class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                                @click="openFeaturedProductsModal"
+                            >
+                                <Star class="h-4 w-4" />
+                                Top 12 do PDV
+                            </button>
+                        </div>
                     </div>
 
                     <div class="veshop-search-shell mt-3 flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2">
@@ -1269,6 +1508,410 @@ function submitCreateClient() {
             </div>
         </section>
 
+        <transition name="history-drawer-fade">
+            <div
+                v-if="historyDrawerOpen"
+                class="fixed inset-0 z-[120] bg-slate-900/20"
+                @click="closeHistoryDrawer"
+            ></div>
+        </transition>
+
+        <transition name="history-drawer">
+            <aside
+                v-if="historyDrawerOpen"
+                class="fixed inset-y-0 right-0 z-[130] flex w-full max-w-5xl flex-col border-l border-emerald-100 bg-white shadow-2xl"
+                @click.stop
+            >
+                <header class="space-y-3 border-b border-emerald-100 px-5 py-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Histórico</p>
+                            <h3 class="text-base font-semibold text-slate-900">Últimas 5 transações do PDV</h3>
+                        </div>
+                        <button
+                            type="button"
+                            class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                            @click="closeHistoryDrawer"
+                        >
+                            <X class="h-4 w-4" />
+                        </button>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+                        <span>{{ recentSalesSafe.length }} transação(ões) carregadas</span>
+                        <span>Edite ou cancele sem sair do PDV</span>
+                    </div>
+                </header>
+
+                <div class="flex-1 overflow-auto px-5 py-4">
+                    <div class="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                        <section class="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
+                            <div class="mb-3 flex items-center justify-between">
+                                <h4 class="text-sm font-semibold text-slate-900">Transações recentes</h4>
+                                <span class="text-xs font-medium text-slate-500">{{ recentSalesSafe.length }} item(ns)</span>
+                            </div>
+
+                            <div v-if="recentSalesSafe.length" class="space-y-3">
+                                <article
+                                    v-for="sale in recentSalesSafe"
+                                    :key="`history-sale-${sale.id}`"
+                                    class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                                >
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div class="space-y-1">
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <p class="text-sm font-semibold text-slate-900">{{ sale.code }}</p>
+                                                <span class="inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold" :class="sale.status?.tone">
+                                                    {{ sale.status?.label ?? 'Status' }}
+                                                </span>
+                                            </div>
+                                            <p class="text-sm text-slate-700">{{ sale.customer }}</p>
+                                            <p class="text-[11px] text-slate-500">
+                                                {{ sale.payment_label }} • {{ sale.created_at }}
+                                            </p>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Total</p>
+                                            <p class="text-base font-semibold text-slate-900">{{ asCurrency(sale.total_amount) }}</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-3 grid gap-2">
+                                        <div
+                                            v-for="(item, itemIndex) in sale.items"
+                                            :key="`history-sale-${sale.id}-item-${itemIndex}`"
+                                            class="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+                                        >
+                                            <div class="min-w-0">
+                                                <p class="truncate text-sm font-medium text-slate-800">{{ item.description }}</p>
+                                                <p class="text-[11px] text-slate-500">
+                                                    {{ item.quantity }} x {{ asCurrency(item.unit_price) }}
+                                                    <span v-if="item.variation_name">• {{ item.variation_name }}</span>
+                                                </p>
+                                            </div>
+                                            <span class="text-sm font-semibold text-slate-700">{{ asCurrency(item.total_amount) }}</span>
+                                        </div>
+                                    </div>
+
+                                    <p v-if="sale.notes" class="mt-3 text-xs text-slate-500">
+                                        {{ sale.notes }}
+                                    </p>
+
+                                    <div class="mt-3 flex flex-wrap items-center justify-end gap-2">
+                                        <button
+                                            type="button"
+                                            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                            :disabled="!sale.can_edit"
+                                            @click="startHistoryEdit(sale)"
+                                        >
+                                            Editar
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                            :disabled="!sale.can_cancel"
+                                            @click="openHistoryCancelModal(sale)"
+                                        >
+                                            Cancelar
+                                        </button>
+                                    </div>
+                                </article>
+                            </div>
+
+                            <div v-else class="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
+                                Nenhuma transação recente encontrada.
+                            </div>
+                        </section>
+
+                        <section class="rounded-2xl border border-slate-200 bg-white p-4">
+                            <div class="mb-3 flex items-center justify-between gap-3">
+                                <div>
+                                    <h4 class="text-sm font-semibold text-slate-900">Edição rápida</h4>
+                                    <p class="text-xs text-slate-500">
+                                        {{ editingHistorySale ? `Ajustando ${editingHistorySale.code}` : 'Selecione uma transação para editar.' }}
+                                    </p>
+                                </div>
+                                <button
+                                    v-if="editingHistorySale"
+                                    type="button"
+                                    class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                    @click="cancelHistoryEdit"
+                                >
+                                    Fechar edição
+                                </button>
+                            </div>
+
+                            <div v-if="editingHistorySale" class="space-y-4">
+                                <UiSelect
+                                    v-model="historyEditForm.client_id"
+                                    :options="clientOptions"
+                                    placeholder="Cliente"
+                                />
+
+                                <div class="grid gap-2 sm:grid-cols-2">
+                                    <BrlMoneyInput
+                                        v-model="historyEditForm.discount_amount"
+                                        class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                        placeholder="Desconto (R$)"
+                                    />
+                                    <BrlMoneyInput
+                                        v-model="historyEditForm.surcharge_amount"
+                                        class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                        placeholder="Acréscimo (R$)"
+                                    />
+                                </div>
+
+                                <textarea
+                                    v-model="historyEditForm.notes"
+                                    rows="3"
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                                    placeholder="Observações da transação"
+                                ></textarea>
+
+                                <div class="space-y-2">
+                                    <div
+                                        v-for="(item, itemIndex) in historyEditForm.items"
+                                        :key="`history-edit-item-${itemIndex}`"
+                                        class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3"
+                                    >
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div class="min-w-0">
+                                                <p class="truncate text-sm font-semibold text-slate-900">{{ item.description }}</p>
+                                                <p class="text-[11px] text-slate-500">
+                                                    {{ asCurrency(item.unit_price) }}
+                                                    <span v-if="item.variation_name">• {{ item.variation_name }}</span>
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-100"
+                                                @click="removeHistoryItem(itemIndex)"
+                                            >
+                                                Remover
+                                            </button>
+                                        </div>
+                                        <div class="mt-3 flex items-center justify-between gap-3">
+                                            <div class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+                                                <button type="button" class="rounded p-1.5 transition hover:bg-slate-100" @click="updateHistoryItemQuantity(itemIndex, -1)">
+                                                    <Minus class="h-4 w-4" />
+                                                </button>
+                                                <span class="min-w-[2rem] text-center text-xs font-semibold">{{ item.quantity }}</span>
+                                                <button type="button" class="rounded p-1.5 transition hover:bg-slate-100" @click="updateHistoryItemQuantity(itemIndex, 1)">
+                                                    <Plus class="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                            <span class="text-sm font-semibold text-slate-800">{{ asCurrency(item.quantity * item.unit_price) }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-sm">
+                                    <div class="flex items-center justify-between">
+                                        <span>Subtotal</span>
+                                        <span class="font-semibold">{{ asCurrency(historyEditSubtotal) }}</span>
+                                    </div>
+                                    <div class="mt-1 flex items-center justify-between">
+                                        <span>Desconto</span>
+                                        <span class="font-semibold">- {{ asCurrency(normalizeMoneyInput(historyEditForm.discount_amount)) }}</span>
+                                    </div>
+                                    <div class="mt-1 flex items-center justify-between">
+                                        <span>Acréscimo</span>
+                                        <span class="font-semibold">+ {{ asCurrency(normalizeMoneyInput(historyEditForm.surcharge_amount)) }}</span>
+                                    </div>
+                                    <div class="mt-2 flex items-center justify-between border-t border-slate-200 pt-2">
+                                        <span class="font-semibold">Novo total</span>
+                                        <span class="text-base font-bold">{{ asCurrency(historyEditTotal) }}</span>
+                                    </div>
+                                </div>
+
+                                <p v-if="historyEditForm.errors.sale || historyEditForm.errors.items" class="text-xs font-semibold text-rose-600">
+                                    {{ historyEditForm.errors.sale || historyEditForm.errors.items }}
+                                </p>
+
+                                <div class="flex flex-wrap items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                        @click="cancelHistoryEdit"
+                                    >
+                                        Cancelar edição
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                        :disabled="historyEditForm.processing || !canSubmitHistoryEdit"
+                                        @click="submitHistoryEdit"
+                                    >
+                                        {{ historyEditForm.processing ? 'Salvando...' : 'Salvar alterações' }}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div v-else class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                                Escolha uma transação da lista para editar rapidamente sem sair do caixa.
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </aside>
+        </transition>
+
+        <Modal :show="createProductModalOpen" max-width="5xl" @close="createProductModalOpen = false">
+            <WizardModalFrame
+                title="Novo produto"
+                description="Cadastre um produto rápido sem sair do PDV."
+                :steps="['Cadastro rápido']"
+                :current-step="1"
+                @close="createProductModalOpen = false"
+            >
+                <div class="grid gap-3 md:grid-cols-2">
+                    <div class="space-y-2 md:col-span-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
+                        <input
+                            v-model="createProductForm.name"
+                            type="text"
+                            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Ex.: Camiseta básica"
+                        >
+                        <p v-if="createProductForm.errors.name" class="text-xs font-semibold text-rose-600">
+                            {{ createProductForm.errors.name }}
+                        </p>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Categoria</label>
+                        <UiSelect
+                            v-model="createProductForm.category_id"
+                            :options="categoryOptions"
+                            button-class="w-full"
+                            placeholder="Categoria"
+                        />
+                        <p v-if="createProductForm.errors.category_id" class="text-xs font-semibold text-rose-600">
+                            {{ createProductForm.errors.category_id }}
+                        </p>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">SKU</label>
+                        <input
+                            v-model="createProductForm.sku"
+                            type="text"
+                            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="Opcional"
+                        >
+                        <p v-if="createProductForm.errors.sku" class="text-xs font-semibold text-rose-600">
+                            {{ createProductForm.errors.sku }}
+                        </p>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Preço de venda</label>
+                        <BrlMoneyInput
+                            v-model="createProductForm.sale_price"
+                            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                            placeholder="0,00"
+                        />
+                        <p v-if="createProductForm.errors.sale_price" class="text-xs font-semibold text-rose-600">
+                            {{ createProductForm.errors.sale_price }}
+                        </p>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Estoque inicial</label>
+                        <input
+                            v-model="createProductForm.stock_quantity"
+                            type="number"
+                            min="0"
+                            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        >
+                        <p v-if="createProductForm.errors.stock_quantity" class="text-xs font-semibold text-rose-600">
+                            {{ createProductForm.errors.stock_quantity }}
+                        </p>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Unidade</label>
+                        <UiSelect
+                            v-model="createProductForm.unit"
+                            :options="productUnitOptions"
+                            button-class="w-full"
+                        />
+                        <p v-if="createProductForm.errors.unit" class="text-xs font-semibold text-rose-600">
+                            {{ createProductForm.errors.unit }}
+                        </p>
+                    </div>
+                </div>
+                <template #footer>
+                    <div class="flex items-center justify-end gap-2">
+                        <button
+                            type="button"
+                            class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                            @click="createProductModalOpen = false"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+                            :disabled="createProductForm.processing"
+                            @click="submitCreateProduct"
+                        >
+                            {{ createProductForm.processing ? 'Salvando...' : 'Criar produto' }}
+                        </button>
+                    </div>
+                </template>
+            </WizardModalFrame>
+        </Modal>
+
+        <Modal :show="historyCancelModalOpen" max-width="md" @close="historyCancelModalOpen = false">
+            <div class="w-full rounded-3xl bg-white p-6 text-slate-900 shadow-2xl">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <h3 class="text-base font-semibold text-slate-900">Cancelar transação</h3>
+                        <p class="text-xs text-slate-500">
+                            {{ historyCancelTarget?.code ? `Transação ${historyCancelTarget.code}` : 'Confirme o cancelamento da venda.' }}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        class="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                        @click="historyCancelModalOpen = false"
+                    >
+                        Fechar
+                    </button>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                    <textarea
+                        v-model="historyCancelForm.reason"
+                        rows="3"
+                        class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                        placeholder="Motivo do cancelamento (opcional)"
+                    ></textarea>
+                    <p v-if="historyCancelForm.errors.sale || historyCancelForm.errors.reason" class="text-xs font-semibold text-rose-600">
+                        {{ historyCancelForm.errors.sale || historyCancelForm.errors.reason }}
+                    </p>
+                </div>
+
+                <div class="mt-5 flex items-center justify-end gap-2">
+                    <button
+                        type="button"
+                        class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        @click="historyCancelModalOpen = false"
+                    >
+                        Voltar
+                    </button>
+                    <button
+                        type="button"
+                        class="rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
+                        :disabled="historyCancelForm.processing"
+                        @click="submitHistoryCancel"
+                    >
+                        {{ historyCancelForm.processing ? 'Cancelando...' : 'Confirmar cancelamento' }}
+                    </button>
+                </div>
+            </div>
+        </Modal>
+
         <Modal :show="openCashModalOpen" max-width="5xl" @close="openCashModalOpen = false">
             <WizardModalFrame title="Abrir caixa" description="Informe o saldo inicial." :steps="['Abertura']" :current-step="1" @close="openCashModalOpen = false">
                 <div class="space-y-3">
@@ -1575,5 +2218,25 @@ function submitCreateClient() {
 
 .pdv-touch-mode :deep(.no-scrollbar::-webkit-scrollbar) {
     display: none;
+}
+
+.history-drawer-enter-active,
+.history-drawer-leave-active {
+    transition: transform 220ms ease;
+}
+
+.history-drawer-enter-from,
+.history-drawer-leave-to {
+    transform: translateX(100%);
+}
+
+.history-drawer-fade-enter-active,
+.history-drawer-fade-leave-active {
+    transition: opacity 180ms ease;
+}
+
+.history-drawer-fade-enter-from,
+.history-drawer-fade-leave-to {
+    opacity: 0;
 }
 </style>

@@ -46,6 +46,7 @@ class AdminContractorBrandingService
                 'require_2fa' => true,
                 'require_email_verification' => (bool) ($settings['require_email_verification'] ?? true),
                 'email_notifications_enabled' => (bool) ($settings['email_notifications_enabled'] ?? true),
+                'admin_inactivity_timeout' => $this->resolveAdminInactivityTimeout($settings),
             ],
             'niches' => [
                 'current' => $contractor->niche(),
@@ -110,12 +111,14 @@ class AdminContractorBrandingService
             'remove_brand_avatar' => ['nullable', 'boolean'],
             'require_email_verification' => ['required', 'boolean'],
             'email_notifications_enabled' => ['required', 'boolean'],
+            'admin_inactivity_timeout' => ['required', 'string', Rule::in(['15', '30', '60', 'keep_active'])],
         ]);
 
         $settings = (array) ($contractor->settings ?? []);
         $settings['require_2fa'] = true;
         $settings['require_email_verification'] = (bool) $validated['require_email_verification'];
         $settings['email_notifications_enabled'] = (bool) $validated['email_notifications_enabled'];
+        $settings['admin_inactivity_timeout'] = $validated['admin_inactivity_timeout'];
 
         if (($validated['remove_brand_logo'] ?? false) === true) {
             $this->deleteStoredFileFromPublicUrl($contractor->brand_logo_url);
@@ -151,6 +154,15 @@ class AdminContractorBrandingService
         $contractor->save();
 
         return back()->with('status', 'Branding atualizada com sucesso.');
+    }
+
+    private function resolveAdminInactivityTimeout(array $settings): string
+    {
+        $value = trim((string) ($settings['admin_inactivity_timeout'] ?? '60'));
+
+        return in_array($value, ['15', '30', '60', 'keep_active'], true)
+            ? $value
+            : '60';
     }
 
     /**
