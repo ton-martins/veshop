@@ -825,7 +825,7 @@ const configuredBanners = computed(() => {
             useOriginalImageColors: Boolean(banner?.use_original_image_colors ?? false),
             imageOnly: Boolean(banner?.image_only ?? false),
         }))
-        .slice(0, 6);
+        .slice(0, 2);
 });
 
 const filteredCatalog = computed(() => {
@@ -841,7 +841,7 @@ const filteredCatalog = computed(() => {
 
 const featuredCatalog = computed(() => filteredCatalog.value.slice(0, 8));
 
-const fallbackBanners = computed(() => featuredCatalog.value.slice(0, 6).map((item, index) => ({
+const fallbackBanners = computed(() => featuredCatalog.value.slice(0, 2).map((item, index) => ({
     id: `fallback-${item.id}`,
     title: item.title,
     subtitle: item.subtitle,
@@ -859,7 +859,7 @@ const promotionalBanners = computed(() => {
     return fallbackBanners.value;
 });
 
-const desktopBanners = computed(() => promotionalBanners.value.slice(0, 3));
+const desktopBanners = computed(() => promotionalBanners.value.slice(0, 2));
 const promotionalCatalog = computed(() => {
     const selectedIds = storefrontPromotions.value.itemIds ?? [];
     if (!selectedIds.length) return [];
