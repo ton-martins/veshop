@@ -1171,9 +1171,9 @@ const serviceAttentionNote = computed(() => {
 }
 
 .finance-tab.is-active {
-    background: var(--finance-tab-active-soft, rgba(15, 23, 42, 0.08));
     border-color: var(--finance-tab-active-border, rgba(15, 23, 42, 0.16));
-    color: var(--finance-tab-active, #0f172a);
+    background: var(--finance-tab-active, #0f172a);
+    color: #ffffff;
     box-shadow: 0 10px 25px -22px var(--finance-tab-active, rgba(15, 23, 42, 0.4));
 }
 </style>
