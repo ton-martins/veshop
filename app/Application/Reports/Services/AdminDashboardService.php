@@ -98,31 +98,44 @@ class AdminDashboardService
             })
             ->sum('final_amount');
 
-        $servicesQueue = ServiceOrder::query()
+        $servicesQueue = ServiceAppointment::query()
             ->where('contractor_id', $contractor->id)
-            ->whereIn('status', $servicesOpenOrderStatuses)
+            ->whereBetween('starts_at', [$servicesTodayStart, $servicesTodayEnd])
             ->with([
-                'client:id,name',
+                'client:id,name,phone,email',
                 'service:id,name',
+                'serviceOrder:id,code,assigned_to_name',
             ])
-            ->orderByRaw(
-                'CASE status WHEN ? THEN 0 WHEN ? THEN 1 WHEN ? THEN 2 ELSE 3 END',
-                [
-                    ServiceOrder::STATUS_OPEN,
-                    ServiceOrder::STATUS_IN_PROGRESS,
-                    ServiceOrder::STATUS_WAITING,
-                ]
-            )
-            ->orderByDesc('created_at')
-            ->limit(12)
+            ->orderBy('starts_at')
+            ->orderBy('id')
             ->get()
-            ->map(fn (ServiceOrder $order): array => [
-                'id' => (int) $order->id,
-                'code' => (string) $order->code,
-                'customer' => $order->client?->name ? (string) $order->client->name : 'Não informado',
-                'service' => $order->service?->name ? (string) $order->service->name : (string) $order->title,
-                'status' => $this->resolveServiceOrderStatusLabel((string) $order->status),
-            ])
+            ->map(function (ServiceAppointment $appointment) use ($contractor): array {
+                $statusMeta = $this->resolveServiceAppointmentStatusMeta((string) $appointment->status);
+                $timezone = (string) ($contractor->timezone ?: config('app.timezone', 'America/Sao_Paulo'));
+
+                return [
+                    'id' => (int) $appointment->id,
+                    'code' => $appointment->serviceOrder?->code ? (string) $appointment->serviceOrder->code : null,
+                    'customer' => $appointment->client?->name ? (string) $appointment->client->name : 'Não informado',
+                    'customer_contact' => $appointment->client?->phone
+                        ? (string) $appointment->client->phone
+                        : ($appointment->client?->email ? (string) $appointment->client->email : ''),
+                    'service' => $appointment->service?->name
+                        ? (string) $appointment->service->name
+                        : (string) ($appointment->title ?: 'Atendimento sem serviço'),
+                    'title' => (string) ($appointment->title ?: ''),
+                    'starts_at' => optional($appointment->starts_at)?->setTimezone($timezone)?->format('H:i'),
+                    'ends_at' => optional($appointment->ends_at)?->setTimezone($timezone)?->format('H:i'),
+                    'location' => $appointment->location ? (string) $appointment->location : '',
+                    'notes' => $appointment->notes ? (string) $appointment->notes : '',
+                    'technician' => $appointment->serviceOrder?->assigned_to_name ? (string) $appointment->serviceOrder->assigned_to_name : '',
+                    'status' => $statusMeta['label'],
+                    'status_value' => $statusMeta['value'],
+                    'status_tone' => $statusMeta['tone'],
+                    'payment_status' => $this->resolveServiceAppointmentPaymentLabel((string) ($appointment->payment_status ?: ServiceAppointment::PAYMENT_STATUS_PENDING)),
+                    'payment_status_tone' => $this->resolveServiceAppointmentPaymentTone((string) ($appointment->payment_status ?: ServiceAppointment::PAYMENT_STATUS_PENDING)),
+                ];
+            })
             ->values()
             ->all();
 
@@ -571,15 +584,39 @@ class AdminDashboardService
         };
     }
 
-    private function resolveServiceOrderStatusLabel(string $status): string
+    /**
+     * @return array{value: string, label: string, tone: string}
+     */
+    private function resolveServiceAppointmentStatusMeta(string $status): array
     {
-        return match ($status) {
-            ServiceOrder::STATUS_OPEN => 'Triagem',
-            ServiceOrder::STATUS_IN_PROGRESS => 'Em execução',
-            ServiceOrder::STATUS_WAITING => 'Aguardando',
-            ServiceOrder::STATUS_DONE => 'Finalizada',
-            ServiceOrder::STATUS_CANCELLED => 'Cancelada',
-            default => ucfirst($status),
+        $normalized = strtolower(trim($status));
+
+        return match ($normalized) {
+            ServiceAppointment::STATUS_SCHEDULED => ['value' => $normalized, 'label' => 'Agendado', 'tone' => 'bg-slate-100 text-slate-700'],
+            ServiceAppointment::STATUS_CONFIRMED => ['value' => $normalized, 'label' => 'Confirmado', 'tone' => 'bg-slate-100 text-slate-700'],
+            ServiceAppointment::STATUS_IN_SERVICE => ['value' => $normalized, 'label' => 'Em atendimento', 'tone' => 'bg-blue-100 text-blue-700'],
+            ServiceAppointment::STATUS_DONE => ['value' => $normalized, 'label' => 'Concluído', 'tone' => 'bg-emerald-100 text-emerald-700'],
+            ServiceAppointment::STATUS_CANCELLED => ['value' => $normalized, 'label' => 'Cancelado', 'tone' => 'bg-rose-100 text-rose-700'],
+            ServiceAppointment::STATUS_NO_SHOW => ['value' => $normalized, 'label' => 'Não compareceu', 'tone' => 'bg-rose-100 text-rose-700'],
+            default => ['value' => $normalized, 'label' => ucfirst($normalized), 'tone' => 'bg-slate-100 text-slate-700'],
+        };
+    }
+
+    private function resolveServiceAppointmentPaymentLabel(string $status): string
+    {
+        return match (strtolower(trim($status))) {
+            ServiceAppointment::PAYMENT_STATUS_PAID => 'Pago',
+            ServiceAppointment::PAYMENT_STATUS_CANCELLED => 'Pagamento cancelado',
+            default => 'Pagamento pendente',
+        };
+    }
+
+    private function resolveServiceAppointmentPaymentTone(string $status): string
+    {
+        return match (strtolower(trim($status))) {
+            ServiceAppointment::PAYMENT_STATUS_PAID => 'bg-emerald-100 text-emerald-700',
+            ServiceAppointment::PAYMENT_STATUS_CANCELLED => 'bg-rose-100 text-rose-700',
+            default => 'bg-amber-100 text-amber-700',
         };
     }
 
