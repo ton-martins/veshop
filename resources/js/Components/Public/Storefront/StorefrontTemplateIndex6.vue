@@ -628,8 +628,6 @@ const normalizedCatalog = computed(() => {
                 return {
                     id: toInt(service?.id, 0),
                     categoryId: toInt(service?.service_category_id, 0),
-                    rootCategoryId: toInt(service?.service_category_id, 0),
-                    parentCategoryId: null,
                     title: String(service?.name || 'Serviço'),
                     subtitle: String(service?.category_name || service?.code || 'Atendimento'),
                     description: String(service?.description || 'Sem descrição informada.'),
@@ -651,8 +649,6 @@ const normalizedCatalog = computed(() => {
     return safe
         .map((product) => {
             const id = toInt(product?.id, 0);
-            const categoryId = toInt(product?.category_id, 0);
-            const parentCategoryId = product?.category_parent_id ? toInt(product.category_parent_id, 0) : null;
             const imageList = Array.isArray(product?.images)
                 ? product.images
                     .map((row) => String(row?.image_url || '').trim())
@@ -662,9 +658,7 @@ const normalizedCatalog = computed(() => {
 
             return {
                 id,
-                categoryId,
-                rootCategoryId: parentCategoryId && parentCategoryId > 0 ? parentCategoryId : categoryId,
-                parentCategoryId,
+                categoryId: toInt(product?.category_id, toInt(product?.category_parent_id, 0)),
                 title: String(product?.name || 'Produto'),
                 subtitle: String(product?.category_name || product?.sku || 'Produto'),
                 description: String(product?.description || 'Sem descrição informada.'),
@@ -715,21 +709,18 @@ const normalizedCollaborators = computed(() =>
         .filter((collaborator) => collaborator.id > 0),
 );
 
-const normalizedCategories = computed(() => {
+const categoryOptions = computed(() => {
     const safe = Array.isArray(props.categories) ? props.categories : [];
-    return safe
-        .map((category) => ({
-            id: toInt(category?.id, 0),
-            label: String(category?.name || 'Categoria').trim() || 'Categoria',
-            parentId: category?.parent_id ? toInt(category.parent_id, 0) : null,
-        }))
+    const normalized = safe
+        .map((category) => ({ id: toInt(category?.id, 0), label: String(category?.name || 'Categoria') }))
         .filter((category) => category.id > 0);
+
+    return [{ id: 'all', label: 'Todas' }, ...normalized];
 });
 
 const activeTab = ref('home');
 const search = ref('');
-const activeParentCategory = ref('all');
-const activeSubcategory = ref('all');
+const activeCategory = ref('all');
 const isCartOpen = ref(false);
 const selectedId = ref(null);
 const variationByProduct = ref({});
@@ -778,27 +769,6 @@ watch(normalizedCatalog, (items) => {
 
     if (!items.some((item) => item.id === selectedId.value)) {
         selectedId.value = items[0].id;
-    }
-}, { immediate: true });
-
-watch(activeParentCategory, () => {
-    activeSubcategory.value = 'all';
-});
-
-watch(macroCategoryOptions, (options) => {
-    if (!options.some((option) => String(option.id) === String(activeParentCategory.value))) {
-        activeParentCategory.value = 'all';
-    }
-}, { immediate: true });
-
-watch(availableSubcategoryOptions, (options) => {
-    if (!options.length) {
-        activeSubcategory.value = 'all';
-        return;
-    }
-
-    if (!options.some((option) => String(option.id) === String(activeSubcategory.value))) {
-        activeSubcategory.value = 'all';
     }
 }, { immediate: true });
 
@@ -858,50 +828,14 @@ const configuredBanners = computed(() => {
         .slice(0, 2);
 });
 
-const macroCategoryOptions = computed(() => {
-    const roots = normalizedCategories.value.filter((category) => !category.parentId);
-    return [{ id: 'all', label: 'Todas' }, ...roots];
-});
-
-const subcategoriesByParent = computed(() => {
-    const grouped = new Map();
-
-    normalizedCategories.value.forEach((category) => {
-        const parentId = toInt(category.parentId, 0);
-        if (parentId <= 0) return;
-
-        const bucket = grouped.get(parentId) ?? [];
-        bucket.push(category);
-        grouped.set(parentId, bucket);
-    });
-
-    return grouped;
-});
-
-const availableSubcategoryOptions = computed(() => {
-    const parentId = toInt(activeParentCategory.value, 0);
-    if (parentId <= 0) return [];
-
-    const children = subcategoriesByParent.value.get(parentId) ?? [];
-    if (!children.length) return [];
-
-    return [{ id: 'all', label: 'Todas' }, ...children];
-});
-
 const filteredCatalog = computed(() => {
     const term = String(search.value || '').trim().toLowerCase();
-    const activeParentId = toInt(activeParentCategory.value, 0);
-    const activeSubcategoryId = toInt(activeSubcategory.value, 0);
 
     return normalizedCatalog.value.filter((item) => {
-        const parentMatch = activeParentCategory.value === 'all'
-            || item.rootCategoryId === activeParentId
-            || item.categoryId === activeParentId;
-        const subcategoryMatch = activeSubcategory.value === 'all'
-            || item.categoryId === activeSubcategoryId;
+        const categoryMatch = activeCategory.value === 'all' || toInt(activeCategory.value, 0) === item.categoryId;
         const searchPool = `${item.title} ${item.subtitle} ${item.description}`.toLowerCase();
         const searchMatch = term === '' || searchPool.includes(term);
-        return parentMatch && subcategoryMatch && searchMatch;
+        return categoryMatch && searchMatch;
     });
 });
 
@@ -2419,8 +2353,7 @@ const submitDetailsPrimaryAction = () => {
 
 const applyHeroCta = () => {
     search.value = '';
-    activeParentCategory.value = 'all';
-    activeSubcategory.value = 'all';
+    activeCategory.value = 'all';
     const first = filteredCatalog.value[0] ?? null;
     if (first) selectedId.value = first.id;
 };
@@ -2864,41 +2797,19 @@ onBeforeUnmount(() => {
                                 </span>
                             </div>
 
-                            <div v-if="storefrontBlocks.categories && macroCategoryOptions.length" class="mb-5">
-                                <div class="overflow-x-auto border-b border-slate-200">
-                                    <div class="flex min-w-max items-end gap-6">
-                                        <button
-                                            v-for="category in macroCategoryOptions"
-                                            :key="category.id"
-                                            type="button"
-                                            class="-mb-px border-b-2 border-transparent px-0 pb-3 pt-1 text-sm font-semibold whitespace-nowrap transition"
-                                            :class="String(activeParentCategory) === String(category.id)
-                                                ? 'text-[var(--idx-primary)]'
-                                                : 'text-slate-500 hover:text-slate-700'"
-                                            :style="String(activeParentCategory) === String(category.id)
-                                                ? { borderColor: 'var(--idx-primary)' }
-                                                : {}"
-                                            @click="activeParentCategory = category.id"
-                                        >
-                                            {{ category.label }}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div v-if="availableSubcategoryOptions.length" class="mt-3 flex items-center gap-2 overflow-x-auto">
-                                    <button
-                                        v-for="category in availableSubcategoryOptions"
-                                        :key="category.id"
-                                        type="button"
-                                        class="rounded-full border px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
-                                        :class="String(activeSubcategory) === String(category.id)
-                                            ? 'bg-[var(--idx-primary)] text-white border-[var(--idx-primary)]'
-                                            : 'bg-white text-gray-500 border-gray-200'"
-                                        @click="activeSubcategory = category.id"
-                                    >
-                                        {{ category.label }}
-                                    </button>
-                                </div>
+                            <div v-if="storefrontBlocks.categories" class="mb-4 flex items-center gap-2 overflow-x-auto">
+                                <button
+                                    v-for="category in categoryOptions"
+                                    :key="category.id"
+                                    type="button"
+                                    class="px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border"
+                                    :class="String(activeCategory) === String(category.id)
+                                        ? 'bg-[var(--idx-primary)] text-white border-[var(--idx-primary)]'
+                                        : 'bg-white text-gray-500 border-gray-200'"
+                                    @click="activeCategory = category.id"
+                                >
+                                    {{ category.label }}
+                                </button>
                             </div>
 
                             <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
