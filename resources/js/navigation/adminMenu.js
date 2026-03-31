@@ -50,6 +50,7 @@
                 route: 'admin.collaborators.index',
                 match: ['admin.collaborators.*'],
                 icon: 'UserRound',
+                module: 'collaborators',
             },
             {
                 key: 'admin-suppliers',
@@ -178,6 +179,7 @@
                 route: 'admin.collaborators.index',
                 match: ['admin.collaborators.*'],
                 icon: 'UserRound',
+                module: 'collaborators',
             },
             {
                 key: 'admin-services-categories',

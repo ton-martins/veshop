@@ -10,7 +10,6 @@ use App\Models\Contractor;
 use App\Models\Product;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -20,9 +19,6 @@ class AdminCategoryService
 {
     use ResolvesCurrentContractor;
 
-    /**
-     * Display a listing of categories.
-     */
     public function index(Request $request): Response
     {
         $contractor = $this->resolveCurrentContractor($request);
@@ -33,22 +29,44 @@ class AdminCategoryService
 
         $query = Category::query()
             ->where('contractor_id', $contractor->id)
-            ->with('parent:id,name')
+            ->whereNull('parent_id')
             ->withCount('products')
-            ->withCount('children');
+            ->withCount('children')
+            ->with([
+                'children' => static function ($childQuery): void {
+                    $childQuery
+                        ->withCount('products')
+                        ->orderByDesc('is_active')
+                        ->orderBy('sort_order')
+                        ->orderBy('name');
+                },
+            ]);
 
         if ($search !== '') {
             $query->where(function ($innerQuery) use ($search): void {
                 $innerQuery
                     ->where('name', 'like', "%{$search}%")
-                    ->orWhere('slug', 'like', "%{$search}%");
+                    ->orWhere('slug', 'like', "%{$search}%")
+                    ->orWhereHas('children', static function ($childrenQuery) use ($search): void {
+                        $childrenQuery
+                            ->where('name', 'like', "%{$search}%")
+                            ->orWhere('slug', 'like', "%{$search}%");
+                    });
             });
         }
 
         if ($status === 'active') {
-            $query->where('is_active', true);
+            $query->where(function ($innerQuery): void {
+                $innerQuery
+                    ->where('is_active', true)
+                    ->orWhereHas('children', static fn ($childrenQuery) => $childrenQuery->where('is_active', true));
+            });
         } elseif ($status === 'inactive') {
-            $query->where('is_active', false);
+            $query->where(function ($innerQuery): void {
+                $innerQuery
+                    ->where('is_active', false)
+                    ->orWhereHas('children', static fn ($childrenQuery) => $childrenQuery->where('is_active', false));
+            });
         }
 
         $categories = $query
@@ -59,17 +77,33 @@ class AdminCategoryService
             ->withQueryString()
             ->through(static function (Category $category): array {
                 return [
-                    'id' => $category->id,
-                    'parent_id' => $category->parent_id ? (int) $category->parent_id : null,
-                    'parent_name' => $category->parent?->name !== null ? (string) $category->parent->name : null,
-                    'name' => $category->name,
-                    'slug' => $category->slug,
-                    'description' => $category->description,
+                    'id' => (int) $category->id,
+                    'parent_id' => null,
+                    'parent_name' => null,
+                    'name' => (string) $category->name,
+                    'slug' => (string) $category->slug,
+                    'description' => $category->description ? (string) $category->description : '',
                     'products_count' => (int) $category->products_count,
                     'children_count' => (int) $category->children_count,
                     'is_active' => (bool) $category->is_active,
                     'status_label' => $category->is_active ? 'Ativa' : 'Inativa',
                     'created_at' => optional($category->created_at)?->format('d/m/Y H:i'),
+                    'children' => $category->children
+                        ->map(static fn (Category $child): array => [
+                            'id' => (int) $child->id,
+                            'parent_id' => $child->parent_id ? (int) $child->parent_id : null,
+                            'parent_name' => $category->name,
+                            'name' => (string) $child->name,
+                            'slug' => (string) $child->slug,
+                            'description' => $child->description ? (string) $child->description : '',
+                            'products_count' => (int) $child->products_count,
+                            'children_count' => (int) $child->children()->count(),
+                            'is_active' => (bool) $child->is_active,
+                            'status_label' => $child->is_active ? 'Ativa' : 'Inativa',
+                            'created_at' => optional($child->created_at)?->format('d/m/Y H:i'),
+                        ])
+                        ->values()
+                        ->all(),
                 ];
             });
 
@@ -120,9 +154,6 @@ class AdminCategoryService
         ]);
     }
 
-    /**
-     * Store a newly created category in storage.
-     */
     public function store(StoreCategoryRequest $request): RedirectResponse
     {
         $contractor = $this->resolveCurrentContractor($request);
@@ -134,14 +165,21 @@ class AdminCategoryService
         $data['slug'] = $this->resolveUniqueSlug($contractor, $slugBase);
         $data['contractor_id'] = $contractor->id;
 
-        Category::query()->create($data);
+        $category = Category::query()->create($data);
 
-        return back()->with('status', 'Categoria criada com sucesso.');
+        $redirect = back()->with('status', 'Categoria criada com sucesso.');
+
+        if ($request->boolean('continue_to_subcategories')) {
+            return $redirect->with('category_modal', [
+                'category_id' => (int) $category->id,
+                'step' => 2,
+                'token' => (string) Str::uuid(),
+            ]);
+        }
+
+        return $redirect;
     }
 
-    /**
-     * Update the specified category in storage.
-     */
     public function update(UpdateCategoryRequest $request, Category $category): RedirectResponse
     {
         $contractor = $this->resolveCurrentContractor($request);
@@ -157,12 +195,19 @@ class AdminCategoryService
 
         $category->fill($data)->save();
 
-        return back()->with('status', 'Categoria atualizada com sucesso.');
+        $redirect = back()->with('status', 'Categoria atualizada com sucesso.');
+
+        if ($request->boolean('continue_to_subcategories')) {
+            return $redirect->with('category_modal', [
+                'category_id' => (int) $category->id,
+                'step' => 2,
+                'token' => (string) Str::uuid(),
+            ]);
+        }
+
+        return $redirect;
     }
 
-    /**
-     * Remove the specified category from storage.
-     */
     public function destroy(Request $request, Category $category): RedirectResponse
     {
         $contractor = $this->resolveCurrentContractor($request);
@@ -178,7 +223,15 @@ class AdminCategoryService
     {
         abort_unless((int) $category->contractor_id === (int) $contractor->id, 404);
 
-        return $category;
+        return $category->loadMissing([
+            'children' => static function ($childQuery): void {
+                $childQuery
+                    ->withCount('products')
+                    ->orderByDesc('is_active')
+                    ->orderBy('sort_order')
+                    ->orderBy('name');
+            },
+        ]);
     }
 
     private function resolveUniqueSlug(Contractor $contractor, string $value, ?int $ignoreCategoryId = null): string
@@ -268,34 +321,18 @@ class AdminCategoryService
      */
     private function resolveParentOptions(Contractor $contractor): array
     {
-        $categories = Category::query()
+        return Category::query()
             ->where('contractor_id', $contractor->id)
+            ->whereNull('parent_id')
             ->orderBy('sort_order')
             ->orderBy('name')
-            ->get(['id', 'name', 'parent_id']);
-
-        $groupedByParent = $categories
-            ->groupBy(static fn (Category $category): int => (int) ($category->parent_id ?? 0));
-
-        $flattened = [];
-        $appendChildren = function (int $parentId, int $depth) use (&$appendChildren, &$flattened, $groupedByParent): void {
-            /** @var Collection<int, Category> $children */
-            $children = $groupedByParent->get($parentId, collect());
-
-            foreach ($children as $child) {
-                $prefix = str_repeat('- ', max(0, $depth));
-                $flattened[] = [
-                    'id' => (int) $child->id,
-                    'name' => trim("{$prefix}{$child->name}"),
-                    'parent_id' => $child->parent_id ? (int) $child->parent_id : null,
-                ];
-
-                $appendChildren((int) $child->id, $depth + 1);
-            }
-        };
-
-        $appendChildren(0, 0);
-
-        return $flattened;
+            ->get(['id', 'name'])
+            ->map(static fn (Category $category): array => [
+                'id' => (int) $category->id,
+                'name' => (string) $category->name,
+                'parent_id' => null,
+            ])
+            ->values()
+            ->all();
     }
 }

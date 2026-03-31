@@ -994,6 +994,10 @@ class PublicShopService
      */
     private function resolveBookingCollaboratorsPayload(Contractor $contractor): array
     {
+        if (! $contractor->hasModule('collaborators')) {
+            return [];
+        }
+
         $timezone = $this->resolveContractorTimezone($contractor);
         $windowStart = now($timezone)->startOfDay();
         $windowEnd = $windowStart->copy()->addDays(14)->endOfDay();
@@ -1046,6 +1050,10 @@ class PublicShopService
     ): ?Collaborator {
         $safeCollaboratorId = (int) $collaboratorId;
         if ($safeCollaboratorId <= 0) {
+            return null;
+        }
+
+        if (! $contractor->hasModule('collaborators')) {
             return null;
         }
 

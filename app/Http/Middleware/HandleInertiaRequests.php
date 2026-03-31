@@ -82,6 +82,7 @@ class HandleInertiaRequests extends Middleware
                 'status' => fn () => $request->session()->get('status'),
                 'status_token' => fn () => $request->session()->has('status') ? (string) Str::uuid() : null,
                 'new_client_id' => fn () => $request->session()->get('new_client_id'),
+                'category_modal' => fn () => $request->session()->get('category_modal'),
                 'checkout_payment' => fn () => $request->session()->get('checkout_payment'),
                 'checkout_manual' => fn () => $request->session()->get('checkout_manual'),
                 'service_booking_whatsapp_url' => fn () => $request->session()->get('service_booking_whatsapp_url'),
