@@ -749,9 +749,8 @@ const serviceAttentionNote = computed(() => {
                         >
                             <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                                 <div class="flex items-start gap-4">
-                                    <div class="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-2xl bg-slate-900 text-white">
-                                        <span class="text-[10px] font-medium uppercase tracking-wide">Ordem</span>
-                                        <span class="text-sm font-semibold">{{ index + 1 }}</span>
+                                    <div class="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-2xl bg-slate-900 text-white">
+                                        <span class="text-sm font-semibold"># {{ index + 1 }}</span>
                                     </div>
 
                                     <div class="space-y-2">

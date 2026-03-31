@@ -1522,9 +1522,6 @@ const appointmentStatusAccentClass = (value) => appointmentStatusTheme(value).ac
                                     >
                                         Timeline do dia
                                     </p>
-                                    <p class="text-sm font-semibold text-slate-800">
-                                        Blocos de 15 min com ocupação real do horário.
-                                    </p>
                                     <p class="text-[11px] text-slate-500">
                                         Clique em uma lacuna para abrir no próximo encaixe válido.
                                     </p>
@@ -1721,7 +1718,7 @@ const appointmentStatusAccentClass = (value) => appointmentStatusTheme(value).ac
                                     </p>
                                     <p class="text-[11px] text-slate-500">
                                         {{ appointment.technician || 'Sem responsável' }} -
-                                        {{ appointment.service_order_code || 'Sem OS' }}
+                                        {{ appointment.service_order_code || '' }}
                                     </p>
                                 </div>
                                 <div class="flex flex-wrap items-center gap-2">
@@ -2241,7 +2238,7 @@ const appointmentStatusAccentClass = (value) => appointmentStatusTheme(value).ac
                                         v-model="form.location"
                                         type="text"
                                         class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700"
-                                        placeholder="Endereco, sala ou referencia"
+                                        placeholder="Endereço, sala ou referência"
                                     />
                                     <p v-if="form.errors.location" class="mt-1 text-xs text-rose-600">
                                         {{ form.errors.location }}
@@ -2250,13 +2247,13 @@ const appointmentStatusAccentClass = (value) => appointmentStatusTheme(value).ac
 
                                 <div>
                                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                        Observacoes
+                                        Observações
                                     </label>
                                     <textarea
                                         v-model="form.notes"
                                         rows="4"
                                         class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700"
-                                        placeholder="Instrucoes adicionais para a equipe"
+                                        placeholder="Instruções adicionais para a equipe"
                                     />
                                     <p v-if="form.errors.notes" class="mt-1 text-xs text-rose-600">
                                         {{ form.errors.notes }}
