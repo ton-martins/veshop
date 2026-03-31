@@ -223,6 +223,7 @@ class AdminStorefrontService
             'promotions_enabled' => ['required', 'boolean'],
             'promotions_title' => ['nullable', 'string', 'max:80'],
             'promotions_subtitle' => ['nullable', 'string', 'max:220'],
+            'promotions_card_badge_text' => ['nullable', 'string', 'max:120'],
             'promotion_product_ids' => ['nullable', 'array', 'max:24'],
             'promotion_product_ids.*' => ['integer'],
             'promotion_service_ids' => ['nullable', 'array', 'max:24'],
@@ -318,6 +319,7 @@ class AdminStorefrontService
             'promotions' => [
                 'title' => $validated['promotions_title'] ?? '',
                 'subtitle' => $validated['promotions_subtitle'] ?? '',
+                'card_badge_text' => $validated['promotions_card_badge_text'] ?? '',
                 'product_ids' => $validProductPromotionIds,
                 'service_ids' => $validServicePromotionIds,
             ],

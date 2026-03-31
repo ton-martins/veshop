@@ -193,6 +193,7 @@ const storefrontForm = useForm({
     promotions_enabled: true,
     promotions_title: '',
     promotions_subtitle: '',
+    promotions_card_badge_text: '',
     promotion_product_ids: [],
     promotion_service_ids: [],
     categories_enabled: true,
@@ -253,6 +254,7 @@ const hydrateStorefront = () => {
     storefrontForm.promotions_enabled = blocks.promotions ?? true;
     storefrontForm.promotions_title = promotions.title ?? '';
     storefrontForm.promotions_subtitle = promotions.subtitle ?? '';
+    storefrontForm.promotions_card_badge_text = promotions.card_badge_text ?? '';
     storefrontForm.promotion_product_ids = Array.isArray(promotions.product_ids)
         ? promotions.product_ids.map((id) => String(id))
         : [];
@@ -1141,6 +1143,7 @@ const submitStorefront = () => {
         promotion_service_ids: (data.promotion_service_ids ?? [])
             .map((id) => Number(id))
             .filter((id) => Number.isInteger(id) && id > 0),
+        promotions_card_badge_text: String(data.promotions_card_badge_text || '').trim(),
         business_hours: Object.fromEntries(
             WEEK_DAYS.map((day) => {
                 const row = data.business_hours?.[day.key] ?? {};
@@ -1356,9 +1359,15 @@ onBeforeUnmount(() => {
                                 placeholder="Subtítulo dos destaques"
                             ></textarea>
                             <input
+                                v-model="storefrontForm.promotions_card_badge_text"
+                                type="text"
+                                class="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                                placeholder="Texto promocional do card (ex.: 5% OFF no primeiro pedido)"
+                            >
+                            <input
                                 v-model="storefrontForm.hero_cta_label"
                                 type="text"
-                                class="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"
+                                class="rounded-xl border border-slate-200 px-3 py-2 text-sm"
                                 placeholder="Texto do botão principal (ex.: Ver catálogo)"
                             >
                         </div>

@@ -101,6 +101,11 @@ class StorefrontSettings
                     self::defaultPromotionsSubtitle($template),
                     220
                 ),
+                'card_badge_text' => self::normalizeText(
+                    $rawPromotions['card_badge_text'] ?? null,
+                    self::defaultPromotionsCardBadgeText($template),
+                    120
+                ),
                 'product_ids' => self::normalizeProductIds($rawPromotions['product_ids'] ?? []),
                 'service_ids' => self::normalizeServiceIds($rawPromotions['service_ids'] ?? []),
             ],
@@ -320,6 +325,13 @@ class StorefrontSettings
         return $template === self::TEMPLATE_SERVICES
             ? 'Serviços selecionados para agilizar seu atendimento.'
             : 'Ofertas selecionadas para você comprar com economia.';
+    }
+
+    private static function defaultPromotionsCardBadgeText(string $template): string
+    {
+        return $template === self::TEMPLATE_SERVICES
+            ? '5% OFF no primeiro agendamento'
+            : '';
     }
 
     private static function defaultCatalogTitle(string $template): string

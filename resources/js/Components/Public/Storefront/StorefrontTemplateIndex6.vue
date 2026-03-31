@@ -23,7 +23,6 @@ import {
     Plus,
     Search,
     ShoppingCart,
-    Star,
     Trash2,
     UserRound,
 } from 'lucide-vue-next';
@@ -600,6 +599,12 @@ const storefrontPromotions = computed(() => {
     return {
         title: String(promotions.title || '').trim() || (isServicesMode.value ? 'Destaques' : 'Promoções'),
         subtitle: String(promotions.subtitle || '').trim(),
+        cardBadgeText: String(promotions.card_badge_text || '').trim(),
+        itemIds: Array.isArray(isServicesMode.value ? promotions.service_ids : promotions.product_ids)
+            ? (isServicesMode.value ? promotions.service_ids : promotions.product_ids)
+                .map((id) => toInt(id, 0))
+                .filter((id) => id > 0)
+            : [],
     };
 });
 
@@ -631,6 +636,7 @@ const normalizedCatalog = computed(() => {
                     badge: String(service?.coupon_label || 'Destaque'),
                     rating: toMoney(service?.rating, 5),
                     reviews: 200 + (toInt(service?.id, 1) % 7) * 48,
+                    reviewsLabel: String(service?.reviews_label || 'Novos atendimentos'),
                     durationLabel: String(service?.duration_label || '60 min'),
                     durationMinutes: Math.max(15, toInt(service?.duration_minutes, 60)),
                 };
@@ -828,6 +834,17 @@ const promotionalBanners = computed(() => {
 });
 
 const desktopBanners = computed(() => promotionalBanners.value.slice(0, 3));
+const promotionalCatalog = computed(() => {
+    const selectedIds = storefrontPromotions.value.itemIds ?? [];
+    if (!selectedIds.length) return [];
+
+    const itemMap = new Map(normalizedCatalog.value.map((item) => [item.id, item]));
+
+    return selectedIds
+        .map((id) => itemMap.get(id) ?? null)
+        .filter(Boolean)
+        .slice(0, 6);
+});
 
 const favoriteIds = ref([]);
 const serviceFavoritesKey = computed(() => `veshop:index6:favorites:${storeSlug.value}`);
@@ -914,6 +931,41 @@ const toggleFavorite = (item) => {
 
 const favoriteItems = computed(() => normalizedCatalog.value.filter((item) => isFavorite(item.id)));
 const filteredFavoriteItems = computed(() => filteredCatalog.value.filter((item) => isFavorite(item.id)));
+
+const resolveCatalogItemMeta = (item) => {
+    if (!item || typeof item !== 'object') return '';
+
+    if (isServicesMode.value) {
+        return String(item.durationLabel || '').trim() || 'Atendimento sob consulta';
+    }
+
+    if (Array.isArray(item.variations) && item.variations.length > 0) {
+        return `${item.variations.length} variação${item.variations.length > 1 ? 'ões' : ''}`;
+    }
+
+    const stock = Math.max(0, toInt(item.stock, 0));
+    return stock > 0 ? `${stock} em estoque` : 'Disponibilidade sob consulta';
+};
+
+const resolveCatalogItemBadge = (item) => {
+    if (!item || typeof item !== 'object') return '';
+
+    const configuredBadge = String(storefrontPromotions.value.cardBadgeText || '').trim();
+    if (configuredBadge !== '') {
+        return configuredBadge;
+    }
+
+    const badge = String(item.badge || '').trim();
+    if (badge === '' || badge.toLowerCase() === 'destaque') {
+        return '';
+    }
+
+    if (!isServicesMode.value && badge.toLowerCase() === 'variações') {
+        return '';
+    }
+
+    return badge;
+};
 
 const cartKey = computed(() => `veshop:index6:cart:${storeSlug.value}:${isServicesMode.value ? 'services' : 'commerce'}`);
 const cart = ref({});
@@ -2532,6 +2584,96 @@ onBeforeUnmount(() => {
                             </div>
                         </template>
 
+                        <template v-if="activeTab === 'home' && storefrontBlocks.promotions && promotionalCatalog.length">
+                            <section class="mb-8">
+                                <div class="mb-4 flex items-start justify-between gap-3">
+                                    <div>
+                                        <h3 class="text-lg font-bold">{{ storefrontPromotions.title }}</h3>
+                                        <p v-if="storefrontPromotions.subtitle" class="text-xs text-slate-500">{{ storefrontPromotions.subtitle }}</p>
+                                    </div>
+                                    <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                                        {{ promotionalCatalog.length }} {{ isServicesMode ? 'destaques' : 'ofertas' }}
+                                    </span>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                                    <div
+                                        v-for="item in promotionalCatalog"
+                                        :key="`promo-card-${item.id}`"
+                                        class="group relative flex overflow-hidden rounded-3xl border border-slate-200 bg-white p-3 shadow-sm transition-all duration-200 md:cursor-pointer md:hover:-translate-y-0.5 md:hover:shadow-md md:hover:ring-1 md:hover:ring-slate-200"
+                                        :class="[
+                                            isItemActionLoading(item.id) ? 'ring-2 ring-[var(--idx-primary)] shadow-xl md:-translate-y-1' : '',
+                                            isItemActionSuccess(item.id) ? 'ring-2 ring-emerald-300 shadow-lg' : '',
+                                        ]"
+                                        @click="openDetails(item)"
+                                    >
+                                        <button
+                                            type="button"
+                                            class="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-rose-500 text-white shadow-sm"
+                                            @click.stop="toggleFavorite(item)"
+                                        >
+                                            <Heart :size="14" :class="{ 'fill-white': isFavorite(item.id) }" />
+                                        </button>
+                                        <div class="h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-slate-100 sm:h-28 sm:w-28">
+                                            <img :src="item.image" :alt="item.title" class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105">
+                                        </div>
+                                        <div class="flex min-w-0 flex-1 flex-col justify-between pl-3 pr-10">
+                                            <div class="min-w-0">
+                                                <h4 class="truncate text-sm font-bold text-slate-900 sm:text-[15px]">{{ item.title }}</h4>
+                                                <p class="mt-1 truncate text-xs font-medium text-slate-500">{{ item.subtitle }}</p>
+
+                                                <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                                                    <span class="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">
+                                                        {{ formatMoney(item.price) }}
+                                                    </span>
+                                                    <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">
+                                                        {{ resolveCatalogItemMeta(item) }}
+                                                    </span>
+                                                </div>
+
+                                                <p
+                                                    v-if="resolveCatalogItemBadge(item)"
+                                                    class="mt-2 truncate text-[11px] font-semibold text-rose-500"
+                                                >
+                                                    {{ resolveCatalogItemBadge(item) }}
+                                                </p>
+                                            </div>
+
+                                            <div class="mt-3 flex items-center justify-between gap-2">
+                                                <button
+                                                    class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium text-white disabled:opacity-70"
+                                                    :style="{ backgroundColor: 'var(--idx-add-button)' }"
+                                                    :disabled="isItemActionLoading(item.id)"
+                                                    @click.stop="addToCart(item)"
+                                                >
+                                                    <Loader2 v-if="isItemActionLoading(item.id)" :size="12" class="animate-spin" />
+                                                    <Check v-else-if="isItemActionSuccess(item.id)" :size="12" />
+                                                    <span>
+                                                        {{
+                                                            isItemActionLoading(item.id)
+                                                                ? (isServicesMode ? 'Carregando...' : 'Adicionando...')
+                                                                : (
+                                                                    isItemActionSuccess(item.id)
+                                                                        ? 'Adicionado'
+                                                                        : (isServicesMode ? 'Agendar' : 'Adicionar')
+                                                                )
+                                                        }}
+                                                    </span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="text-[11px] font-semibold text-[var(--idx-primary)]"
+                                                    @click.stop="openDetails(item)"
+                                                >
+                                                    Ver detalhes
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+                        </template>
+
                         <template v-if="(activeTab === 'home' || activeTab === 'favorites') && storefrontBlocks.catalog">
                             <div class="mb-4 mt-2 flex items-start justify-between gap-3">
                                 <div>
@@ -2566,11 +2708,11 @@ onBeforeUnmount(() => {
                                 </button>
                             </div>
 
-                            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+                            <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
                                 <div
                                     v-for="item in (activeTab === 'favorites' ? filteredFavoriteItems : filteredCatalog)"
                                     :key="`card-${item.id}`"
-                                    class="bg-white rounded-2xl overflow-hidden shadow-sm relative group transition-all duration-200 md:cursor-pointer md:hover:-translate-y-0.5 md:hover:shadow-md md:hover:ring-1 md:hover:ring-slate-200"
+                                    class="group relative flex overflow-hidden rounded-3xl border border-slate-200 bg-white p-3 shadow-sm transition-all duration-200 md:cursor-pointer md:hover:-translate-y-0.5 md:hover:shadow-md md:hover:ring-1 md:hover:ring-slate-200"
                                     :class="[
                                         isItemActionLoading(item.id) ? 'ring-2 ring-[var(--idx-primary)] shadow-xl md:-translate-y-1' : '',
                                         isItemActionSuccess(item.id) ? 'ring-2 ring-emerald-300 shadow-lg' : '',
@@ -2579,10 +2721,10 @@ onBeforeUnmount(() => {
                                 >
                                     <button
                                         type="button"
-                                        class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold z-10"
+                                        class="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-rose-500 text-white shadow-sm"
                                         @click.stop="toggleFavorite(item)"
                                     >
-                                        <Heart :size="12" :class="{ 'fill-white': isFavorite(item.id) }" />
+                                        <Heart :size="14" :class="{ 'fill-white': isFavorite(item.id) }" />
                                     </button>
                                     <div
                                         v-if="isItemActionLoading(item.id) || isItemActionSuccess(item.id)"
@@ -2600,19 +2742,34 @@ onBeforeUnmount(() => {
                                             </span>
                                         </div>
                                     </div>
-                                    <img :src="item.image" :alt="item.title" class="w-full h-32 md:h-40 object-cover group-hover:scale-105 transition-transform duration-300">
-                                    <div class="p-4">
-                                        <h4 class="font-semibold text-sm md:text-base truncate">{{ item.title }}</h4>
-                                        <span class="text-gray-700 text-xs font-semibold">{{ formatMoney(item.price) }}</span>
-                                        <!-- <p class="text-xs text-gray-400 truncate">{{ item.subtitle }}</p>
-                                        <div class="flex items-center gap-1 mt-1 text-xs text-amber-500">
-                                            <Star :size="12" />
-                                            <span class="font-semibold">{{ item.rating.toFixed(1) }}</span>
-                                            <span class="text-gray-400">({{ item.reviews }})</span>
-                                        </div> -->
-                                        <div class="flex w-full justify-between items-center mt-2">
+                                    <div class="h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-slate-100 sm:h-28 sm:w-28">
+                                        <img :src="item.image" :alt="item.title" class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105">
+                                    </div>
+                                    <div class="flex min-w-0 flex-1 flex-col justify-between pl-3 pr-10">
+                                        <div class="min-w-0">
+                                            <h4 class="truncate text-sm font-bold text-slate-900 sm:text-[15px]">{{ item.title }}</h4>
+                                            <p class="mt-1 truncate text-xs font-medium text-slate-500">{{ item.subtitle }}</p>
+
+                                            <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                                                <span class="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">
+                                                    {{ formatMoney(item.price) }}
+                                                </span>
+                                                <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">
+                                                    {{ resolveCatalogItemMeta(item) }}
+                                                </span>
+                                            </div>
+
+                                            <p
+                                                v-if="resolveCatalogItemBadge(item)"
+                                                class="mt-2 truncate text-[11px] font-semibold text-rose-500"
+                                            >
+                                                {{ resolveCatalogItemBadge(item) }}
+                                            </p>
+                                        </div>
+
+                                        <div class="mt-3 flex items-center justify-between gap-2">
                                             <button
-                                                class="inline-flex items-center gap-1 text-white text-xs px-3 py-1 rounded-full font-medium disabled:opacity-70"
+                                                class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium text-white disabled:opacity-70"
                                                 :style="{ backgroundColor: 'var(--idx-add-button)' }"
                                                 :disabled="isItemActionLoading(item.id)"
                                                 @click.stop="addToCart(item)"
@@ -2627,9 +2784,16 @@ onBeforeUnmount(() => {
                                                         isItemActionSuccess(item.id)
                                                             ? 'Adicionado'
                                                             : (isServicesMode ? 'Agendar' : 'Adicionar')
-                                                            )
+                                                        )
                                                     }}
                                                 </span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="text-[11px] font-semibold text-[var(--idx-primary)]"
+                                                @click.stop="openDetails(item)"
+                                            >
+                                                Ver detalhes
                                             </button>
                                         </div>
                                     </div>
@@ -2645,16 +2809,32 @@ onBeforeUnmount(() => {
 
                             <template v-if="activeTab === 'home'">
                                 <h3 class="text-lg font-bold mt-8 mb-4">Favoritos</h3>
-                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+                                <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
                                     <div
                                         v-for="item in favoriteItems.slice(0, 4)"
                                         :key="`fav-home-${item.id}`"
-                                        class="bg-white rounded-2xl overflow-hidden shadow-sm relative group transition-all duration-200 md:cursor-pointer md:hover:-translate-y-0.5 md:hover:shadow-md"
+                                        class="group relative flex overflow-hidden rounded-3xl border border-slate-200 bg-white p-3 shadow-sm transition-all duration-200 md:cursor-pointer md:hover:-translate-y-0.5 md:hover:shadow-md"
                                         @click="openDetails(item)"
                                     >
-                                        <img :src="item.image" :alt="item.title" class="w-full h-32 md:h-40 object-cover group-hover:scale-105 transition-transform duration-300">
-                                        <div class="p-4">
-                                            <h4 class="font-semibold text-sm md:text-base mb-1 truncate">{{ item.title }}</h4>
+                                        <div class="h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-slate-100 sm:h-28 sm:w-28">
+                                            <img :src="item.image" :alt="item.title" class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105">
+                                        </div>
+                                        <div class="flex min-w-0 flex-1 flex-col justify-between pl-3 pr-2">
+                                            <div class="min-w-0">
+                                                <h4 class="truncate text-sm font-bold text-slate-900 sm:text-[15px]">{{ item.title }}</h4>
+                                                <p class="mt-1 truncate text-xs font-medium text-slate-500">{{ item.subtitle }}</p>
+                                                <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                                                    <span class="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">
+                                                        {{ formatMoney(item.price) }}
+                                                    </span>
+                                                    <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">
+                                                        {{ resolveCatalogItemMeta(item) }}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div class="mt-3">
+                                                <span class="text-[11px] font-semibold text-[var(--idx-primary)]">Abrir detalhes</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
