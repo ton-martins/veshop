@@ -20,6 +20,7 @@ class ShopFavoriteController extends Controller
             ->where('contractor_id', $contractor->id)
             ->where('id', $product)
             ->where('is_active', true)
+            ->where('is_storefront_active', true)
             ->firstOrFail();
 
         ShopCustomerFavorite::query()->firstOrCreate([

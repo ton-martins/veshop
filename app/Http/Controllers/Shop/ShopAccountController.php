@@ -227,7 +227,7 @@ class ShopAccountController extends Controller
             'name' => (string) $product->name,
             'sale_price' => round((float) $product->sale_price, 2),
             'stock_quantity' => (int) $product->stock_quantity,
-            'is_active' => (bool) $product->is_active,
+            'is_active' => (bool) $product->is_active && (bool) $product->is_storefront_active,
             'image_url' => $this->normalizePublicAssetUrl($product->image_url),
             'url' => route('shop.product.show', ['slug' => $contractor->slug, 'product' => $product->id]),
         ];

@@ -87,6 +87,7 @@ const createProductForm = useForm({
     stock_quantity: '1',
     unit: 'un',
     is_active: true,
+    is_storefront_active: false,
 });
 const historyEditForm = useForm({
     client_id: '',
@@ -907,6 +908,7 @@ function openCreateProductModal() {
     createProductForm.stock_quantity = '1';
     createProductForm.unit = 'un';
     createProductForm.is_active = true;
+    createProductForm.is_storefront_active = false;
     createProductModalOpen.value = true;
 }
 
@@ -917,6 +919,8 @@ function submitCreateProduct() {
         sale_price: normalizeMoneyInput(data.sale_price),
         stock_quantity: Math.max(0, toInt(data.stock_quantity, 0)),
         is_active: true,
+        is_pdv_active: true,
+        is_storefront_active: Boolean(data.is_storefront_active ?? false),
     })).post(route('admin.products.store'), {
         preserveScroll: true,
         onSuccess: () => {
@@ -1839,6 +1843,14 @@ function submitHistoryCancel() {
                             {{ createProductForm.errors.unit }}
                         </p>
                     </div>
+
+                    <label class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 md:col-span-2">
+                        <input v-model="createProductForm.is_storefront_active" type="checkbox" class="mt-0.5 rounded border-slate-300">
+                        <span>
+                            <span class="block font-semibold text-slate-900">Publicar também na loja virtual</span>
+                            <span class="block text-xs text-slate-500">Por padrão, o produto rápido fica ativo apenas no PDV.</span>
+                        </span>
+                    </label>
                 </div>
                 <template #footer>
                     <div class="flex items-center justify-end gap-2">

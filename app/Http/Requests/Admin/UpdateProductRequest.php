@@ -43,6 +43,8 @@ class UpdateProductRequest extends FormRequest
             'stock_quantity' => $this->normalizeInteger($this->input('stock_quantity')),
             'variations' => $this->normalizeVariations($rawVariations),
             'is_active' => $this->boolean('is_active', true),
+            'is_pdv_active' => $this->boolean('is_pdv_active', true),
+            'is_storefront_active' => $this->boolean('is_storefront_active', true),
         ]);
     }
 
@@ -80,6 +82,8 @@ class UpdateProductRequest extends FormRequest
             'variations.*.attributes' => ['nullable', 'array'],
             'remove_image' => ['nullable', 'boolean'],
             'is_active' => ['required', 'boolean'],
+            'is_pdv_active' => ['required', 'boolean'],
+            'is_storefront_active' => ['required', 'boolean'],
         ];
     }
 

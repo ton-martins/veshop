@@ -9,14 +9,14 @@ import PaginationLinks from '@/Components/App/PaginationLinks.vue';
 import UiSelect from '@/Components/App/UiSelect.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
-import { Box, Boxes, CircleDollarSign, AlertTriangle, Plus, Search, Filter, ChevronRight, Tags, Pencil, Trash2 } from 'lucide-vue-next';
+import { Box, Store, ReceiptText, AlertTriangle, Plus, Search, Filter, ChevronRight, Tags, Pencil, Trash2 } from 'lucide-vue-next';
 
 const props = defineProps({
     products: { type: Object, default: () => ({ data: [], links: [] }) },
     categories: { type: Array, default: () => [] },
     categoryHighlights: { type: Array, default: () => [] },
     filters: { type: Object, default: () => ({ search: '', status: '', category_id: null }) },
-    stats: { type: Object, default: () => ({ products: 0, active: 0, stockout: 0, margin: null }) },
+    stats: { type: Object, default: () => ({ products: 0, active: 0, pdv_active: 0, storefront_active: 0, stockout: 0, margin: null }) },
     units: { type: Array, default: () => ['un', 'kg', 'lts'] },
     storage: {
         type: Object,
@@ -42,11 +42,18 @@ const statCards = computed(() => ([
         tone: 'bg-slate-100 text-slate-700',
     },
     {
-        key: 'active',
-        label: 'Produtos ativos',
-        value: String(props.stats?.active ?? 0),
-        icon: Boxes,
+        key: 'pdv_active',
+        label: 'Ativos no PDV',
+        value: String(props.stats?.pdv_active ?? 0),
+        icon: ReceiptText,
         tone: 'bg-emerald-100 text-emerald-700',
+    },
+    {
+        key: 'storefront_active',
+        label: 'Ativos na loja virtual',
+        value: String(props.stats?.storefront_active ?? 0),
+        icon: Store,
+        tone: 'bg-violet-100 text-violet-700',
     },
     {
         key: 'stockout',
@@ -54,15 +61,6 @@ const statCards = computed(() => ([
         value: String(props.stats?.stockout ?? 0),
         icon: AlertTriangle,
         tone: 'bg-amber-100 text-amber-700',
-    },
-    {
-        key: 'margin',
-        label: 'Margem média',
-        value: props.stats?.margin !== null && props.stats?.margin !== undefined
-            ? `${Number(props.stats.margin).toFixed(1)}%`
-            : '--',
-        icon: CircleDollarSign,
-        tone: 'bg-blue-100 text-blue-700',
     },
 ]));
 
@@ -84,6 +82,8 @@ const statusFilterOptions = [
     { value: '', label: 'Todos os status' },
     { value: 'active', label: 'Ativos' },
     { value: 'inactive', label: 'Inativos' },
+    { value: 'pdv_active', label: 'Ativos no PDV' },
+    { value: 'storefront_active', label: 'Ativos na loja virtual' },
     { value: 'out_of_stock', label: 'Sem estoque' },
 ];
 
@@ -161,6 +161,8 @@ const productForm = useForm({
     remove_gallery_ids: [],
     variations: [],
     is_active: true,
+    is_pdv_active: true,
+    is_storefront_active: true,
 });
 const deleteForm = useForm({});
 
@@ -190,6 +192,8 @@ const resetProductForm = () => {
     productForm.remove_gallery_ids = [];
     productForm.variations = [];
     productForm.is_active = true;
+    productForm.is_pdv_active = true;
+    productForm.is_storefront_active = true;
     if (galleryInputRef.value) {
         galleryInputRef.value.value = '';
     }
@@ -242,6 +246,8 @@ const openEdit = (product) => {
         }))
         : [];
     productForm.is_active = Boolean(product.is_active);
+    productForm.is_pdv_active = Boolean(product.is_pdv_active);
+    productForm.is_storefront_active = Boolean(product.is_storefront_active);
     productForm.clearErrors();
     showModal.value = true;
 };
@@ -550,7 +556,7 @@ const validateCurrentProductStepForCreate = () => {
 };
 
 const productStepErrorKeyMap = {
-    1: ['name', 'sku', 'category_id', 'description', 'is_active'],
+    1: ['name', 'sku', 'category_id', 'description', 'is_active', 'is_pdv_active', 'is_storefront_active'],
     2: ['cost_price', 'sale_price', 'stock_quantity', 'unit'],
     3: ['gallery_files', 'gallery_images', 'remove_gallery_ids', 'storage_quota'],
     4: ['variations'],
@@ -771,7 +777,7 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                                     <th class="px-4 py-3 whitespace-nowrap">Categoria</th>
                                     <th class="px-4 py-3 whitespace-nowrap">Estoque</th>
                                     <th class="px-4 py-3 whitespace-nowrap">Preço</th>
-                                    <th class="px-4 py-3 whitespace-nowrap">Status</th>
+                                    <th class="px-4 py-3 whitespace-nowrap">Disponibilidade</th>
                                     <th class="px-4 py-3 whitespace-nowrap text-right">Ações</th>
                                 </tr>
                             </thead>
@@ -800,12 +806,20 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                                     <td class="px-4 py-3 whitespace-nowrap text-slate-600">{{ formatStock(product.stock_quantity, product.unit) }}</td>
                                     <td class="px-4 py-3 whitespace-nowrap font-semibold text-slate-800">{{ formatMoney(product.sale_price) }}</td>
                                     <td class="px-4 py-3">
-                                        <span
-                                            class="whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold"
-                                            :class="product.status_label === 'Ativo' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'"
-                                        >
-                                            {{ product.status_label }}
-                                        </span>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            <span
+                                                class="whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold"
+                                                :class="product.status_tone"
+                                            >
+                                                {{ product.status_label }}
+                                            </span>
+                                            <span
+                                                class="whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold"
+                                                :class="product.stock_status_tone"
+                                            >
+                                                {{ product.stock_status_label }}
+                                            </span>
+                                        </div>
                                     </td>
                                     <td class="px-4 py-3 text-right">
                                         <div class="flex items-center justify-end gap-2 whitespace-nowrap">
@@ -1094,10 +1108,29 @@ const fallbackImage = (name) => `https://ui-avatars.com/api/?name=${encodeURICom
                     <p v-if="productForm.errors.description" class="mt-1 text-xs text-rose-600">{{ productForm.errors.description }}</p>
                 </div>
 
-                <label v-if="productWizardStep === 1" class="flex items-center gap-2 text-sm font-medium text-slate-700">
-                    <input v-model="productForm.is_active" type="checkbox" class="rounded border-slate-300">
-                    Produto ativo
-                </label>
+                <div v-if="productWizardStep === 1" class="grid gap-3 md:grid-cols-3">
+                    <label class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                        <input v-model="productForm.is_active" type="checkbox" class="mt-0.5 rounded border-slate-300">
+                        <span>
+                            <span class="block font-semibold text-slate-900">Produto ativo</span>
+                            <span class="block text-xs text-slate-500">Mantém o cadastro disponível para uso interno.</span>
+                        </span>
+                    </label>
+                    <label class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                        <input v-model="productForm.is_pdv_active" type="checkbox" class="mt-0.5 rounded border-slate-300">
+                        <span>
+                            <span class="block font-semibold text-slate-900">Ativo no PDV</span>
+                            <span class="block text-xs text-slate-500">Permite venda rápida no caixa.</span>
+                        </span>
+                    </label>
+                    <label class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                        <input v-model="productForm.is_storefront_active" type="checkbox" class="mt-0.5 rounded border-slate-300">
+                        <span>
+                            <span class="block font-semibold text-slate-900">Ativo na loja virtual</span>
+                            <span class="block text-xs text-slate-500">Publica o item na vitrine do contratante.</span>
+                        </span>
+                    </label>
+                </div>
 
                 <template #footer>
                     <div class="flex items-center justify-end gap-2">

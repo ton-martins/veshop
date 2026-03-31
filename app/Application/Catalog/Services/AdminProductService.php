@@ -70,6 +70,14 @@ class AdminProductService
             $query->where('is_active', true);
         } elseif ($status === 'inactive') {
             $query->where('is_active', false);
+        } elseif ($status === 'pdv_active') {
+            $query
+                ->where('is_active', true)
+                ->where('is_pdv_active', true);
+        } elseif ($status === 'storefront_active') {
+            $query
+                ->where('is_active', true)
+                ->where('is_storefront_active', true);
         } elseif ($status === 'out_of_stock') {
             $query->where('stock_quantity', 0);
         }
@@ -80,6 +88,8 @@ class AdminProductService
 
         $products = $query
             ->orderByDesc('is_active')
+            ->orderByDesc('is_storefront_active')
+            ->orderByDesc('is_pdv_active')
             ->orderBy('name')
             ->paginate(10)
             ->withQueryString()
@@ -94,6 +104,18 @@ class AdminProductService
             ->where('is_active', true)
             ->count();
 
+        $pdvActiveProducts = Product::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->where('is_pdv_active', true)
+            ->count();
+
+        $storefrontActiveProducts = Product::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->where('is_storefront_active', true)
+            ->count();
+
         $stockoutProducts = Product::query()
             ->where('contractor_id', $contractor->id)
             ->where('stock_quantity', 0)
@@ -106,22 +128,7 @@ class AdminProductService
             ->selectRaw('AVG(((sale_price - cost_price) / cost_price) * 100) as margin')
             ->value('margin');
 
-        $categoryHighlights = Category::query()
-            ->where('contractor_id', $contractor->id)
-            ->withCount('products')
-            ->orderByDesc('products_count')
-            ->orderBy('name')
-            ->limit(4)
-            ->get()
-            ->map(static function (Category $category): array {
-                return [
-                    'id' => $category->id,
-                    'name' => $category->name,
-                    'qty' => (int) $category->products_count,
-                ];
-            })
-            ->values()
-            ->all();
+        $categoryHighlights = $this->resolveRootCategoryHighlights($contractor);
 
         $categoryOptions = $this->resolveCategoryOptions($contractor);
         $storageLimitBytes = $this->storageQuotaService->resolveLimitBytes($contractor);
@@ -146,6 +153,8 @@ class AdminProductService
             'stats' => [
                 'products' => $totalProducts,
                 'active' => $activeProducts,
+                'pdv_active' => $pdvActiveProducts,
+                'storefront_active' => $storefrontActiveProducts,
                 'stockout' => $stockoutProducts,
                 'margin' => $averageMargin !== null ? round((float) $averageMargin, 1) : null,
             ],
@@ -408,6 +417,8 @@ class AdminProductService
             'unit' => (string) ($data['unit'] ?? Product::UNITS[0]),
             'image_url' => $data['image_url'] ?? null,
             'is_active' => (bool) ($data['is_active'] ?? true),
+            'is_pdv_active' => (bool) ($data['is_pdv_active'] ?? true),
+            'is_storefront_active' => (bool) ($data['is_storefront_active'] ?? true),
         ];
     }
 
@@ -838,6 +849,62 @@ class AdminProductService
     }
 
     /**
+     * @return list<array{id:int,name:string,qty:int}>
+     */
+    private function resolveRootCategoryHighlights(Contractor $contractor): array
+    {
+        $categories = Category::query()
+            ->where('contractor_id', $contractor->id)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'parent_id']);
+
+        $productsByCategory = Product::query()
+            ->where('contractor_id', $contractor->id)
+            ->selectRaw('category_id, COUNT(*) as total')
+            ->groupBy('category_id')
+            ->pluck('total', 'category_id');
+
+        $childrenByParent = $categories
+            ->groupBy(static fn (Category $category): int => (int) ($category->parent_id ?? 0));
+
+        $totalsByCategory = [];
+        $resolveTotal = function (int $categoryId) use (&$resolveTotal, &$totalsByCategory, $childrenByParent, $productsByCategory): int {
+            if (array_key_exists($categoryId, $totalsByCategory)) {
+                return $totalsByCategory[$categoryId];
+            }
+
+            $direct = (int) ($productsByCategory->get($categoryId, 0));
+            /** @var Collection<int, Category> $children */
+            $children = $childrenByParent->get($categoryId, collect());
+            $childrenTotal = $children->sum(static fn (Category $child): int => $resolveTotal((int) $child->id));
+
+            $totalsByCategory[$categoryId] = $direct + $childrenTotal;
+
+            return $totalsByCategory[$categoryId];
+        };
+
+        return $categories
+            ->filter(static fn (Category $category): bool => $category->parent_id === null)
+            ->map(static function (Category $category) use ($resolveTotal): array {
+                return [
+                    'id' => (int) $category->id,
+                    'name' => (string) $category->name,
+                    'qty' => $resolveTotal((int) $category->id),
+                ];
+            })
+            ->filter(static fn (array $category): bool => (int) $category['qty'] > 0)
+            ->sortBy([
+                ['qty', 'desc'],
+                ['name', 'asc'],
+            ])
+            ->take(4)
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function toProductPayload(Product $product): array
@@ -903,7 +970,24 @@ class AdminProductService
             'variations' => $variations,
             'has_variations' => $hasActiveVariations || $variations !== [],
             'is_active' => (bool) $product->is_active,
-            'status_label' => $displayStock <= 0 ? 'Sem estoque' : ($product->is_active ? 'Ativo' : 'Inativo'),
+            'is_pdv_active' => (bool) $product->is_pdv_active,
+            'is_storefront_active' => (bool) $product->is_storefront_active,
+            'status_label' => $product->is_active ? 'Ativo' : 'Inativo',
+            'status_tone' => $product->is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600',
+            'stock_status_label' => $displayStock > 0 ? 'Em estoque' : 'Sem estoque',
+            'stock_status_tone' => $displayStock > 0 ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700',
+            'channel_badges' => [
+                [
+                    'key' => 'pdv',
+                    'label' => $product->is_pdv_active ? 'PDV ativo' : 'PDV inativo',
+                    'tone' => $product->is_pdv_active ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100' : 'bg-slate-100 text-slate-600',
+                ],
+                [
+                    'key' => 'storefront',
+                    'label' => $product->is_storefront_active ? 'Loja virtual ativa' : 'Loja virtual inativa',
+                    'tone' => $product->is_storefront_active ? 'bg-violet-50 text-violet-700 ring-1 ring-violet-100' : 'bg-slate-100 text-slate-600',
+                ],
+            ],
         ];
     }
 }

@@ -98,6 +98,7 @@ class AdminPdvService
         $products = Product::query()
             ->where('contractor_id', $contractor->id)
             ->where('is_active', true)
+            ->where('is_pdv_active', true)
             ->where('stock_quantity', '>', 0)
             ->with([
                 'category:id,name',
@@ -554,6 +555,7 @@ class AdminPdvService
             $products = Product::query()
                 ->where('contractor_id', $contractor->id)
                 ->where('is_active', true)
+                ->where('is_pdv_active', true)
                 ->whereIn('id', $productIds->all())
                 ->with([
                     'variations:id,product_id,name,sku,sale_price,cost_price,stock_quantity,is_active,attributes',
@@ -836,6 +838,8 @@ class AdminPdvService
         if ($productIds->isNotEmpty()) {
             $ownedCount = Product::query()
                 ->where('contractor_id', $contractor->id)
+                ->where('is_active', true)
+                ->where('is_pdv_active', true)
                 ->whereIn('id', $productIds->all())
                 ->count();
 

@@ -81,6 +81,7 @@ class PublicShopService
         $products = Product::query()
             ->where('contractor_id', $contractor->id)
             ->where('is_active', true)
+            ->where('is_storefront_active', true)
             ->where('stock_quantity', '>', 0)
             ->with([
                 'category:id,name,slug,parent_id',
@@ -175,6 +176,7 @@ class PublicShopService
             ->where('contractor_id', $contractor->id)
             ->where('id', $product)
             ->where('is_active', true)
+            ->where('is_storefront_active', true)
             ->firstOrFail(['id']);
 
         return redirect()->route('shop.show', [
@@ -472,6 +474,7 @@ class PublicShopService
                 $products = Product::query()
                     ->where('contractor_id', $contractor->id)
                     ->where('is_active', true)
+                    ->where('is_storefront_active', true)
                     ->whereIn('id', $productIds->all())
                     ->with([
                         'variations:id,product_id,name,sku,sale_price,stock_quantity,is_active,attributes',

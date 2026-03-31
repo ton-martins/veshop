@@ -32,6 +32,8 @@ class Product extends Model
         'unit',
         'image_url',
         'is_active',
+        'is_pdv_active',
+        'is_storefront_active',
         'is_pdv_featured',
         'pdv_featured_order',
     ];
@@ -46,6 +48,8 @@ class Product extends Model
             'sale_price' => 'decimal:2',
             'stock_quantity' => 'integer',
             'is_active' => 'boolean',
+            'is_pdv_active' => 'boolean',
+            'is_storefront_active' => 'boolean',
             'is_pdv_featured' => 'boolean',
             'pdv_featured_order' => 'integer',
         ];

@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Modal from '@/Components/Modal.vue';
 import OrderDetailsModal from '@/Components/App/Orders/OrderDetailsModal.vue';
 import CatalogBanner from '@/Components/App/AdminOverview/CatalogBanner.vue';
+import { useBranding } from '@/branding';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import { ArrowUpRight, Clock3, CreditCard, FileText, QrCode, Store, Wallet } from 'lucide-vue-next';
@@ -15,11 +16,20 @@ const props = defineProps({
 });
 
 const page = usePage();
+const { normalizeHex, withAlpha, secondaryColor } = useBranding();
 
 const currentContractor = computed(() => page.props.contractorContext?.current ?? null);
 const contractorName = computed(() => currentContractor.value?.brand_name || currentContractor.value?.name || 'Sua empresa');
 const contractorNiche = computed(() => String(currentContractor.value?.business_niche ?? 'commercial').trim().toLowerCase());
 const contractorBusinessType = computed(() => String(currentContractor.value?.business_type ?? '').trim().toLowerCase());
+const tabAccentColor = computed(() =>
+    normalizeHex(currentContractor.value?.brand_primary_color || '', secondaryColor.value),
+);
+const overviewUiStyles = computed(() => ({
+    '--finance-tab-active': tabAccentColor.value,
+    '--finance-tab-active-soft': withAlpha(tabAccentColor.value, 0.12),
+    '--finance-tab-active-border': withAlpha(tabAccentColor.value, 0.28),
+}));
 
 const enabledModules = computed(() => {
     const raw = currentContractor.value?.enabled_modules;
@@ -108,6 +118,19 @@ const hasPublicCatalog = computed(() => {
     return isCommercialOverview.value
         ? hasAnyModule(['catalog', 'checkout'])
         : canViewServiceStorefront.value;
+});
+
+const commercialOverviewTab = ref('storefront');
+const commercialTabs = computed(() => {
+    const tabs = [
+        { key: 'storefront', label: 'Loja virtual', icon: Store },
+    ];
+
+    if (canViewPdv.value) {
+        tabs.push({ key: 'pdv', label: 'PDV', icon: Wallet });
+    }
+
+    return tabs;
 });
 
 const recordDetailsOpen = ref(false);
@@ -299,6 +322,29 @@ const commercialInventoryRows = computed(() => [
     },
 ]);
 
+const commercialPdvSupportRows = computed(() => [
+    {
+        key: 'products',
+        label: contractorBusinessType.value === 'confectionery' ? 'Itens de venda' : 'Produtos disponíveis',
+        value: String(quickTotals.value.products ?? 0),
+    },
+    {
+        key: 'clients',
+        label: 'Clientes cadastrados',
+        value: String(operationsStats.value.clients ?? 0),
+    },
+    {
+        key: 'suppliers',
+        label: 'Fornecedores',
+        value: String(quickTotals.value.suppliers ?? 0),
+    },
+    {
+        key: 'pdv_quotes',
+        label: 'Rascunhos no PDV',
+        value: String(pdvStats.value.pending_quotes ?? 0),
+    },
+]);
+
 const serviceQueueStats = computed(() => {
     const items = serviceQueue.value ?? [];
 
@@ -413,85 +459,149 @@ const serviceAttentionNote = computed(() => {
         <div class="space-y-8">
             <section
                 v-if="isCommercialOverview"
-                class="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]"
+                class="space-y-4"
+                :style="overviewUiStyles"
             >
-                <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
-                    <div class="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Operação comercial</p>
-                            <h2 class="text-lg font-semibold text-slate-900">{{ commercialCopy.ordersTitle }}</h2>
-                            <p class="mt-1 text-sm text-slate-500">{{ commercialCopy.ordersDescription }}</p>
-                        </div>
-                        <Link
-                            :href="route('admin.orders.index')"
-                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                        >
-                            Ver pedidos
-                            <ArrowUpRight class="h-4 w-4" />
-                        </Link>
-                    </div>
-
-                    <div v-if="recentOrders.length" class="mt-5 space-y-3">
+                <div class="finance-tabs-shell">
+                    <div class="finance-tabs-track">
                         <button
-                            v-for="order in recentOrders"
-                            :key="`recent-order-${order.id}`"
+                            v-for="tab in commercialTabs"
+                            :key="tab.key"
                             type="button"
-                            class="group block w-full rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-left transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-md"
-                            @click="openRecordDetails(order)"
+                            class="finance-tab"
+                            :class="{ 'is-active': commercialOverviewTab === tab.key }"
+                            @click="commercialOverviewTab = tab.key"
                         >
-                            <div class="flex flex-wrap items-center justify-between gap-2">
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                                        {{ order.code }}
-                                    </span>
-                                    <span
-                                        class="rounded-full px-2.5 py-1 text-[11px] font-semibold"
-                                        :class="order.shipping_mode_tone || 'bg-slate-100 text-slate-700'"
-                                    >
-                                        {{ order.shipping_mode_label || 'Retirada' }}
-                                    </span>
-                                    <span
-                                        class="rounded-full px-2.5 py-1 text-[11px] font-semibold"
-                                        :class="resolveSaleStatusTone(order.status)"
-                                    >
-                                        {{ resolveSaleStatusLabel(order.status) }}
-                                    </span>
-                                </div>
-                                <div class="flex items-center gap-3">
-                                    <p class="text-sm font-semibold text-slate-900">{{ order.amount }}</p>
-                                    <ArrowUpRight class="h-4 w-4 text-slate-400 transition group-hover:text-slate-700" />
-                                </div>
-                            </div>
-
-                            <div class="mt-3 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                                <div class="min-w-0">
-                                    <p class="truncate text-sm font-semibold text-slate-900">{{ order.customer }}</p>
-                                    <p class="truncate text-xs text-slate-500">{{ order.description }}</p>
-                                    <p
-                                        v-if="order.shipping_mode === 'delivery' && order.shipping_address_text"
-                                        class="truncate text-xs text-slate-500"
-                                    >
-                                        {{ order.shipping_address_text }}
-                                    </p>
-                                </div>
-                                <div class="text-left md:text-right">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Atualização</p>
-                                    <p class="text-xs text-slate-500">{{ order.created_at || order.time }}</p>
-                                </div>
-                            </div>
+                            <component :is="tab.icon" class="h-4 w-4" />
+                            <span>{{ tab.label }}</span>
                         </button>
                     </div>
+                </div>
+            </section>
 
-                    <div
-                        v-else
-                        class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
-                    >
-                        {{ commercialCopy.emptyOrders }}
+            <template v-if="isCommercialOverview && commercialOverviewTab === 'storefront'">
+                <section class="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+                    <div class="space-y-4">
+                        <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
+                            <div class="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Operação comercial</p>
+                                    <h2 class="text-lg font-semibold text-slate-900">{{ commercialCopy.ordersTitle }}</h2>
+                                    <p class="mt-1 text-sm text-slate-500">{{ commercialCopy.ordersDescription }}</p>
+                                </div>
+                                <Link
+                                    :href="route('admin.orders.index')"
+                                    class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                >
+                                    Ver pedidos
+                                    <ArrowUpRight class="h-4 w-4" />
+                                </Link>
+                            </div>
+
+                            <div v-if="recentOrders.length" class="mt-5 space-y-3">
+                                <button
+                                    v-for="order in recentOrders"
+                                    :key="`recent-order-${order.id}`"
+                                    type="button"
+                                    class="group block w-full rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-left transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-md"
+                                    @click="openRecordDetails(order)"
+                                >
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                {{ order.code }}
+                                            </span>
+                                            <span
+                                                class="rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                                                :class="order.shipping_mode_tone || 'bg-slate-100 text-slate-700'"
+                                            >
+                                                {{ order.shipping_mode_label || 'Retirada' }}
+                                            </span>
+                                            <span
+                                                class="rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                                                :class="resolveSaleStatusTone(order.status)"
+                                            >
+                                                {{ resolveSaleStatusLabel(order.status) }}
+                                            </span>
+                                        </div>
+                                        <div class="flex items-center gap-3">
+                                            <p class="text-sm font-semibold text-slate-900">{{ order.amount }}</p>
+                                            <ArrowUpRight class="h-4 w-4 text-slate-400 transition group-hover:text-slate-700" />
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-3 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-semibold text-slate-900">{{ order.customer }}</p>
+                                            <p class="truncate text-xs text-slate-500">{{ order.description }}</p>
+                                            <p
+                                                v-if="order.shipping_mode === 'delivery' && order.shipping_address_text"
+                                                class="truncate text-xs text-slate-500"
+                                            >
+                                                {{ order.shipping_address_text }}
+                                            </p>
+                                        </div>
+                                        <div class="text-left md:text-right">
+                                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Atualização</p>
+                                            <p class="text-xs text-slate-500">{{ order.created_at || order.time }}</p>
+                                        </div>
+                                    </div>
+                                </button>
+                            </div>
+
+                            <div
+                                v-else
+                                class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
+                            >
+                                {{ commercialCopy.emptyOrders }}
+                            </div>
+                        </section>
+
+                        <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Logística</p>
+                                    <h2 class="text-lg font-semibold text-slate-900">Entregas recentes</h2>
+                                </div>
+                                <span class="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                                    Hoje: {{ Number(operationsStats.deliveries_today ?? 0) }}
+                                </span>
+                            </div>
+
+                            <div v-if="recentDeliveries.length" class="mt-4 space-y-3">
+                                <button
+                                    v-for="delivery in recentDeliveries"
+                                    :key="`recent-delivery-${delivery.id}`"
+                                    type="button"
+                                    class="group block w-full rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-left transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-md"
+                                    @click="openRecordDetails(delivery)"
+                                >
+                                    <div class="flex items-center justify-between gap-2">
+                                        <div class="flex items-center gap-2">
+                                            <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">{{ delivery.code }}</span>
+                                            <span class="rounded-full px-2.5 py-1 text-[11px] font-semibold" :class="resolveSaleStatusTone(delivery.status)">
+                                                {{ resolveSaleStatusLabel(delivery.status) }}
+                                            </span>
+                                        </div>
+                                        <ArrowUpRight class="h-4 w-4 text-slate-400 transition group-hover:text-slate-700" />
+                                    </div>
+                                    <p class="mt-3 text-sm font-semibold text-slate-900">{{ delivery.customer }}</p>
+                                    <p class="mt-1 text-xs text-slate-500">{{ delivery.shipping_address_text || 'Endereço não informado' }}</p>
+                                    <p class="mt-2 text-xs font-semibold text-slate-600">{{ delivery.amount }}</p>
+                                </button>
+                            </div>
+
+                            <div
+                                v-else
+                                class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
+                            >
+                                Nenhuma entrega recente registrada.
+                            </div>
+                        </section>
                     </div>
-                </section>
 
-                <div class="space-y-4">
-                    <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
+                    <div class="space-y-4">
+                        <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
                         <div class="flex items-start justify-between gap-3">
                             <div>
                                 <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Central comercial</p>
@@ -500,13 +610,7 @@ const serviceAttentionNote = computed(() => {
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
                                 <span
-                                    class="rounded-full px-3 py-1 text-[11px] font-semibold"
-                                    :class="pdvStats.cash_open ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'"
-                                >
-                                    {{ pdvStats.cash_open ? 'Caixa aberto' : 'Caixa fechado' }}
-                                </span>
-                                <span
-                                    class="rounded-full px-3 py-1 text-[11px] font-semibold"
+                                    class="inline-flex min-w-[10.5rem] justify-center whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-semibold"
                                     :class="hasPublicCatalog ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100' : 'bg-slate-100 text-slate-600'"
                                 >
                                     {{ hasPublicCatalog ? 'Loja pública ativa' : 'Loja pública inativa' }}
@@ -545,8 +649,37 @@ const serviceAttentionNote = computed(() => {
                                 Abrir PDF
                             </Link>
                         </div>
-                    </section>
+                        </section>
 
+                        <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Base do negócio</p>
+                                <h2 class="text-lg font-semibold text-slate-900">{{ commercialCopy.inventoryTitle }}</h2>
+                                <p class="mt-1 text-sm text-slate-500">{{ commercialCopy.inventoryDescription }}</p>
+                            </div>
+                            <span class="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
+                                Consolidado
+                            </span>
+                        </div>
+
+                        <div class="mt-4 grid gap-3">
+                            <div
+                                v-for="item in commercialInventoryRows"
+                                :key="item.key"
+                                class="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3"
+                            >
+                                <span class="text-sm text-slate-600">{{ item.label }}</span>
+                                <span class="text-sm font-semibold text-slate-900">{{ item.value }}</span>
+                            </div>
+                        </div>
+                        </section>
+                    </div>
+                </section>
+            </template>
+
+            <template v-if="isCommercialOverview && commercialOverviewTab === 'pdv'">
+                <section class="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
                     <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
                         <div class="flex items-center justify-between">
                             <div>
@@ -565,7 +698,7 @@ const serviceAttentionNote = computed(() => {
                             <div class="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
                                 <p class="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Vendas hoje</p>
                                 <p class="mt-1 text-lg font-semibold text-slate-900">{{ asCurrency(pdvStats.sales_today ?? 0) }}</p>
-                                <p class="text-xs text-slate-500">{{ Number(pdvStats.sales_count ?? 0) }} venda(s) concluída(s)</p>
+                                <p class="text-xs text-slate-500">{{ Number(pdvStats.sales_count ?? 0) }} venda(s) concluídas</p>
                             </div>
                             <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
                                 <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ticket médio</p>
@@ -574,17 +707,17 @@ const serviceAttentionNote = computed(() => {
                             </div>
                         </div>
 
-                        <ul class="mt-4 space-y-3">
+                        <ul class="mt-4 grid gap-3 sm:grid-cols-3">
                             <li
                                 v-for="payment in paymentSummary"
-                                :key="payment.key"
-                                class="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3"
+                                :key="`pdv-summary-${payment.key}`"
+                                class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3"
                             >
                                 <span class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
                                     <component :is="payment.icon" class="h-4 w-4 text-emerald-600" />
                                     {{ payment.label }}
                                 </span>
-                                <span class="text-sm font-semibold text-slate-900">{{ payment.value }}</span>
+                                <p class="mt-2 text-sm font-semibold text-slate-900">{{ payment.value }}</p>
                             </li>
                         </ul>
 
@@ -605,123 +738,96 @@ const serviceAttentionNote = computed(() => {
                             </Link>
                         </div>
                     </section>
-                </div>
-            </section>
 
-            <section
-                v-if="isCommercialOverview"
-                class="grid gap-4 lg:grid-cols-3"
-            >
-                <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Logística</p>
-                            <h2 class="text-lg font-semibold text-slate-900">Entregas recentes</h2>
-                        </div>
-                        <span class="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-100">
-                            Hoje: {{ Number(operationsStats.deliveries_today ?? 0) }}
-                        </span>
-                    </div>
-
-                    <div v-if="recentDeliveries.length" class="mt-4 space-y-3">
-                        <button
-                            v-for="delivery in recentDeliveries"
-                            :key="`recent-delivery-${delivery.id}`"
-                            type="button"
-                            class="group block w-full rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-left transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-md"
-                            @click="openRecordDetails(delivery)"
-                        >
-                            <div class="flex items-center justify-between gap-2">
-                                <div class="flex items-center gap-2">
-                                    <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">{{ delivery.code }}</span>
-                                    <span class="rounded-full px-2.5 py-1 text-[11px] font-semibold" :class="resolveSaleStatusTone(delivery.status)">
-                                        {{ resolveSaleStatusLabel(delivery.status) }}
-                                    </span>
+                    <div class="space-y-4">
+                        <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">PDV</p>
+                                    <h2 class="text-lg font-semibold text-slate-900">Vendas recentes</h2>
                                 </div>
-                                <ArrowUpRight class="h-4 w-4 text-slate-400 transition group-hover:text-slate-700" />
+                                <Link
+                                    v-if="canViewPdv"
+                                    :href="route('admin.sales.index')"
+                                    class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                >
+                                    Histórico
+                                </Link>
                             </div>
-                            <p class="mt-3 text-sm font-semibold text-slate-900">{{ delivery.customer }}</p>
-                            <p class="mt-1 text-xs text-slate-500">{{ delivery.shipping_address_text || 'Endereço não informado' }}</p>
-                            <p class="mt-2 text-xs font-semibold text-slate-600">{{ delivery.amount }}</p>
-                        </button>
-                    </div>
 
-                    <div
-                        v-else
-                        class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
-                    >
-                        Nenhuma entrega recente registrada.
-                    </div>
-                </section>
+                            <div v-if="recentSales.length" class="mt-4 space-y-3">
+                                <button
+                                    v-for="sale in recentSales"
+                                    :key="`pdv-recent-sale-${sale.id}`"
+                                    type="button"
+                                    class="group block w-full rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-left transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-md"
+                                    @click="openRecordDetails(sale)"
+                                >
+                                    <div class="flex items-center justify-between gap-2">
+                                        <div class="flex items-center gap-2">
+                                            <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">{{ sale.code }}</span>
+                                            <ArrowUpRight class="h-4 w-4 text-slate-400 transition group-hover:text-slate-700" />
+                                        </div>
+                                        <span class="text-sm font-semibold text-slate-900">{{ sale.amount }}</span>
+                                    </div>
+                                    <p class="mt-3 text-sm font-semibold text-slate-900">{{ sale.customer }}</p>
+                                    <p class="mt-1 text-xs text-slate-500">{{ sale.payment_label || sale.payment }}</p>
+                                    <p class="mt-2 text-xs text-slate-500">{{ sale.time || sale.created_at }}</p>
+                                </button>
+                            </div>
 
-                <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">PDV</p>
-                            <h2 class="text-lg font-semibold text-slate-900">Vendas recentes</h2>
-                        </div>
-                        <Link
-                            v-if="canViewPdv"
-                            :href="route('admin.sales.index')"
-                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                        >
-                            Histórico
-                        </Link>
-                    </div>
+                            <div
+                                v-else
+                                class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
+                            >
+                                Nenhuma venda registrada hoje.
+                            </div>
+                        </section>
 
-                    <div v-if="recentSales.length" class="mt-4 space-y-3">
-                        <button
-                            v-for="sale in recentSales"
-                            :key="`recent-sale-${sale.id}`"
-                            type="button"
-                            class="group block w-full rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-left transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-md"
-                            @click="openRecordDetails(sale)"
-                        >
-                            <div class="flex items-center justify-between gap-2">
-                                <div class="flex items-center gap-2">
-                                    <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">{{ sale.code }}</span>
-                                    <ArrowUpRight class="h-4 w-4 text-slate-400 transition group-hover:text-slate-700" />
+                        <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Suporte operacional</p>
+                                    <h2 class="text-lg font-semibold text-slate-900">Base do PDV</h2>
+                                    <p class="mt-1 text-sm text-slate-500">Referências rápidas para operar o caixa sem misturar a leitura da loja virtual.</p>
                                 </div>
-                                <span class="text-sm font-semibold text-slate-900">{{ sale.amount }}</span>
+                                <span class="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
+                                    Consolidado
+                                </span>
                             </div>
-                            <p class="mt-3 text-sm font-semibold text-slate-900">{{ sale.customer }}</p>
-                            <p class="mt-1 text-xs text-slate-500">{{ sale.payment_label || sale.payment }}</p>
-                            <p class="mt-2 text-xs text-slate-500">{{ sale.time || sale.created_at }}</p>
-                        </button>
-                    </div>
 
-                    <div
-                        v-else
-                        class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
-                    >
-                        Nenhuma venda registrada hoje.
+                            <div class="mt-4 grid gap-3">
+                                <div
+                                    v-for="item in commercialPdvSupportRows"
+                                    :key="`pdv-support-${item.key}`"
+                                    class="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3"
+                                >
+                                    <span class="text-sm text-slate-600">{{ item.label }}</span>
+                                    <span class="text-sm font-semibold text-slate-900">{{ item.value }}</span>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 flex flex-wrap items-center gap-2">
+                                <Link
+                                    v-if="canViewPdv"
+                                    :href="route('admin.products.index', { status: 'pdv_active' })"
+                                    class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                >
+                                    Ver produtos do PDV
+                                </Link>
+                                <Link
+                                    v-if="canViewReports"
+                                    :href="reportsHref"
+                                    class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                                >
+                                    <FileText class="h-4 w-4" />
+                                    Abrir PDF
+                                </Link>
+                            </div>
+                        </section>
                     </div>
                 </section>
-
-                <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
-                    <div class="flex items-start justify-between gap-3">
-                        <div>
-                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Base do negócio</p>
-                            <h2 class="text-lg font-semibold text-slate-900">{{ commercialCopy.inventoryTitle }}</h2>
-                            <p class="mt-1 text-sm text-slate-500">{{ commercialCopy.inventoryDescription }}</p>
-                        </div>
-                        <span class="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
-                            Consolidado
-                        </span>
-                    </div>
-
-                    <div class="mt-4 grid gap-3">
-                        <div
-                            v-for="item in commercialInventoryRows"
-                            :key="item.key"
-                            class="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3"
-                        >
-                            <span class="text-sm text-slate-600">{{ item.label }}</span>
-                            <span class="text-sm font-semibold text-slate-900">{{ item.value }}</span>
-                        </div>
-                    </div>
-                </section>
-            </section>
+            </template>
 
             <section
                 v-else
@@ -1015,3 +1121,59 @@ const serviceAttentionNote = computed(() => {
         </div>
     </AuthenticatedLayout>
 </template>
+
+<style scoped>
+.finance-tabs-shell {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+
+.finance-tabs-shell::-webkit-scrollbar {
+    height: 6px;
+}
+
+.finance-tabs-shell::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: rgba(148, 163, 184, 0.45);
+}
+
+.finance-tabs-track {
+    display: inline-flex;
+    min-width: max-content;
+    gap: 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.95rem;
+    background: #ffffff;
+    padding: 0.3rem;
+}
+
+.finance-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid transparent;
+    border-radius: 0.72rem;
+    min-height: 38px;
+    padding: 0.6rem 0.95rem;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.finance-tab:hover {
+    background: #f8fafc;
+    color: #0f172a;
+}
+
+.finance-tab.is-active {
+    background: var(--finance-tab-active-soft, rgba(15, 23, 42, 0.08));
+    border-color: var(--finance-tab-active-border, rgba(15, 23, 42, 0.16));
+    color: var(--finance-tab-active, #0f172a);
+    box-shadow: 0 10px 25px -22px var(--finance-tab-active, rgba(15, 23, 42, 0.4));
+}
+</style>
