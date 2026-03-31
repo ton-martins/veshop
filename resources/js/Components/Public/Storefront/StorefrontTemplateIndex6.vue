@@ -603,6 +603,14 @@ const storefrontPromotions = computed(() => {
     };
 });
 
+const storefrontCatalog = computed(() => {
+    const catalog = props.storefront?.catalog ?? {};
+    return {
+        title: String(catalog.title || '').trim() || (isServicesMode.value ? 'Todos os serviços' : 'Todos os produtos'),
+        subtitle: String(catalog.subtitle || '').trim(),
+    };
+});
+
 const normalizedCatalog = computed(() => {
     if (isServicesMode.value) {
         const safe = Array.isArray(props.services) ? props.services : [];
@@ -783,6 +791,7 @@ const configuredBanners = computed(() => {
             ctaLabel: String(banner?.cta_label || '').trim() || 'Ver mais',
             backgroundColor: normalizeHex(String(banner?.background_color || ''), storeAccent.value),
             useOriginalImageColors: Boolean(banner?.use_original_image_colors ?? false),
+            imageOnly: Boolean(banner?.image_only ?? false),
         }))
         .slice(0, 6);
 });
@@ -809,6 +818,7 @@ const fallbackBanners = computed(() => featuredCatalog.value.slice(0, 6).map((it
     ctaLabel: isServicesMode.value ? 'Agendar' : 'Comprar',
     backgroundColor: storeAccent.value,
     useOriginalImageColors: false,
+    imageOnly: false,
 })));
 
 const promotionalBanners = computed(() => {
@@ -903,6 +913,7 @@ const toggleFavorite = (item) => {
 };
 
 const favoriteItems = computed(() => normalizedCatalog.value.filter((item) => isFavorite(item.id)));
+const filteredFavoriteItems = computed(() => filteredCatalog.value.filter((item) => isFavorite(item.id)));
 
 const cartKey = computed(() => `veshop:index6:cart:${storeSlug.value}:${isServicesMode.value ? 'services' : 'commerce'}`);
 const cart = ref({});
@@ -2459,8 +2470,9 @@ onBeforeUnmount(() => {
                                         :key="`mobile-banner-${banner.id}`"
                                         class="relative h-40 w-[280px] overflow-hidden rounded-2xl border border-white/20"
                                     >
-                                        <img :src="banner.image" :alt="banner.title" class="h-full w-full object-cover">
+                                        <img :src="banner.image" :alt="banner.title || storeName" class="h-full w-full object-cover">
                                         <div
+                                            v-if="!banner.imageOnly"
                                             class="absolute inset-0 p-4 text-white"
                                             :class="banner.useOriginalImageColors ? 'flex flex-col justify-end' : 'bg-gradient-to-tr from-black/60 via-black/25 to-black/15'"
                                             :style="banner.useOriginalImageColors ? { textShadow: '0 1px 3px rgba(0, 0, 0, 0.65)' } : null"
@@ -2489,19 +2501,20 @@ onBeforeUnmount(() => {
                             </div>
 
                             <div class="hidden md:grid grid-cols-3 gap-6 mb-8">
-                                <article
-                                    v-for="(banner, index) in desktopBanners"
-                                    :key="`desktop-banner-${banner.id}`"
-                                    class="relative overflow-hidden rounded-2xl"
-                                    :class="index === 0 ? 'col-span-2 h-48' : 'h-48'"
-                                >
-                                    <img :src="banner.image" :alt="banner.title" class="h-full w-full object-cover">
-                                    <div
-                                        class="absolute inset-0 p-5 text-white"
-                                        :style="banner.useOriginalImageColors
+                                    <article
+                                        v-for="(banner, index) in desktopBanners"
+                                        :key="`desktop-banner-${banner.id}`"
+                                        class="relative overflow-hidden rounded-2xl"
+                                        :class="index === 0 ? 'col-span-2 h-48' : 'h-48'"
+                                    >
+                                        <img :src="banner.image" :alt="banner.title || storeName" class="h-full w-full object-cover">
+                                        <div
+                                            v-if="!banner.imageOnly"
+                                            class="absolute inset-0 p-5 text-white"
+                                            :style="banner.useOriginalImageColors
                                             ? { textShadow: '0 1px 3px rgba(0, 0, 0, 0.65)' }
                                             : { background: `linear-gradient(130deg, ${withAlpha(banner.backgroundColor, 0.84)} 0%, rgba(15, 23, 42, 0.58) 65%)` }"
-                                    >
+                                        >
                                         <p class="text-xs uppercase tracking-[0.16em]">{{ storeName }}</p>
                                         <h3 class="mt-2 text-2xl font-black leading-tight">{{ banner.title }}</h3>
                                         <p v-if="banner.subtitle" class="mt-1 max-w-md text-sm text-white/90">{{ banner.subtitle }}</p>
@@ -2519,18 +2532,26 @@ onBeforeUnmount(() => {
                             </div>
                         </template>
 
-                        <template v-if="activeTab === 'home' || activeTab === 'favorites'">
-                            <div class="flex items-center justify-between mb-4 mt-2">
+                        <template v-if="(activeTab === 'home' || activeTab === 'favorites') && storefrontBlocks.catalog">
+                            <div class="mb-4 mt-2 flex items-start justify-between gap-3">
                                 <div>
-                                    <h3 class="text-lg font-bold">{{ activeTab === 'favorites' ? 'Favoritos' : (storefrontPromotions.title || 'Categorias') }}</h3>
-                                    <p v-if="activeTab === 'home' && storefrontPromotions.subtitle" class="text-xs text-slate-500">{{ storefrontPromotions.subtitle }}</p>
+                                    <h3 class="text-lg font-bold">
+                                        {{ activeTab === 'favorites' ? 'Favoritos' : storefrontCatalog.title }}
+                                    </h3>
+                                    <p
+                                        v-if="activeTab === 'home' && storefrontCatalog.subtitle"
+                                        class="text-xs text-slate-500"
+                                    >
+                                        {{ storefrontCatalog.subtitle }}
+                                    </p>
                                 </div>
-                                <button class="bg-orange-100 text-[var(--idx-primary)] px-3 py-1 rounded-lg text-sm font-medium" @click="activeCategory = 'all'">
-                                    Limpar filtro
-                                </button>
+                                <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                                    {{ activeTab === 'favorites' ? filteredFavoriteItems.length : filteredCatalog.length }}
+                                    {{ isServicesMode ? 'serviços' : 'produtos' }}
+                                </span>
                             </div>
 
-                            <div class="flex items-center gap-2 mb-4 overflow-x-auto">
+                            <div v-if="storefrontBlocks.categories" class="mb-4 flex items-center gap-2 overflow-x-auto">
                                 <button
                                     v-for="category in categoryOptions"
                                     :key="category.id"
@@ -2547,7 +2568,7 @@ onBeforeUnmount(() => {
 
                             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
                                 <div
-                                    v-for="item in (activeTab === 'favorites' ? favoriteItems : featuredCatalog)"
+                                    v-for="item in (activeTab === 'favorites' ? filteredFavoriteItems : filteredCatalog)"
                                     :key="`card-${item.id}`"
                                     class="bg-white rounded-2xl overflow-hidden shadow-sm relative group transition-all duration-200 md:cursor-pointer md:hover:-translate-y-0.5 md:hover:shadow-md md:hover:ring-1 md:hover:ring-slate-200"
                                     :class="[
@@ -2614,6 +2635,13 @@ onBeforeUnmount(() => {
                                     </div>
                                 </div>
                             </div>
+
+                            <p
+                                v-if="(activeTab === 'favorites' ? filteredFavoriteItems : filteredCatalog).length === 0"
+                                class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500"
+                            >
+                                {{ activeTab === 'favorites' ? 'Nenhum favorito encontrado com esse filtro.' : 'Nenhum item encontrado para essa categoria.' }}
+                            </p>
 
                             <template v-if="activeTab === 'home'">
                                 <h3 class="text-lg font-bold mt-8 mb-4">Favoritos</h3>

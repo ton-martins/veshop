@@ -78,7 +78,7 @@ const withAlpha = (hex, alpha = 1) => {
     return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
 };
 
-const MAX_BANNERS = 6;
+const MAX_BANNERS = 2;
 
 const createEmptyBanner = () => ({
     title: '',
@@ -90,6 +90,7 @@ const createEmptyBanner = () => ({
     remove_image: false,
     cta_label: '',
     use_original_image_colors: false,
+    image_only: false,
     background_color: normalizeHexColor(props.contractor?.primary_color || '#073341'),
     preview_url: '',
 });
@@ -244,6 +245,7 @@ const hydrateStorefront = () => {
             remove_image: false,
             cta_label: String(banner?.cta_label ?? ''),
             use_original_image_colors: Boolean(banner?.use_original_image_colors ?? false),
+            image_only: Boolean(banner?.image_only ?? false),
             background_color: normalizeHexColor(banner?.background_color ?? props.contractor?.primary_color ?? '#073341'),
             preview_url: String(banner?.image_url ?? ''),
         }))
@@ -1127,6 +1129,7 @@ const submitStorefront = () => {
                 image_url: String(banner?.image_url || '').trim(),
                 cta_label: String(banner?.cta_label || '').trim(),
                 use_original_image_colors: Boolean(banner?.use_original_image_colors),
+                image_only: Boolean(banner?.image_only),
                 background_color: normalizeHexColor(
                     banner?.background_color || props.contractor?.primary_color || '#073341'
                 ),
@@ -1407,28 +1410,37 @@ onBeforeUnmount(() => {
                                     <input
                                         v-model="banner.title"
                                         type="text"
-                                        class="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                                        class="rounded-xl border border-slate-200 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                                         placeholder="Título do banner"
+                                        :disabled="banner.image_only"
                                     >
                                     <input
                                         v-model="banner.badge"
                                         type="text"
-                                        class="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                                        class="rounded-xl border border-slate-200 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                                         placeholder="Badge (ex.: Oferta)"
+                                        :disabled="banner.image_only"
                                     >
                                     <textarea
                                         v-model="banner.subtitle"
                                         rows="2"
-                                        class="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"
+                                        class="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-2 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                                         placeholder="Subtítulo do banner"
+                                        :disabled="banner.image_only"
                                     ></textarea>
                                     <input
                                         v-model="banner.cta_label"
                                         type="text"
-                                        class="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"
+                                        class="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-2 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                                         placeholder="Texto do CTA (ex.: Ver mais)"
+                                        :disabled="banner.image_only"
                                     >
                                 </div>
+
+                                <label class="mt-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                                    <input v-model="banner.image_only" type="checkbox" class="rounded border-slate-300">
+                                    Exibir somente a imagem do banner
+                                </label>
 
                                 <div class="mt-3 grid gap-2 md:grid-cols-[180px_minmax(260px,1fr)_auto]">
                                     <label class="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-600">

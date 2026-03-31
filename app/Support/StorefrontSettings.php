@@ -170,6 +170,7 @@ class StorefrontSettings
                 $fallbackColor
             );
             $useOriginalImageColors = (bool) ($item['use_original_image_colors'] ?? false);
+            $imageOnly = (bool) ($item['image_only'] ?? false);
 
             if ($title === '' && $subtitle === '' && $badge === '' && $imageUrl === '' && $ctaLabel === '' && $imagePath === '') {
                 continue;
@@ -184,9 +185,10 @@ class StorefrontSettings
                 'cta_label' => $ctaLabel,
                 'background_color' => $backgroundColor,
                 'use_original_image_colors' => $useOriginalImageColors,
+                'image_only' => $imageOnly,
             ];
 
-            if (count($items) >= 6) {
+            if (count($items) >= 2) {
                 break;
             }
         }

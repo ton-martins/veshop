@@ -199,7 +199,7 @@ class AdminStorefrontService
             'hero_subtitle' => ['nullable', 'string', 'max:220'],
             'hero_cta_label' => ['nullable', 'string', 'max:40'],
             'banners_enabled' => ['required', 'boolean'],
-            'banners' => ['nullable', 'array', 'max:6'],
+            'banners' => ['nullable', 'array', 'max:2'],
             'banners.*.title' => ['nullable', 'string', 'max:80'],
             'banners.*.subtitle' => ['nullable', 'string', 'max:160'],
             'banners.*.badge' => ['nullable', 'string', 'max:40'],
@@ -209,6 +209,7 @@ class AdminStorefrontService
             'banners.*.image_url' => ['nullable', 'string', 'max:255'],
             'banners.*.cta_label' => ['nullable', 'string', 'max:40'],
             'banners.*.use_original_image_colors' => ['nullable', 'boolean'],
+            'banners.*.image_only' => ['nullable', 'boolean'],
             'banners.*.background_color' => [
                 'nullable',
                 'string',
@@ -547,6 +548,7 @@ class AdminStorefrontService
                 'cta_label' => (string) ($banner['cta_label'] ?? ''),
                 'background_color' => (string) ($banner['background_color'] ?? ''),
                 'use_original_image_colors' => (bool) ($banner['use_original_image_colors'] ?? false),
+                'image_only' => (bool) ($banner['image_only'] ?? false),
             ];
         }
 
